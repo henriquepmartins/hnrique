@@ -239,6 +239,28 @@ final class FluxoDrive: XCTestCase {
     shot("42-home-musculos-mes")
   }
 
+  /// A fita dos próximos dias e os recordes. Duas seções que saem só do que o
+  /// painel já mandava, e que a home nunca tinha mostrado.
+  func testHomeProximosDiasERecordes() {
+    launch()
+    ensureWorkoutToday()
+    app.tabBars.buttons["hoje"].tap()
+    XCTAssert(app.buttons["hoje.abrir"].waitForExistence(timeout: 10), "cartão do dia apareceu")
+
+    let plano = app.buttons["hoje.plano"]
+    XCTAssert(plano.waitForExistence(timeout: 5), "a fita dos próximos dias apareceu")
+    XCTAssert(
+      app.staticTexts.matching(
+        NSPredicate(format: "label CONTAINS 'hoje'")).firstMatch.waitForExistence(timeout: 3),
+      "a fita marca o dia de hoje")
+    shot("43-home-proximos-dias")
+
+    plano.tap()
+    XCTAssert(
+      app.tabBars.buttons["plano"].isSelected,
+      "o atalho da fita leva para a aba do plano")
+  }
+
   func testPastaAtiva() {
     launch()
     ensureWorkoutToday()
@@ -301,11 +323,25 @@ final class FluxoDrive: XCTestCase {
     XCTAssertEqual(doneCount(), antes + 1, "o contador da sessão subiu uma série")
     shot("51-sessao-descanso")
 
-    app.buttons["sessao.proximo"].tap()
+    // A barra de descanso cobre o fim da lista, então ela sai antes do toque.
+    app.buttons["pular"].tap()
+    XCTAssert(app.buttons["pular"].waitForNonExistence(timeout: 3), "pular encerra o descanso")
+
+    // A sessão virou lista: o exercício fechado é um cartão, e tocar nele abre.
+    // Trocar de aparelho não depende mais de andar página por página.
+    let fechado = app.buttons.matching(
+      NSPredicate(format: "identifier BEGINSWITH 'sessao.exercicio.'")).firstMatch
+    XCTAssert(fechado.waitForExistence(timeout: 3), "os outros exercícios aparecem recolhidos")
+    // O exercício aberto ocupa a tela inteira, então os recolhidos ficam abaixo da
+    // dobra. Tocar num elemento fora da tela erra o alvo sem falhar o toque.
+    for _ in 0..<6 where !fechado.isHittable { app.swipeUp() }
+    XCTAssert(fechado.isHittable, "o cartão recolhido chegou à tela")
+    let id = fechado.identifier
+    fechado.tap()
     XCTAssert(
-      app.staticTexts["exercício 2 de \(exerciseCount())"].waitForExistence(timeout: 3),
-      "o botão do rodapé anda para o próximo exercício")
-    shot("52-sessao-proximo")
+      app.buttons[id].waitForNonExistence(timeout: 3),
+      "tocar no cartão recolhido abre aquele exercício")
+    shot("52-sessao-outro-exercicio")
 
     close.tap()
     XCTAssert(close.waitForNonExistence(timeout: 5), "sessão fechou")
@@ -329,9 +365,9 @@ final class FluxoDrive: XCTestCase {
 
     let close = app.buttons["sessao.fechar"]
     XCTAssert(close.waitForExistence(timeout: 5), "sessão abriu")
-    // Fecha o primeiro exercício inteiro. A página vizinha do TabView já está
-    // montada, então o filtro também acha botão do exercício 2, fora da tela e
-    // sem resposta ao toque. `isHittable` é o que separa um do outro.
+    // Fecha o primeiro exercício inteiro. Só o exercício aberto desenha linha de
+    // série, então o filtro já cai nele; `isHittable` continua separando a linha
+    // visível da que rolou para fora da tela.
     let abertas = NSPredicate(format:
       "identifier CONTAINS '.work.' AND identifier ENDSWITH '.completion'"
       + " AND label BEGINSWITH 'Concluir'")
@@ -353,8 +389,8 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(close.waitForExistence(timeout: 5), "sessão reabriu pelo continuar")
     shot("60-continuar-onde-parou")
     XCTAssert(
-      app.staticTexts["exercício 2 de \(exerciseCount())"].waitForExistence(timeout: 3),
-      "continuar cai no exercício em aberto")
+      valendo.firstMatch.waitForExistence(timeout: 5) && valendo.firstMatch.isHittable,
+      "continuar abre um exercício com série em aberto, não o que já terminou")
   }
 
   /// Espera o contador da sessão chegar no valor. Ler logo depois do toque pega
@@ -372,12 +408,6 @@ final class FluxoDrive: XCTestCase {
     let label = app.staticTexts.matching(
       NSPredicate(format: "label MATCHES '^[0-9]+$'")).firstMatch
     return Int(label.label) ?? -1
-  }
-
-  func exerciseCount() -> Int {
-    let atual = app.staticTexts.matching(
-      NSPredicate(format: "label BEGINSWITH 'exercício '")).firstMatch.label
-    return Int(atual.split(separator: " ").last ?? "0") ?? 0
   }
 
   func testPastaDeTreino() {

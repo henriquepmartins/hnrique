@@ -52,11 +52,21 @@ public struct VolumeSummary: Codable, Hashable, Sendable {
   public var weekKg: Double
   public var previousWeekKg: Double
   public var weekSessions: Int
+  /// Seis semanas de volume, da mais velha para esta. Vazio no servidor antigo, e aí
+  /// a linha some em vez de desenhar uma reta no zero.
+  public var trend: [Double]?
 
   /// Nulo quando não há semana anterior com que comparar, que é diferente de zero
   /// por cento, e o cartão então não promete uma variação que não existe.
   public var deltaPercent: Int? {
     guard previousWeekKg > 0 else { return nil }
     return Int((((weekKg - previousWeekKg) / previousWeekKg) * 100).rounded())
+  }
+
+  /// A linha só diz alguma coisa com pelo menos duas semanas em que se levantou algo.
+  /// Um ponto sozinho, ou seis zeros, viram um traço que finge tendência.
+  public var trendPoints: [Double]? {
+    guard let trend, trend.count >= 2, trend.count(where: { $0 > 0 }) >= 2 else { return nil }
+    return trend
   }
 }

@@ -86,9 +86,9 @@ struct ExerciseCard: View {
 enum SetRowScale {
   case list, session
 
-  var check: CGFloat { self == .list ? 44 : 52 }
-  var value: Font { self == .list ? .subheadline : .system(size: 22, weight: .medium) }
-  var padding: CGFloat { self == .list ? 6 : 10 }
+  var check: CGFloat { self == .list ? 44 : 46 }
+  var value: Font { self == .list ? .subheadline : .system(size: 19, weight: .medium) }
+  var padding: CGFloat { self == .list ? 6 : 8 }
   var radius: CGFloat { Radius.concentric(Radius.field, padding: padding) }
   /// A lista tem uma linha de cabeçalho dizendo qual coluna é qual. A sessão
   /// mostra um exercício só e não tem cabeçalho, então a unidade vai na linha.
@@ -113,6 +113,9 @@ struct TrainingSetRow: View {
   let done: Bool
   let failure: Bool
   var scale: SetRowScale = .list
+  /// A sessão desenha o número da série junto da coluna "anterior", então a linha
+  /// não repete o número ao lado dos campos.
+  var showsIndex: Bool = true
 
   private var fieldID: String { "set.\(key.exerciseId).\(kind == .prep ? "prep" : "work").\(index)" }
   private var waiting: Bool { store.isWaiting(key) }
@@ -125,7 +128,9 @@ struct TrainingSetRow: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      Text(kind == .prep ? "P\(index)" : "\(index)").font(.caption).frame(width: 26)
+      if showsIndex {
+        Text(kind == .prep ? "P\(index)" : "\(index)").font(.caption).frame(width: 26)
+      }
       HStack(spacing: 2) {
         TextField("0", value: $weightDraft, format: .number.precision(.fractionLength(0...2)))
           #if os(iOS)

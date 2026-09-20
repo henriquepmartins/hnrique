@@ -29,6 +29,8 @@ struct MuscleMap: View {
         figure(BodyChart.posterior, caption: "costas")
       }
       readout
+      legend
+      if let gap { GapNote(text: gap) }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(Space.xl)
@@ -101,6 +103,50 @@ struct MuscleMap: View {
     .background(Color.surfaceMuted, in: .rect(cornerRadius: Radius.tile))
   }
 
+  /// A escala é relativa, então sem a régua quatro verdes não dizem o que separa um
+  /// do outro. A legenda é a régua.
+  private var legend: some View {
+    HStack(spacing: 5) {
+      Spacer()
+      Text("menos").font(.caption2).foregroundStyle(Color.mutedInk)
+      ForEach(0..<5) { level in
+        RoundedRectangle(cornerRadius: 4)
+          .fill(swatch(level))
+          .frame(width: 13, height: 13)
+      }
+      Text("mais").font(.caption2).foregroundStyle(Color.mutedInk)
+    }
+    .accessibilityHidden(true)
+  }
+
+  private func swatch(_ level: Int) -> Color {
+    switch level {
+    case 0: Color.ink.opacity(0.13)
+    case 1: accent.base.opacity(0.22)
+    case 2: accent.base.opacity(0.46)
+    case 3: accent.base.opacity(0.74)
+    default: accent.deep
+    }
+  }
+
+  /// O grupo mais esquecido do mês, quando o esquecimento já passou de dez dias. É o
+  /// que o mapa serve para descobrir, e ele não deveria depender de o olho notar.
+  private var gap: String? {
+    let stale = load
+      .filter { $0.setsMonth == 0 || ($0.lastTrainedDate.map { today.daysSince($0) } ?? 99) >= 10 }
+      .max { a, b in days(a) < days(b) }
+    guard let stale, days(stale) >= 10 else { return nil }
+    guard let last = stale.lastTrainedDate else {
+      return "\(stale.group.label) sem estímulo nos últimos 28 dias."
+    }
+    return "\(stale.group.label) sem estímulo há \(today.daysSince(last)) dias."
+  }
+
+  private func days(_ item: MuscleLoad) -> Int {
+    guard let last = item.lastTrainedDate else { return 99 }
+    return today.daysSince(last)
+  }
+
   private func lastLabel(_ item: MuscleLoad) -> String {
     guard let last = item.lastTrainedDate else { return "sem estímulo no período" }
     let days = today.daysSince(last)
@@ -109,6 +155,25 @@ struct MuscleMap: View {
     case 1: "treinado ontem"
     default: "último estímulo há \(days) dias"
     }
+  }
+}
+
+/// O aviso de grupo parado. Vermelho suave, e não o verde do cartão: é a única linha
+/// do mapa que pede uma mudança no plano.
+struct GapNote: View {
+  let text: String
+
+  var body: some View {
+    HStack(alignment: .top, spacing: Space.s) {
+      Image(systemName: "exclamationmark.circle")
+        .font(.footnote.weight(.medium))
+      Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)
+    }
+    .foregroundStyle(Color(red: 0.54, green: 0.18, blue: 0.18))
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.horizontal, Space.m).padding(.vertical, Space.m)
+    .background(Color(red: 0.99, green: 0.95, blue: 0.95), in: .rect(cornerRadius: Radius.tile))
+    .accessibilityIdentifier("musculos.lacuna")
   }
 }
 

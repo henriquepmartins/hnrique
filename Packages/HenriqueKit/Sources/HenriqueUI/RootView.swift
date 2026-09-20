@@ -179,7 +179,7 @@ struct AcademiaTabs: View {
   var body: some View {
     TabView(selection: appSwitcherSelection($tab, isPresented: $showingApps, bubble: .apps)) {
       Tab("hoje", systemImage: "house", value: AcademiaTab.hoje) {
-        shell { OverviewScreen { tab = .treino } }
+        shell { OverviewScreen(onWorkout: { tab = .treino }, onPlan: { tab = .semana }) }
       }
       Tab("plano", systemImage: "list.clipboard", value: AcademiaTab.semana) {
         shell {
@@ -384,10 +384,13 @@ private struct AppSwitcherRow: View {
   }
 }
 
+/// A home responde uma pergunta só, o que eu faço agora, e depois desce para o
+/// diagnóstico. A ordem é essa: ação, o que vem a seguir, o que mudou, o que falta.
 struct OverviewScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
   let onWorkout: () -> Void
+  let onPlan: () -> Void
 
   var body: some View {
     ScrollView {
@@ -395,14 +398,25 @@ struct OverviewScreen: View {
         GreetingHeader(date: store.selectedDate, streak: store.dashboard?.attendanceStreak ?? 0)
         if let data = store.dashboard {
           DayCard(workout: data.workout, onWorkout: onWorkout).subtleEntrance()
+          NextDaysStrip(
+            days: plannedDays(
+              from: data.date, plan: data.weekPlan, done: Set(data.sessionDates ?? [])),
+            plan: data.weekPlan, onPlan: onPlan)
+            .subtleEntrance()
+          if let records = data.records, !records.isEmpty {
+            RecordsCard(records: records, today: data.date).subtleEntrance()
+          }
+          if let volume = data.volume {
+            WeeklyVolumeCard(volume: volume).subtleEntrance()
+          }
+          if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {
+            MuscleMap(load: load, today: data.date).subtleEntrance()
+          }
         }
         AttendanceMap(attendance: store.attendance) { from, to in
           await store.loadAttendance(from: from, to: to)
         }
         if let data = store.dashboard {
-          if let volume = data.volume {
-            WeeklyVolumeCard(volume: volume).subtleEntrance()
-          }
           VStack(alignment: .leading, spacing: 10) {
             Text("\(data.consistencyPercent)%").font(.system(size: 48, weight: .medium)).monospacedDigit()
             Text("constância, 4 semanas").font(.subheadline)
@@ -410,9 +424,6 @@ struct OverviewScreen: View {
           .foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
           .padding(Space.xl).background(accent.deep, in: .rect(cornerRadius: Radius.card))
           .subtleEntrance()
-          if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {
-            MuscleMap(load: load, today: data.date).subtleEntrance()
-          }
         }
       }.padding(Space.l).padding(.bottom, Space.page)
     }

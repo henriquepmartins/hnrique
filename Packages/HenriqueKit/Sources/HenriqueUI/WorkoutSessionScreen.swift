@@ -6,10 +6,17 @@ import SwiftUI
 struct SessionProgress: Equatable {
   let done: Int
   let total: Int
+  /// O peso levantado nas séries já marcadas, aquecimento incluído: o que saiu do
+  /// chão saiu do chão.
+  let volumeKg: Double
 
   init(_ workout: WorkoutSummary) {
     done = workout.completedWorkSetCount
     total = workout.workSetCount
+    volumeKg = workout.exercises.reduce(into: 0.0) { sum, exercise in
+      sum += exercise.sets.prep.filter(\.isDone).reduce(0) { $0 + $1.weightKg * Double($1.reps) }
+      sum += exercise.sets.work.filter(\.isDone).reduce(0) { $0 + $1.weightKg * Double($1.reps) }
+    }
   }
 
   var fraction: Double { total == 0 ? 0 : Double(done) / Double(total) }
@@ -22,14 +29,23 @@ func firstOpenExercise(in workout: WorkoutSummary) -> Int {
   workout.exercises.firstIndex { !$0.isComplete } ?? max(0, workout.exercises.count - 1)
 }
 
-/// Modo treino: um exercício por vez, com a linha de série no tamanho de marcar
-/// com o peso na mão. Lê e escreve o mesmo store da tela de hoje.
+/// O que a série de hoje tem a bater. Vem do último treino deste exercício, casada
+/// pelo índice, porque comparar a terceira com a terceira é o que diz se progrediu.
+func previousLabel(_ previous: PreviousWorkSets?, index: Int) -> String? {
+  guard let previous, let reps = previous.reps.indices.contains(index - 1) ? previous.reps[index - 1] : nil
+  else { return nil }
+  return "\(Formatting.trim(previous.weightKg)) × \(reps)"
+}
+
+/// Modo treino: o treino inteiro numa lista, com um exercício aberto por vez. Pular
+/// o aparelho ocupado e voltar depois é o caso normal na academia, e a lista deixa
+/// fazer isso sem sair da tela.
 struct WorkoutSessionScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var index = 0
+  @State private var open: String?
   @State private var entered = false
   @State private var rest: RestState?
   @State private var restSeconds: [String: TimeInterval] = [:]
@@ -44,22 +60,22 @@ struct WorkoutSessionScreen: View {
       Color.canvas.ignoresSafeArea()
       if let data = store.dashboard, let workout = data.workout {
         let progress = SessionProgress(workout)
-        let last = workout.exercises.count - 1
+        let openId = openExercise(in: workout)
         VStack(spacing: 0) {
           top(workout: workout, progress: progress).springEntrance(index: 0, shown: entered)
-          TabView(selection: $index) {
-            ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { i, exercise in
-              ScrollView {
-                card(exercise: exercise, date: data.date, templateId: workout.id)
-                  .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 24)
+          ScrollView {
+            LazyVStack(spacing: Space.m) {
+              ForEach(workout.exercises) { exercise in
+                if openId == exercise.id {
+                  card(exercise: exercise, date: data.date, templateId: workout.id)
+                } else {
+                  collapsed(exercise: exercise)
+                }
               }
-              .scrollBounceBehavior(.basedOnSize)
-              .tag(i)
             }
+            .padding(.horizontal, Space.l).padding(.top, Space.s).padding(.bottom, Space.page)
           }
-          #if os(iOS)
-            .tabViewStyle(.page(indexDisplayMode: .never))
-          #endif
+          .scrollDismissesKeyboard(.interactively)
           .springEntrance(index: 1, shown: entered)
           // A barra entra no fluxo, não por cima: sobreposta ela cobria a linha
           // da série seguinte, que é justamente o que o dedo procura depois.
@@ -68,51 +84,44 @@ struct WorkoutSessionScreen: View {
               .padding(.horizontal, 16).padding(.bottom, Space.s)
               .transition(.move(edge: .bottom).combined(with: .opacity))
           }
-          footer(last: last).springEntrance(index: 2, shown: entered)
         }
         .animation(grow, value: rest)
+        .animation(grow, value: openId)
         .onChange(of: progress.done) { old, new in
           rest = new > old ? startRest(workout: workout) : nil
         }
-        .onChange(of: index) { rest = nil }
         .task(id: rest?.endsAt) {
           guard let endsAt = rest?.endsAt else { return }
           try? await Task.sleep(for: .seconds(max(0, endsAt.timeIntervalSinceNow) + 6))
           guard !Task.isCancelled else { return }
           rest = nil
         }
-        .onAppear {
-          index = firstOpenExercise(in: workout)
-          entered = true
-        }
+        .onAppear { entered = true }
       }
     }
     .task { if store.dashboard?.workout == nil { dismiss() } }
   }
 
   private func top(workout: WorkoutSummary, progress: SessionProgress) -> some View {
-    VStack(spacing: 12) {
-      HStack {
+    VStack(spacing: Space.m) {
+      HStack(spacing: Space.m) {
         Button("fechar", systemImage: "chevron.down") { dismiss() }
           .labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.large)
           .accessibilityIdentifier("sessao.fechar")
-        Spacer()
-        VStack(spacing: 1) {
-          Text(workout.name.lowercased()).font(.headline.weight(.semibold))
-          Text("exercício \(index + 1) de \(workout.exercises.count)")
-            .font(.caption2).foregroundStyle(Color.mutedInk).monospacedDigit()
+        VStack(alignment: .leading, spacing: 1) {
+          SessionClock(timing: WorkoutSessionTiming(workout), name: workout.name)
         }
-        Spacer()
-        // mesmo tamanho do botão de fechar, senão o título fica descentrado
-        Button("fechar", systemImage: "chevron.down") {}
-          .labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.large).hidden()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Button("encerrar") { dismiss() }
+          .buttonStyle(.glass).controlSize(.regular)
+          .accessibilityIdentifier("sessao.encerrar")
       }
       VStack(spacing: 6) {
         HStack {
           Text("\(progress.done)").contentTransition(.numericText(value: Double(progress.done)))
           Text("de \(progress.total) séries")
           Spacer()
-          Text("\(progress.percent)%")
+          Text("\(progress.volumeKg.formatted(.number.precision(.fractionLength(0)))) kg até agora")
         }
         .font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(Color.mutedInk)
         GeometryReader { geo in
@@ -127,34 +136,68 @@ struct WorkoutSessionScreen: View {
         .frame(height: 8)
       }
       .animation(settle, value: progress.done)
-      if let timing = WorkoutSessionTiming(workout) {
-        WorkoutSessionClock(timing: timing)
-      }
     }
     .padding(.horizontal, Space.l).padding(.top, Space.s).padding(.bottom, Space.m)
+    .background(Color.canvas.opacity(0.94))
+    .overlay(alignment: .bottom) { Divider().opacity(0.5) }
+  }
+
+  /// O exercício fechado. Diz o que falta nele sem abrir, que é o que decide se o
+  /// próximo aparelho vale a caminhada.
+  private func collapsed(exercise: DashboardExercise) -> some View {
+    Button {
+      open = exercise.id
+    } label: {
+      HStack(spacing: Space.m) {
+        Capsule().fill(exercise.isComplete ? accent.base : Color.ink.opacity(0.12))
+          .frame(width: 4, height: 36)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(exercise.name.lowercased())
+            .font(.callout.weight(.medium)).foregroundStyle(Color.ink).lineLimit(1)
+          Text(subtitle(exercise))
+            .font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk).lineLimit(1)
+        }
+        Spacer(minLength: Space.s)
+        Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
+          .font(.caption).monospacedDigit().foregroundStyle(Color.mutedInk)
+          .padding(.horizontal, 10).padding(.vertical, 5)
+          .background(Color.surfaceMuted, in: .capsule)
+      }
+      .padding(.horizontal, Space.l).padding(.vertical, Space.m)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .paperCard(radius: Radius.tile)
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("sessao.exercicio.\(exercise.id)")
+  }
+
+  private func subtitle(_ exercise: DashboardExercise) -> String {
+    let count = "\(exercise.prescription.workSets) séries"
+    guard let previous = exercise.previous, let reps = previous.reps.first else { return count }
+    return "\(count) · \(Formatting.trim(previous.weightKg)) kg × \(reps) da última vez"
   }
 
   private func card(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
-    VStack(alignment: .leading, spacing: 16) {
+    VStack(alignment: .leading, spacing: Space.l) {
       Text(exercise.muscleGroup.lowercased())
         .font(.caption2.weight(.medium)).foregroundStyle(accent.base)
         .padding(.horizontal, 9).padding(.vertical, 4)
         .background(accent.base.opacity(0.12), in: .capsule)
       Text(exercise.name.lowercased())
-        .font(.system(size: 34, weight: .medium)).tracking(-1.4)
+        .font(.system(size: 30, weight: .medium)).tracking(-1.3)
         .fixedSize(horizontal: false, vertical: true)
-      if let previous = exercise.previous {
-        Text("última vez: \(previous.reps.map(String.init).joined(separator: ", ")) × \(weightLabel(previous.weightKg))")
-          .font(.footnote).foregroundStyle(Color.mutedInk)
-      }
-      VStack(spacing: 8) {
+      meta(exercise)
+      VStack(spacing: Space.s) {
+        header
         ForEach(exercise.sets.prep) { set in
-          TrainingSetRow(key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: .prep, index: set.index),
-            weight: set.weightKg, repetitions: set.reps, done: set.isDone, failure: false, scale: .session)
+          row(exercise: exercise, date: date, templateId: templateId, kind: .prep,
+            index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone, failure: false)
         }
         ForEach(exercise.sets.work) { set in
-          TrainingSetRow(key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: .work, index: set.index),
-            weight: set.weightKg, repetitions: set.reps, done: set.isDone, failure: set.toFailure, scale: .session)
+          row(exercise: exercise, date: date, templateId: templateId, kind: .work,
+            index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone,
+            failure: set.toFailure)
         }
       }
     }
@@ -164,66 +207,176 @@ struct WorkoutSessionScreen: View {
     .paperCard(radius: Radius.concentric(SetRowScale.session.radius, padding: Space.xl))
   }
 
-  private func footer(last: Int) -> some View {
-    HStack(spacing: 10) {
-      Button("anterior", systemImage: "chevron.left") {
-        withAnimation(grow) { index = max(0, index - 1) }
+  private func meta(_ exercise: DashboardExercise) -> some View {
+    HStack(spacing: Space.s) {
+      Text("\(exercise.prescription.workSets) séries valendo")
+      if exercise.prescription.workToFailure {
+        Text("·")
+        Text("última à falha")
       }
-      .labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.large)
-      .disabled(index == 0)
-      Button {
-        if index >= last { dismiss() } else { withAnimation(grow) { index += 1 } }
+      Spacer(minLength: 0)
+      Menu {
+        Picker("descanso", selection: restBinding(exercise.id)) {
+          ForEach(restOptions, id: \.self) { seconds in
+            Text(clock(seconds)).tag(seconds)
+          }
+        }
       } label: {
-        Label(index >= last ? "encerrar treino" : "próximo exercício",
-          systemImage: index >= last ? "flag.checkered" : "arrow.right")
-          .frame(maxWidth: .infinity)
+        Label(
+          "descanso \(clock(restSeconds[exercise.id] ?? defaultRestSeconds))",
+          systemImage: "timer")
+          .font(.caption).monospacedDigit()
+          .padding(.horizontal, 10).padding(.vertical, 6)
+          .background(Color.surfaceMuted, in: .capsule)
       }
-      .buttonStyle(.glassProminent).tint(accent.deep).foregroundStyle(.white).controlSize(.large)
-      .accessibilityIdentifier("sessao.proximo")
+      .buttonStyle(.plain).foregroundStyle(Color.ink)
+      .accessibilityIdentifier("sessao.descanso.\(exercise.id)")
     }
-    .padding(.horizontal, 16).padding(.bottom, 10)
+    .font(.footnote).foregroundStyle(Color.mutedInk)
+  }
+
+  private var header: some View {
+    HStack(spacing: 8) {
+      Text("#").frame(width: 22)
+      Text("anterior").frame(width: 72, alignment: .leading)
+      Spacer()
+      Text("kg e reps")
+    }
+    .font(.caption2).foregroundStyle(Color.mutedInk)
+    .accessibilityHidden(true)
+  }
+
+  @ViewBuilder
+  private func row(
+    exercise: DashboardExercise, date: CalendarDate, templateId: String, kind: SetKey.Kind,
+    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool
+  ) -> some View {
+    let isNext = kind == .work && !done && exercise.sets.work.first(where: { !$0.isDone })?.index == index
+    HStack(spacing: 8) {
+      Text(kind == .prep ? "A" : "\(index)")
+        .font(.caption.weight(isNext ? .semibold : .regular))
+        .foregroundStyle(kind == .prep ? Color.orange : Color.ink)
+        .frame(width: 22)
+      Text(kind == .prep ? "aquecimento" : previousLabel(exercise.previous, index: index) ?? "estreia")
+        .font(.caption).monospacedDigit()
+        .foregroundStyle(Color.mutedInk)
+        .lineLimit(1).minimumScaleFactor(0.75)
+        .frame(width: 72, alignment: .leading)
+      TrainingSetRow(
+        key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: kind, index: index),
+        weight: weight, repetitions: reps, done: done, failure: failure, scale: .session,
+        showsIndex: false)
+    }
+    .padding(.vertical, 2).padding(.horizontal, isNext ? 6 : 0)
+    // A próxima série ganha o fundo. Com a mão no peso, achar a linha certa não
+    // pode depender de contar de cima para baixo.
+    .background(isNext ? Color.surfaceMuted : .clear, in: .rect(cornerRadius: SetRowScale.session.radius))
+  }
+
+  private var restOptions: [TimeInterval] { [30, 45, 60, 75, 90, 120, 150, 180, 240, 300] }
+
+  private func restBinding(_ exerciseId: String) -> Binding<TimeInterval> {
+    Binding(
+      get: { restSeconds[exerciseId] ?? defaultRestSeconds },
+      set: { restSeconds[exerciseId] = $0 })
+  }
+
+  private func clock(_ seconds: TimeInterval) -> String {
+    let total = Int(seconds)
+    return String(format: "%d:%02d", total / 60, total % 60)
   }
 
   /// O descanso nasce da série marcada, e a duração é a do exercício: um agachamento
   /// pesado não pede a mesma pausa que uma rosca.
+  /// Qual exercício está aberto. `open` guarda só a escolha explícita, e o resto sai do
+  /// treino a cada pintura: amarrar isso a `onAppear` deixava a lista toda fechada
+  /// quando o painel ainda não tinha chegado na primeira vez que a tela apareceu.
+  private func openExercise(in workout: WorkoutSummary) -> String? {
+    if let open, workout.exercises.contains(where: { $0.id == open }) { return open }
+    return workout.exercises[safe: firstOpenExercise(in: workout)]?.id
+  }
+
   private func startRest(workout: WorkoutSummary) -> RestState {
-    let id = workout.exercises.indices.contains(index) ? workout.exercises[index].id : ""
-    let seconds = restSeconds[id] ?? defaultRestSeconds
+    let id = openExercise(in: workout)
+    let index = workout.exercises.firstIndex { $0.id == id } ?? 0
+    let seconds = restSeconds[id ?? ""] ?? defaultRestSeconds
     return RestState(total: seconds, endsAt: .now + seconds, next: NextSet(from: index, in: workout))
   }
 
   private func adjustRest(by delta: TimeInterval) {
     guard let current = rest else { return }
     let total = min(600, max(15, current.total + delta))
-    if let exercises = store.dashboard?.workout?.exercises, exercises.indices.contains(index) {
-      restSeconds[exercises[index].id] = total
+    if let id = store.dashboard?.workout.flatMap({ openExercise(in: $0) }) {
+      restSeconds[id] = total
     }
     rest = RestState(total: total, endsAt: max(.now, current.endsAt + delta), next: current.next)
   }
 }
 
-private struct WorkoutSessionClock: View {
-  let timing: WorkoutSessionTiming
+extension Array {
+  subscript(safe index: Int) -> Element? {
+    indices.contains(index) ? self[index] : nil
+  }
+}
+
+/// O relógio do treino, com o ponto que pulsa enquanto a sessão está aberta. Um
+/// treino encerrado mostra o tempo parado, sem o ponto.
+private struct SessionClock: View {
+  @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let timing: WorkoutSessionTiming?
+  let name: String
 
   var body: some View {
-    if timing.finishedAt == nil {
+    if let timing, timing.finishedAt == nil {
       TimelineView(.periodic(from: .now, by: 1)) { context in
-        readout(at: context.date)
+        readout(at: context.date, timing: timing, live: true)
       }
+    } else if let timing {
+      readout(at: .now, timing: timing, live: false)
     } else {
-      readout(at: .now)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(name.lowercased()).font(.headline.weight(.semibold))
+        Text("nenhuma série marcada ainda").font(.caption2).foregroundStyle(Color.mutedInk)
+      }
     }
   }
 
-  private func readout(at now: Date) -> some View {
+  private func readout(at now: Date, timing: WorkoutSessionTiming, live: Bool) -> some View {
     let seconds = Int(timing.elapsed(at: now))
     let time = Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600
       ? .hourMinuteSecond : .minuteSecond(padMinuteToLength: 2)))
-    return Text("tempo \(time)")
-      .font(.subheadline.weight(.medium)).monospacedDigit()
-      .foregroundStyle(Color.ink)
-      .accessibilityLabel("tempo de treino")
-      .accessibilityValue(time)
-      .accessibilityIdentifier("sessao.tempo")
+    let start = timing.startedAt.formatted(.dateTime.hour().minute())
+    return VStack(alignment: .leading, spacing: 1) {
+      HStack(spacing: 7) {
+        if live {
+          Circle().fill(accent.signal).frame(width: 8, height: 8)
+            .modifier(Pulse(active: !reduceMotion))
+        }
+        Text(time)
+          .font(.system(size: 28, weight: .semibold)).monospacedDigit().tracking(-1.2)
+      }
+      Text("\(name.lowercased()) · começou \(start)")
+        .font(.caption2).foregroundStyle(Color.mutedInk).lineLimit(1)
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("tempo de treino")
+    .accessibilityValue(time)
+    .accessibilityIdentifier("sessao.tempo")
+  }
+}
+
+/// O batimento do ponto verde. Dois segundos por ciclo, que é devagar o bastante
+/// para ler como "está rodando" e não como um alerta.
+private struct Pulse: ViewModifier {
+  let active: Bool
+  @State private var on = false
+
+  func body(content: Content) -> some View {
+    content
+      .opacity(active && on ? 0.35 : 1)
+      .scaleEffect(active && on ? 0.8 : 1)
+      .animation(active ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : nil, value: on)
+      .onAppear { on = active }
   }
 }

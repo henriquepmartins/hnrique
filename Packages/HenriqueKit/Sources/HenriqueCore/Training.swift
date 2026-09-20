@@ -92,10 +92,12 @@ public struct WorkoutSessionTiming: Equatable, Sendable {
   public let startedAt: Date
   public let finishedAt: Date?
 
+  /// O treino começa na primeira série marcada, de aquecimento ou valendo. Contar só
+  /// pelo aquecimento deixava sem relógio quem pula o aquecimento e vai direto ao peso.
   public init?(_ workout: WorkoutSummary) {
-    let prepDates = workout.exercises.flatMap { $0.sets.prep.map(\.completedAt) }
-    guard let startedAt = prepDates.compactMap({ $0 }).min() else { return nil }
-    let dates = prepDates + workout.exercises.flatMap { $0.sets.work.map(\.completedAt) }
+    let dates = workout.exercises.flatMap { $0.sets.prep.map(\.completedAt) }
+      + workout.exercises.flatMap { $0.sets.work.map(\.completedAt) }
+    guard let startedAt = dates.compactMap({ $0 }).min() else { return nil }
     self.startedAt = startedAt
     finishedAt = dates.allSatisfy { $0 != nil } ? dates.compactMap { $0 }.max() : nil
   }
@@ -366,6 +368,7 @@ public struct Dashboard: Codable, Hashable, Sendable {
   /// de mostrar zero, que leria como "você não treinou".
   public var muscleLoad: [MuscleLoad]?
   public var volume: VolumeSummary?
+  public var records: [PersonalRecord]?
   public var onboardingCompleted: Bool
 }
 
