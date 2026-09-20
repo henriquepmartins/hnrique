@@ -351,6 +351,113 @@ final class FluxoDrive: XCTestCase {
       "voltou para a tela de hoje com a marca da sessão")
   }
 
+  /// Abre a sessão pelo hero e devolve o botão de fechar, que é o sinal de que
+  /// ela está na tela.
+  @discardableResult
+  func openSession() -> XCUIElement {
+    let start = app.buttons.matching(
+      NSPredicate(format: "label IN {'começar', 'continuar'}")).firstMatch
+    XCTAssert(start.waitForExistence(timeout: 8), "hero mostra o botão do treino")
+    start.tap()
+    let close = app.buttons["sessao.fechar"]
+    XCTAssert(close.waitForExistence(timeout: 5), "sessão abriu")
+    return close
+  }
+
+  /// Rola até o elemento ficar tocável. O exercício aberto ocupa a tela, então o
+  /// que vem abaixo dele começa fora da dobra.
+  func scrollTo(_ element: XCUIElement) {
+    for _ in 0..<8 where !element.isHittable { app.swipeUp() }
+    XCTAssert(element.isHittable, "\(element.identifier) chegou à tela")
+  }
+
+  /// Quantas linhas valendo o exercício aberto desenha.
+  func workRowCount(exerciseId: String) -> Int {
+    app.buttons.matching(NSPredicate(format:
+      "identifier CONTAINS %@ AND identifier CONTAINS '.work.' AND identifier ENDSWITH '.completion'",
+      ".\(exerciseId).")).count
+  }
+
+  /// Mais uma série, menos uma série, e a anotação que sobrevive a fechar e
+  /// reabrir a sessão. Volta a contagem ao que era para os outros testes.
+  func testSessaoSeriesENota() {
+    launch()
+    ensureWorkoutToday()
+    let close = openSession()
+
+    let add = app.buttons.matching(
+      NSPredicate(format: "identifier BEGINSWITH 'sessao.adicionar-serie.'")).firstMatch
+    XCTAssert(add.waitForExistence(timeout: 5), "o exercício aberto tem o botão de mais série")
+    let exerciseId = add.identifier.replacingOccurrences(of: "sessao.adicionar-serie.", with: "")
+    scrollTo(add)
+    let antes = workRowCount(exerciseId: exerciseId)
+    add.tap()
+    let remove = app.buttons["sessao.remover-serie.\(exerciseId)"]
+    XCTAssert(remove.waitForExistence(timeout: 5), "com a série nova em aberto aparece o botão de tirar")
+    XCTAssertEqual(workRowCount(exerciseId: exerciseId), antes + 1, "a lista ganhou uma linha valendo")
+    shot("53-sessao-mais-serie")
+
+    remove.tap()
+    expectation(
+      for: NSPredicate(format: "count == %d", antes),
+      evaluatedWith: app.buttons.matching(NSPredicate(format:
+        "identifier CONTAINS %@ AND identifier CONTAINS '.work.' AND identifier ENDSWITH '.completion'",
+        ".\(exerciseId).")))
+    waitForExpectations(timeout: 5)
+
+    let note = app.textFields["sessao.nota.\(exerciseId)"]
+    XCTAssert(note.waitForExistence(timeout: 3), "o cartão aberto tem o campo de anotação")
+    scrollTo(note)
+    let texto = "pegada mais aberta \(Int(Date().timeIntervalSince1970) % 1000)"
+    replaceText(note, with: texto)
+    dismissKeyboard()
+    shot("54-sessao-nota")
+
+    close.tap()
+    XCTAssert(close.waitForNonExistence(timeout: 5), "sessão fechou")
+    openSession()
+    let saved = app.textFields["sessao.nota.\(exerciseId)"]
+    XCTAssert(saved.waitForExistence(timeout: 5), "a sessão reabriu no mesmo exercício")
+    XCTAssertEqual(saved.value as? String, texto, "a anotação voltou do servidor")
+  }
+
+  /// Um exercício só de hoje: entra pelo catálogo, ganha a marca e sai pelo
+  /// menu dela. Sai sem série feita, então o servidor aceita tirar.
+  func testSessaoExercicioSoHoje() {
+    launch()
+    ensureWorkoutToday()
+    openSession()
+
+    let add = app.buttons["sessao.adicionar-exercicio"]
+    XCTAssert(add.waitForExistence(timeout: 5), "a lista termina no botão de mais exercício")
+    scrollTo(add)
+    add.tap()
+    let search = app.textFields["sessao.buscar-exercicio"]
+    XCTAssert(search.waitForExistence(timeout: 5), "o catálogo abriu com a busca")
+    let candidate = app.buttons.matching(
+      NSPredicate(format: "label BEGINSWITH 'Adicionar '")).firstMatch
+    XCTAssert(candidate.waitForExistence(timeout: 5), "o catálogo tem exercício fora do treino")
+    let name = String(candidate.label.dropFirst("Adicionar ".count))
+    search.tap()
+    search.typeText(String(name.prefix(4)))
+    XCTAssert(candidate.waitForExistence(timeout: 3), "a busca por nome mantém o exercício")
+    shot("55-sessao-catalogo")
+    candidate.tap()
+    XCTAssert(search.waitForNonExistence(timeout: 5), "escolher fecha o catálogo")
+
+    let chip = app.buttons.matching(
+      NSPredicate(format: "identifier BEGINSWITH 'sessao.so-hoje.'")).firstMatch
+    XCTAssert(chip.waitForExistence(timeout: 8), "o exercício novo abriu com a marca de só hoje")
+    shot("56-sessao-so-hoje")
+    let exerciseId = chip.identifier.replacingOccurrences(of: "sessao.so-hoje.", with: "")
+    chip.tap()
+    let remove = app.buttons["sessao.remover-exercicio.\(exerciseId)"]
+    XCTAssert(remove.waitForExistence(timeout: 3), "a marca abre o menu com tirar de hoje")
+    remove.tap()
+    XCTAssert(chip.waitForNonExistence(timeout: 8), "tirar de hoje some com o exercício")
+    XCTAssertFalse(app.buttons["sessao.exercicio.\(exerciseId)"].exists, "e ele não fica recolhido na lista")
+  }
+
   /// Continuar tem que reabrir no exercício em aberto, não no começo. Roda por
   /// último porque termina um exercício inteiro, e os outros testes contam
   /// treinos e séries do mesmo banco.
