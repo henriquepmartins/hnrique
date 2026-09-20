@@ -132,4 +132,38 @@ struct LimitsTests {
     #expect(APIClient.serverMessage(from: Data(#"{"error":"nope"}"#.utf8)) == "nope")
     #expect(APIClient.serverMessage(from: Data("não é json".utf8)) == "servidor recusou")
   }
+
+  @Test("a contagem de séries fica na faixa do tipo: 0 a 6 no aquecimento, 1 a 10 valendo")
+  func setCountClamps() {
+    let prep = SetCountInput(date: Self.date, workoutTemplateId: "t", exerciseId: "e", kind: .prep, count: 9)
+    #expect(prep.count == 6)
+    let noPrep = SetCountInput(date: Self.date, workoutTemplateId: "t", exerciseId: "e", kind: .prep, count: -1)
+    #expect(noPrep.count == 0)
+    let work = SetCountInput(date: Self.date, workoutTemplateId: "t", exerciseId: "e", kind: .work, count: 40)
+    #expect(work.count == 10)
+    let noWork = SetCountInput(date: Self.date, workoutTemplateId: "t", exerciseId: "e", kind: .work, count: 0)
+    #expect(noWork.count == 1)
+  }
+
+  @Test("o exercício acrescentado corta as contagens e deixa nulo o que não veio")
+  func addSessionExerciseClamps() {
+    let above = AddSessionExerciseInput(
+      date: Self.date, workoutTemplateId: "t", exerciseId: "e", prepSets: 9, workSets: 40)
+    #expect(above.prepSets == 6)
+    #expect(above.workSets == 10)
+    let empty = AddSessionExerciseInput(date: Self.date, workoutTemplateId: "t", exerciseId: "e")
+    #expect(empty.prepSets == nil)
+    #expect(empty.workSets == nil)
+  }
+
+  @Test("a anotação corta em 500 e o vazio vira nulo")
+  func exerciseNoteClamps() {
+    let long = SetExerciseNoteInput(
+      date: Self.date, workoutTemplateId: "t", exerciseId: "e", note: String(repeating: "n", count: 800))
+    #expect(long.note?.count == 500)
+    let blank = SetExerciseNoteInput(date: Self.date, workoutTemplateId: "t", exerciseId: "e", note: "   \n")
+    #expect(blank.note == nil)
+    let none = SetExerciseNoteInput(date: Self.date, workoutTemplateId: "t", exerciseId: "e", note: nil)
+    #expect(none.note == nil)
+  }
 }

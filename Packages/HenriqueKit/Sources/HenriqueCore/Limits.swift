@@ -40,6 +40,10 @@ public enum Limits {
 
   // goal/set-streak: index.ts:82-86
   public static let streakTarget = 2...365
+
+  // workout/set-count e workout/add-exercise usam `prepSets` e `workSets`.
+  // workout/set-note: o texto vazio vira nulo antes de sair.
+  public static let exerciseNoteLength = 0...500
 }
 
 extension Comparable {

@@ -175,3 +175,86 @@ public struct DeleteWorkoutInput: Hashable, Sendable, Encodable {
     self.workoutTemplateId = workoutTemplateId
   }
 }
+
+/// O tipo de série na sobreposição da sessão. O nome do caso é o que vai no
+/// corpo, igual ao `kind` do record-set.
+public enum SetKind: String, Hashable, Sendable, Codable {
+  case prep, work
+}
+
+public struct SetCountInput: Hashable, Sendable, Encodable {
+  public var date: CalendarDate
+  public var workoutTemplateId: String
+  public var exerciseId: String
+  public var kind: SetKind
+  public var count: Int
+
+  public init(date: CalendarDate, workoutTemplateId: String, exerciseId: String, kind: SetKind, count: Int) {
+    self.date = date
+    self.workoutTemplateId = workoutTemplateId
+    self.exerciseId = exerciseId
+    self.kind = kind
+    self.count = count.clamped(to: kind == .prep ? Limits.prepSets : Limits.workSets)
+  }
+}
+
+public struct AddSessionExerciseInput: Hashable, Sendable, Encodable {
+  public var date: CalendarDate
+  public var workoutTemplateId: String
+  public var exerciseId: String
+  /// Nulos deixam o servidor escolher a contagem padrão.
+  public var prepSets: Int?
+  public var workSets: Int?
+
+  public init(
+    date: CalendarDate, workoutTemplateId: String, exerciseId: String, prepSets: Int? = nil,
+    workSets: Int? = nil
+  ) {
+    self.date = date
+    self.workoutTemplateId = workoutTemplateId
+    self.exerciseId = exerciseId
+    self.prepSets = prepSets?.clamped(to: Limits.prepSets)
+    self.workSets = workSets?.clamped(to: Limits.workSets)
+  }
+}
+
+public struct RemoveSessionExerciseInput: Hashable, Sendable, Encodable {
+  public var date: CalendarDate
+  public var workoutTemplateId: String
+  public var exerciseId: String
+
+  public init(date: CalendarDate, workoutTemplateId: String, exerciseId: String) {
+    self.date = date
+    self.workoutTemplateId = workoutTemplateId
+    self.exerciseId = exerciseId
+  }
+}
+
+public struct SetExerciseNoteInput: Hashable, Sendable, Encodable {
+  public var date: CalendarDate
+  public var workoutTemplateId: String
+  public var exerciseId: String
+  /// Nulo apaga a anotação. O servidor faz o mesmo com o texto vazio, então o
+  /// `init` já manda nulo e a tela não precisa distinguir os dois.
+  public var note: String?
+
+  public init(date: CalendarDate, workoutTemplateId: String, exerciseId: String, note: String?) {
+    self.date = date
+    self.workoutTemplateId = workoutTemplateId
+    self.exerciseId = exerciseId
+    let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    self.note = trimmed.isEmpty ? nil : trimmed.cut(to: Limits.exerciseNoteLength)
+  }
+
+  private enum CodingKeys: String, CodingKey { case date, workoutTemplateId, exerciseId, note }
+
+  /// O nulo tem de ir no corpo, porque a chave ausente e a chave nula são coisas
+  /// diferentes para quem apaga a anotação.
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(date, forKey: .date)
+    try container.encode(workoutTemplateId, forKey: .workoutTemplateId)
+    try container.encode(exerciseId, forKey: .exerciseId)
+    try container.encode(note, forKey: .note)
+  }
+}

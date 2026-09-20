@@ -62,6 +62,11 @@ public struct PreviousWorkSets: Codable, Hashable, Sendable {
   public var volumeKg: Double
 }
 
+/// De onde o exercício veio: do plano ou acrescentado só para a sessão de hoje.
+public enum ExerciseOrigin: String, Codable, Hashable, Sendable {
+  case plano, sessao
+}
+
 public struct DashboardExercise: Codable, Hashable, Sendable, Identifiable {
   public var id: String
   public var name: String
@@ -72,8 +77,12 @@ public struct DashboardExercise: Codable, Hashable, Sendable, Identifiable {
   public var prescription: ExercisePrescription
   public var previous: PreviousWorkSets?
   public var sets: ExerciseSets
+  /// Nulos no servidor antigo, que não guarda a sobreposição da sessão.
+  public var note: String?
+  public var origin: ExerciseOrigin?
 
   public var isComplete: Bool { sets.completedWorkCount >= prescription.workSets }
+  public var isFromSession: Bool { origin == .sessao }
 }
 
 public struct WorkoutSummary: Codable, Hashable, Sendable, Identifiable {

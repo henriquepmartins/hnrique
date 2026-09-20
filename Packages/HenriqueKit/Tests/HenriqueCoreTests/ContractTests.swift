@@ -64,6 +64,54 @@ struct ContractTests {
     #expect(exercises[1].previous == nil)
   }
 
+  @Test("o exercício sem nota nem origem, do servidor antigo, decodifica com os dois nulos")
+  func oldServerExerciseHasNoOverlay() throws {
+    let exercises = try #require(Self.dashboard().workout?.exercises)
+    #expect(exercises[0].note == nil)
+    #expect(exercises[0].origin == nil)
+    #expect(!exercises[0].isFromSession)
+  }
+
+  @Test("a nota e a origem do exercício decodificam quando o servidor manda")
+  func exerciseOverlayDecodes() throws {
+    let json = """
+      {"id": "remada", "name": "Remada", "muscleGroup": "costas", "equipment": "barra", "order": 3,
+       "prescription": {"prepSets": 1, "workSets": 3, "repsMin": 8, "repsMax": 12,
+         "workToFailure": false, "startingWeightKg": 30},
+       "previous": null, "sets": {"prep": [], "work": []},
+       "note": "pegada mais aberta", "origin": "sessao"}
+      """
+    let exercise = try JSONDecoder.henrique().decode(DashboardExercise.self, from: Data(json.utf8))
+    #expect(exercise.note == "pegada mais aberta")
+    #expect(exercise.origin == .sessao)
+    #expect(exercise.isFromSession)
+    let doPlano = try JSONDecoder.henrique().decode(
+      DashboardExercise.self, from: Data(json.replacingOccurrences(of: "sessao", with: "plano").utf8))
+    #expect(doPlano.origin == .plano)
+    #expect(!doPlano.isFromSession)
+  }
+
+  @Test("a contagem de séries manda o tipo pelo nome e a contagem inteira")
+  func setCountEncodesKind() throws {
+    let input = SetCountInput(
+      date: CalendarDate(iso: "2026-09-08")!, workoutTemplateId: "t", exerciseId: "e", kind: .work, count: 4)
+    let object = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any])
+    #expect(object["kind"] as? String == "work")
+    #expect(object["count"] as? Int == 4)
+    #expect(object["date"] as? String == "2026-09-08")
+  }
+
+  @Test("apagar a anotação manda a chave note com nulo, não a omite")
+  func noteEncodesExplicitNull() throws {
+    let input = SetExerciseNoteInput(
+      date: CalendarDate(iso: "2026-09-08")!, workoutTemplateId: "t", exerciseId: "e", note: "")
+    let object = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any])
+    #expect(object.keys.contains("note"))
+    #expect(object["note"] is NSNull)
+  }
+
   @Test("as medidas opcionais viram nulo, não zero")
   func nullMeasurementsStayNil() throws {
     let measurement = try #require(Self.dashboard().measurements.first)
