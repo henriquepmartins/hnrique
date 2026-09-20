@@ -31,7 +31,8 @@ struct WorkoutSessionScreen: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var index = 0
   @State private var entered = false
-  @State private var restingSince: Date?
+  @State private var rest: RestState?
+  @State private var restSeconds: [String: TimeInterval] = [:]
 
   private static let grow = Animation.spring(response: 0.46, dampingFraction: 0.66)
   private static let settle = Animation.spring(response: 0.34, dampingFraction: 0.74)
@@ -60,25 +61,25 @@ struct WorkoutSessionScreen: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
           #endif
           .springEntrance(index: 1, shown: entered)
+          // A barra entra no fluxo, não por cima: sobreposta ela cobria a linha
+          // da série seguinte, que é justamente o que o dedo procura depois.
+          if let rest {
+            RestTimerBar(rest: rest, onAdjust: adjustRest) { self.rest = nil }
+              .padding(.horizontal, 16).padding(.bottom, Space.s)
+              .transition(.move(edge: .bottom).combined(with: .opacity))
+          }
           footer(last: last).springEntrance(index: 2, shown: entered)
         }
-        .overlay(alignment: .bottom) {
-          if let restingSince {
-            restPill(since: restingSince)
-              .padding(.bottom, 96)
-              .transition(.scale(scale: 0.8).combined(with: .opacity))
-          }
-        }
-        .animation(grow, value: restingSince)
+        .animation(grow, value: rest)
         .onChange(of: progress.done) { old, new in
-          restingSince = new > old ? .now : nil
+          rest = new > old ? startRest(workout: workout) : nil
         }
-        .onChange(of: index) { restingSince = nil }
-        .task(id: restingSince) {
-          guard restingSince != nil else { return }
-          try? await Task.sleep(for: .seconds(180))
+        .onChange(of: index) { rest = nil }
+        .task(id: rest?.endsAt) {
+          guard let endsAt = rest?.endsAt else { return }
+          try? await Task.sleep(for: .seconds(max(0, endsAt.timeIntervalSinceNow) + 6))
           guard !Task.isCancelled else { return }
-          restingSince = nil
+          rest = nil
         }
         .onAppear {
           index = firstOpenExercise(in: workout)
@@ -183,15 +184,21 @@ struct WorkoutSessionScreen: View {
     .padding(.horizontal, 16).padding(.bottom, 10)
   }
 
-  private func restPill(since: Date) -> some View {
-    HStack(spacing: 8) {
-      Image(systemName: "timer")
-      Text(timerInterval: since...since.addingTimeInterval(3600), countsDown: false).monospacedDigit()
-      Text("descansando")
+  /// O descanso nasce da série marcada, e a duração é a do exercício: um agachamento
+  /// pesado não pede a mesma pausa que uma rosca.
+  private func startRest(workout: WorkoutSummary) -> RestState {
+    let id = workout.exercises.indices.contains(index) ? workout.exercises[index].id : ""
+    let seconds = restSeconds[id] ?? defaultRestSeconds
+    return RestState(total: seconds, endsAt: .now + seconds, next: NextSet(from: index, in: workout))
+  }
+
+  private func adjustRest(by delta: TimeInterval) {
+    guard let current = rest else { return }
+    let total = min(600, max(15, current.total + delta))
+    if let exercises = store.dashboard?.workout?.exercises, exercises.indices.contains(index) {
+      restSeconds[exercises[index].id] = total
     }
-    .font(.subheadline.weight(.medium)).foregroundStyle(accent.deep)
-    .padding(.leading, 14).padding(.trailing, 16).padding(.vertical, 10)
-    .glassEffect(.regular.tint(accent.mint.opacity(0.55)), in: .capsule)
+    rest = RestState(total: total, endsAt: max(.now, current.endsAt + delta), next: current.next)
   }
 }
 

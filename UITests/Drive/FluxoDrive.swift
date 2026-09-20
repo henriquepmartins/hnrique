@@ -205,16 +205,38 @@ final class FluxoDrive: XCTestCase {
     launch()
     ensureWorkoutToday()
     app.tabBars.buttons["hoje"].tap()
-    let mes = app.buttons["mês"]
+    let mes = app.buttons["frequencia.mes"]
     XCTAssert(mes.waitForExistence(timeout: 10), "mapa de frequência apareceu")
     shot("20-hoje-mes")
-    app.buttons["ano"].tap()
-    XCTAssert(app.buttons["ano"].waitForExistence(timeout: 3), "mapa trocou para o ano")
+    app.buttons["frequencia.ano"].tap()
+    XCTAssert(app.buttons["frequencia.ano"].waitForExistence(timeout: 3), "mapa trocou para o ano")
     shot("21-hoje-ano")
     mes.tap()
     app.tabBars.buttons["treino"].tap()
     XCTAssert(app.buttons["Voltar uma semana"].waitForExistence(timeout: 10), "fita do calendário apareceu")
     shot("22-calendario-bolinha")
+  }
+
+  /// A home tem que dizer o que fazer hoje, quanto peso saiu na semana e quais
+  /// músculos ficaram sem estímulo.
+  func testHomeVolumeEMusculos() {
+    launch()
+    ensureWorkoutToday()
+    app.tabBars.buttons["hoje"].tap()
+    XCTAssert(app.buttons["hoje.abrir"].waitForExistence(timeout: 10), "cartão do dia apareceu")
+    shot("40-home-topo")
+
+    let semana = app.buttons["musculos.week"]
+    XCTAssert(semana.waitForExistence(timeout: 5), "mapa muscular apareceu")
+    app.swipeUp()
+    app.swipeUp()
+    shot("41-home-musculos")
+
+    app.buttons["musculos.month"].tap()
+    XCTAssert(
+      app.staticTexts["volume dos últimos 28 dias"].waitForExistence(timeout: 3),
+      "o mapa troca para a janela de vinte e oito dias")
+    shot("42-home-musculos-mes")
   }
 
   func testPastaAtiva() {
@@ -273,8 +295,9 @@ final class FluxoDrive: XCTestCase {
     let antes = doneCount()
     check.tap()
     XCTAssert(
-      app.staticTexts["descansando"].waitForExistence(timeout: 3),
-      "marcar série valendo começa o descanso")
+      app.staticTexts["descanso"].waitForExistence(timeout: 3)
+        && app.buttons["pular"].waitForExistence(timeout: 3),
+      "marcar série valendo começa o descanso, com a contagem e o botão de pular")
     XCTAssertEqual(doneCount(), antes + 1, "o contador da sessão subiu uma série")
     shot("51-sessao-descanso")
 
