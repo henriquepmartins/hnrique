@@ -70,7 +70,7 @@ struct NextDaysStrip: View {
         .font(.title2.weight(.medium)).monospacedDigit().tracking(-1)
         .foregroundStyle(day.isToday ? .white : Color.ink)
         .padding(.top, 1)
-      Spacer(minLength: Space.m)
+      Spacer(minLength: Space.s)
       HStack(spacing: 6) {
         Circle().fill(dot(day)).frame(width: 8, height: 8)
         Text(day.title)
@@ -87,7 +87,7 @@ struct NextDaysStrip: View {
           .padding(.top, 4)
       }
     }
-    .frame(width: 104, height: 118, alignment: .topLeading)
+    .frame(width: 104, height: 96, alignment: .topLeading)
     .padding(Space.m)
     .background(day.isToday ? AnyShapeStyle(Color.ink) : AnyShapeStyle(Color.white),
       in: .rect(cornerRadius: Radius.tile))

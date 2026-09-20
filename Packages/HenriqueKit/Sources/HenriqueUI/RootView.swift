@@ -395,7 +395,7 @@ struct OverviewScreen: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
-        GreetingHeader(date: store.selectedDate, streak: store.dashboard?.attendanceStreak ?? 0)
+        GreetingHeader(date: store.selectedDate)
         if let data = store.dashboard {
           DayCard(workout: data.workout, onWorkout: onWorkout).subtleEntrance()
           NextDaysStrip(

@@ -92,12 +92,15 @@ public struct WorkoutSessionTiming: Equatable, Sendable {
   public let startedAt: Date
   public let finishedAt: Date?
 
-  /// O treino começa na primeira série marcada, de aquecimento ou valendo. Contar só
-  /// pelo aquecimento deixava sem relógio quem pula o aquecimento e vai direto ao peso.
+  /// O aquecimento continua sendo a âncora do começo, porque é o que marca a chegada na
+  /// academia. Sem nenhum aquecimento feito, vale a primeira série valendo: antes disso
+  /// quem ia direto ao peso ficava sem relógio nenhum.
   public init?(_ workout: WorkoutSummary) {
-    let dates = workout.exercises.flatMap { $0.sets.prep.map(\.completedAt) }
-      + workout.exercises.flatMap { $0.sets.work.map(\.completedAt) }
-    guard let startedAt = dates.compactMap({ $0 }).min() else { return nil }
+    let prepDates = workout.exercises.flatMap { $0.sets.prep.map(\.completedAt) }
+    let workDates = workout.exercises.flatMap { $0.sets.work.map(\.completedAt) }
+    guard let startedAt = prepDates.compactMap({ $0 }).min()
+      ?? workDates.compactMap({ $0 }).min() else { return nil }
+    let dates = prepDates + workDates
     self.startedAt = startedAt
     finishedAt = dates.allSatisfy { $0 != nil } ? dates.compactMap { $0 }.max() : nil
   }

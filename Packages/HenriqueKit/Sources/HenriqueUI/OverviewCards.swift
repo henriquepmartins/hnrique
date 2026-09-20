@@ -1,17 +1,17 @@
 import HenriqueCore
 import SwiftUI
 
-/// Abre a tela com a hora do dia e a sequência, para o app dizer algo antes de
-/// pedir alguma coisa.
+/// Abre a tela com a hora do dia, para o app dizer algo antes de pedir alguma coisa.
+/// A sequência fica de fora porque o contador do topo já a mostra, e repetida ela
+/// gasta a linha maior da tela dizendo o que já estava dito.
 struct GreetingHeader: View {
   @Environment(\.accent) private var accent
   let date: CalendarDate
-  let streak: Int
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(dateLabel).font(.caption.weight(.medium)).foregroundStyle(accent.base)
-      Text(streak > 0 ? "\(greeting), \(streak) dias seguidos" : greeting)
+      Text(greeting)
         .font(.title.weight(.medium)).tracking(-1.2)
         .fixedSize(horizontal: false, vertical: true)
     }

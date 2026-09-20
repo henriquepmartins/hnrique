@@ -9,7 +9,8 @@ struct WorkoutSessionTimingTests {
   func startsAtFirstCompletedWarmup() throws {
     var workout = try emptyWorkout()
     workout.exercises[0].sets.work[0].completedAt = date(10)
-    #expect(WorkoutSessionTiming(workout) == nil)
+    // Sem aquecimento feito, a série valendo segura o relógio sozinha.
+    #expect(WorkoutSessionTiming(workout)?.startedAt == date(10))
     workout.exercises[0].sets.prep[0].completedAt = date(20)
 
     let timing = try #require(WorkoutSessionTiming(workout))
@@ -75,7 +76,7 @@ struct WorkoutSessionTimingTests {
     #expect(timing.elapsed(at: date(200)) == 180)
   }
 
-  @Test("sem aquecimento ou sem séries não há cronômetro")
+  @Test("sem nenhuma série marcada não há cronômetro")
   func requiresWarmup() throws {
     var workout = try emptyWorkout()
     workout.exercises[0].sets.prep[0].completedAt = date(20)
@@ -86,7 +87,8 @@ struct WorkoutSessionTimingTests {
         workout.exercises[exercise].sets.work[set].completedAt = date(100)
       }
     }
-    #expect(WorkoutSessionTiming(workout) == nil)
+    // Um treino só de séries valendo tem relógio, e ele para na última delas.
+    #expect(WorkoutSessionTiming(workout)?.startedAt == date(100))
     for exercise in workout.exercises.indices { workout.exercises[exercise].sets.work = [] }
     #expect(WorkoutSessionTiming(workout) == nil)
     workout.exercises = []
