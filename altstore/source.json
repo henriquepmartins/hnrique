@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "28",
+          "date": "2026-09-20T14:50:50-03:00",
+          "localizedDescription": "• feat: rest countdown with the next set on the session screen\n• feat: redesign the academia home around the day and the muscle map\n• feat: decode muscle load and weekly volume from the dashboard",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-28/Henrique.ipa",
+          "size": 4396436,
+          "sha256": "74edf12c9c57092d449389debece6bc62b65d66edeaf729c672ed8e4a4d893ef",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "27",
           "date": "2026-09-19T12:05:16-03:00",
           "localizedDescription": "• style: shadow-ring grade buttons, 44pt calendar chevrons, tighter covers\n• style: put Estudos and Idiomas screens on the shared primitives\n• style: put Academia screens on the spacing and radius tokens\n• style: move Estudos primitives to the shadow-ring card\n• style: add spacing and radius tokens, shadow-ring card, icon button",
