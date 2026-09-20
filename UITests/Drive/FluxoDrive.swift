@@ -371,11 +371,32 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(element.isHittable, "\(element.identifier) chegou à tela")
   }
 
-  /// Quantas linhas valendo o exercício aberto desenha.
+  /// Quantas linhas valendo o exercício aberto desenha. Conta identificador
+  /// distinto porque a árvore de acessibilidade devolve cada botão de série duas
+  /// vezes, e contar elemento daria o dobro.
   func workRowCount(exerciseId: String) -> Int {
-    app.buttons.matching(NSPredicate(format:
+    let rows = app.buttons.matching(NSPredicate(format:
       "identifier CONTAINS %@ AND identifier CONTAINS '.work.' AND identifier ENDSWITH '.completion'",
-      ".\(exerciseId).")).count
+      ".\(exerciseId)."))
+    return Set((0..<rows.count).map { rows.element(boundBy: $0).identifier }).count
+  }
+
+  /// A contagem vem do servidor, então ela muda uma volta depois do toque.
+  func waitForWorkRowCount(exerciseId: String, equals expected: Int, timeout: TimeInterval = 5) {
+    let limit = Date().addingTimeInterval(timeout)
+    while Date() < limit && workRowCount(exerciseId: exerciseId) != expected {
+      _ = app.buttons.firstMatch.waitForExistence(timeout: 0.25)
+    }
+    XCTAssertEqual(
+      workRowCount(exerciseId: exerciseId), expected, "a lista voltou a \(expected) linhas valendo")
+  }
+
+  /// O campo de anotação aceita mais de uma linha, e aí o iOS ora o publica como
+  /// campo de texto, ora como área de texto.
+  func noteField(exerciseId: String) -> XCUIElement {
+    let id = "sessao.nota.\(exerciseId)"
+    let field = app.textFields[id]
+    return field.exists ? field : app.textViews[id]
   }
 
   /// Mais uma série, menos uma série, e a anotação que sobrevive a fechar e
@@ -398,14 +419,9 @@ final class FluxoDrive: XCTestCase {
     shot("53-sessao-mais-serie")
 
     remove.tap()
-    expectation(
-      for: NSPredicate(format: "count == %d", antes),
-      evaluatedWith: app.buttons.matching(NSPredicate(format:
-        "identifier CONTAINS %@ AND identifier CONTAINS '.work.' AND identifier ENDSWITH '.completion'",
-        ".\(exerciseId).")))
-    waitForExpectations(timeout: 5)
+    waitForWorkRowCount(exerciseId: exerciseId, equals: antes)
 
-    let note = app.textFields["sessao.nota.\(exerciseId)"]
+    let note = noteField(exerciseId: exerciseId)
     XCTAssert(note.waitForExistence(timeout: 3), "o cartão aberto tem o campo de anotação")
     scrollTo(note)
     let texto = "pegada mais aberta \(Int(Date().timeIntervalSince1970) % 1000)"
@@ -416,7 +432,7 @@ final class FluxoDrive: XCTestCase {
     close.tap()
     XCTAssert(close.waitForNonExistence(timeout: 5), "sessão fechou")
     openSession()
-    let saved = app.textFields["sessao.nota.\(exerciseId)"]
+    let saved = noteField(exerciseId: exerciseId)
     XCTAssert(saved.waitForExistence(timeout: 5), "a sessão reabriu no mesmo exercício")
     XCTAssertEqual(saved.value as? String, texto, "a anotação voltou do servidor")
   }
@@ -434,10 +450,12 @@ final class FluxoDrive: XCTestCase {
     add.tap()
     let search = app.textFields["sessao.buscar-exercicio"]
     XCTAssert(search.waitForExistence(timeout: 5), "o catálogo abriu com a busca")
+    // A linha é um botão, e o SwiftUI funde o rótulo dos filhos nele, então
+    // "Adicionar <nome>" fica no meio do rótulo e não no começo.
     let candidate = app.buttons.matching(
-      NSPredicate(format: "label BEGINSWITH 'Adicionar '")).firstMatch
+      NSPredicate(format: "label CONTAINS 'Adicionar '")).firstMatch
     XCTAssert(candidate.waitForExistence(timeout: 5), "o catálogo tem exercício fora do treino")
-    let name = String(candidate.label.dropFirst("Adicionar ".count))
+    let name = String(candidate.label.components(separatedBy: "Adicionar ")[1])
     search.tap()
     search.typeText(String(name.prefix(4)))
     XCTAssert(candidate.waitForExistence(timeout: 3), "a busca por nome mantém o exercício")

@@ -61,6 +61,18 @@ struct WorkoutSessionScreen: View {
   private var settle: Animation? { reduceMotion ? nil : Self.settle }
 
   var body: some View {
+    // A tela abre em tela cheia, e sem uma pilha de navegação o iOS não desenha a
+    // barra de teclado. Sem ela o teclado numérico da carga não tinha como fechar,
+    // porque ele não tem tecla de retorno. A barra de navegação fica escondida.
+    NavigationStack {
+      screen
+        #if os(iOS)
+        .toolbar(.hidden, for: .navigationBar)
+        #endif
+    }
+  }
+
+  private var screen: some View {
     ZStack {
       Color.canvas.ignoresSafeArea()
       if let data = store.dashboard, let workout = data.workout {
@@ -343,6 +355,9 @@ struct WorkoutSessionScreen: View {
       .background(Color.surfaceMuted, in: .rect(cornerRadius: Radius.field))
       .accessibilityLabel("anotação")
       .accessibilityIdentifier("sessao.nota.\(exercise.id)")
+      // Num campo de mais de uma linha o retorno quebra linha em vez de encerrar,
+      // então sem a barra a anotação prende o teclado aberto.
+      .keyboardDone()
   }
 
   private func noteBinding(_ exercise: DashboardExercise) -> Binding<String> {
