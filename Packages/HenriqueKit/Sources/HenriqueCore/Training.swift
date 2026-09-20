@@ -362,6 +362,10 @@ public struct Dashboard: Codable, Hashable, Sendable {
   public var progress: [ProgressPoint]
   public var measurements: [BodyMeasurement]
   public var projection: Projection?
+  /// Nulos no servidor antigo. O mapa muscular e o cartão de volume somem em vez
+  /// de mostrar zero, que leria como "você não treinou".
+  public var muscleLoad: [MuscleLoad]?
+  public var volume: VolumeSummary?
   public var onboardingCompleted: Bool
 }
 

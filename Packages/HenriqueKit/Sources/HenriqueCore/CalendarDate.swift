@@ -50,6 +50,10 @@ public struct CalendarDate: Hashable, Sendable, Comparable, Codable {
 
   /// Segunda é 1 e domingo é 0, igual ao `getUTCDay` que a API usa para casar
   /// o dia da semana com o modelo de treino.
+  public func daysSince(_ other: CalendarDate, in calendar: Calendar = .autoupdatingCurrent) -> Int {
+    calendar.dateComponents([.day], from: other.date(in: calendar), to: date(in: calendar)).day ?? 0
+  }
+
   public func weekday(in calendar: Calendar = .autoupdatingCurrent) -> Int {
     calendar.component(.weekday, from: date(in: calendar)) - 1
   }
