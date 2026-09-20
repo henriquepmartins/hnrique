@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "29",
+          "date": "2026-09-20T16:32:46-03:00",
+          "localizedDescription": "• feat: the session as a scrollable list, and a home that says what comes next",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-29/Henrique.ipa",
+          "size": 4496646,
+          "sha256": "8c620fed690bc8b88eccae91e147687b6ad057efced6e645e828b78445c2c5e6",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "28",
           "date": "2026-09-20T14:50:50-03:00",
           "localizedDescription": "• feat: rest countdown with the next set on the session screen\n• feat: redesign the academia home around the day and the muscle map\n• feat: decode muscle load and weekly volume from the dashboard",
