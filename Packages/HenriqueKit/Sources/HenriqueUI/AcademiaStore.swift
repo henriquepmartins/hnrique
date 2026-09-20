@@ -412,6 +412,26 @@ public final class AcademiaStore {
     await apply { try await self.client.saveWorkout(input) }
   }
 
+  @discardableResult
+  public func setCount(_ input: SetCountInput) async -> Bool {
+    await apply { try await self.client.setCount(input) }
+  }
+
+  @discardableResult
+  public func addExercise(_ input: AddSessionExerciseInput) async -> Bool {
+    await apply { try await self.client.addExercise(input) }
+  }
+
+  @discardableResult
+  public func removeExercise(_ input: RemoveSessionExerciseInput) async -> Bool {
+    await apply { try await self.client.removeExercise(input) }
+  }
+
+  @discardableResult
+  public func setNote(_ input: SetExerciseNoteInput) async -> Bool {
+    await apply { try await self.client.setNote(input) }
+  }
+
   /// O plano sem os treinos que estão sendo apagados. O card some no toque, sem
   /// esperar o servidor apagar as sessões e recalcular o painel.
   public var weekPlan: [WeekPlanItem] {

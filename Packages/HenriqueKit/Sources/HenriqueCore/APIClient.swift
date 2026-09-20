@@ -22,6 +22,10 @@ public enum Route: String, Sendable {
   case completeOnboarding = "/api/v1/onboarding/complete"
   case dashboard = "/api/v1/dashboard/get"
   case recordSet = "/api/v1/workout/record-set"
+  case setCount = "/api/v1/workout/set-count"
+  case addExercise = "/api/v1/workout/add-exercise"
+  case removeExercise = "/api/v1/workout/remove-exercise"
+  case setNote = "/api/v1/workout/set-note"
   case saveWorkout = "/api/v1/plan/save-workout"
   case deleteWorkout = "/api/v1/plan/delete-workout"
   case setStrengthGoal = "/api/v1/goal/set-strength"
@@ -108,6 +112,22 @@ public actor APIClient {
 
   public func recordSet(_ input: RecordSetInput) async throws -> Dashboard {
     try await call(.recordSet, body: input)
+  }
+
+  public func setCount(_ input: SetCountInput) async throws -> Dashboard {
+    try await call(.setCount, body: input)
+  }
+
+  public func addExercise(_ input: AddSessionExerciseInput) async throws -> Dashboard {
+    try await call(.addExercise, body: input)
+  }
+
+  public func removeExercise(_ input: RemoveSessionExerciseInput) async throws -> Dashboard {
+    try await call(.removeExercise, body: input)
+  }
+
+  public func setNote(_ input: SetExerciseNoteInput) async throws -> Dashboard {
+    try await call(.setNote, body: input)
   }
 
   public func saveWorkout(_ input: SaveWorkoutInput) async throws -> Dashboard {
