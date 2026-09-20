@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "30",
+          "date": "2026-09-20T16:48:02-03:00",
+          "localizedDescription": "• fix: a clock for whoever skips the warm-up, and tighter day cards",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-30/Henrique.ipa",
+          "size": 4496416,
+          "sha256": "369d2c4cc2b04d5291d1accaa719d06ede009a299629bbc7457084e8709f2164",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "29",
           "date": "2026-09-20T16:32:46-03:00",
           "localizedDescription": "• feat: the session as a scrollable list, and a home that says what comes next",
