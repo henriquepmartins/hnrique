@@ -392,10 +392,17 @@ struct OverviewScreen: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
+        GreetingHeader(date: store.selectedDate, streak: store.dashboard?.attendanceStreak ?? 0)
+        if let data = store.dashboard {
+          DayCard(workout: data.workout, onWorkout: onWorkout).subtleEntrance()
+        }
         AttendanceMap(attendance: store.attendance) { from, to in
           await store.loadAttendance(from: from, to: to)
         }
         if let data = store.dashboard {
+          if let volume = data.volume {
+            WeeklyVolumeCard(volume: volume).subtleEntrance()
+          }
           VStack(alignment: .leading, spacing: 10) {
             Text("\(data.consistencyPercent)%").font(.system(size: 48, weight: .medium)).monospacedDigit()
             Text("constância, 4 semanas").font(.subheadline)
@@ -403,18 +410,9 @@ struct OverviewScreen: View {
           .foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
           .padding(Space.xl).background(accent.deep, in: .rect(cornerRadius: Radius.card))
           .subtleEntrance()
-          HStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 10) {
-              Text(data.workout?.name.lowercased() ?? "descanso").font(.title2.weight(.medium))
-              if let focus = data.workout?.focus {
-                Text(focus).font(.subheadline).foregroundStyle(Color.mutedInk)
-              }
-            }
-            Spacer(minLength: 0)
-            Button("Abrir treino", systemImage: "arrow.right", action: onWorkout)
-              .labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.large)
-          }.padding(Space.xl).paperCard()
-            .subtleEntrance()
+          if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {
+            MuscleMap(load: load, today: data.date).subtleEntrance()
+          }
         }
       }.padding(Space.l).padding(.bottom, Space.page)
     }

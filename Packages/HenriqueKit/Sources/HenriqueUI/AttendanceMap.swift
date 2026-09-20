@@ -77,8 +77,8 @@ private struct AttendanceHeader: View {
       IconButton(title: "Próximo período", systemImage: "chevron.right", glass: true) { period = period.next }
         .disabled(nextIsFuture)
       Picker("Escala", selection: scope) {
-        Text("mês").tag(AttendanceScope.month)
-        Text("ano").tag(AttendanceScope.year)
+        Text("mês").tag(AttendanceScope.month).accessibilityIdentifier("frequencia.mes")
+        Text("ano").tag(AttendanceScope.year).accessibilityIdentifier("frequencia.ano")
       }
       .pickerStyle(.segmented).labelsHidden().frame(width: 112)
     }
