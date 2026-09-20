@@ -49,6 +49,11 @@ struct WorkoutSessionScreen: View {
   @State private var entered = false
   @State private var rest: RestState?
   @State private var restSeconds: [String: TimeInterval] = [:]
+  @State private var adding = false
+  /// O texto em edição por exercício. Só existe enquanto o campo está sendo
+  /// digitado; salvo, a fonte volta a ser o painel.
+  @State private var noteDrafts: [String: String] = [:]
+  @FocusState private var noteFocus: String?
 
   private static let grow = Animation.spring(response: 0.46, dampingFraction: 0.66)
   private static let settle = Animation.spring(response: 0.34, dampingFraction: 0.74)
@@ -72,6 +77,7 @@ struct WorkoutSessionScreen: View {
                   collapsed(exercise: exercise)
                 }
               }
+              addExerciseButton
             }
             .padding(.horizontal, Space.l).padding(.top, Space.s).padding(.bottom, Space.page)
           }
@@ -97,6 +103,21 @@ struct WorkoutSessionScreen: View {
           rest = nil
         }
         .onAppear { entered = true }
+        .onChange(of: noteFocus) { old, _ in
+          guard let old, let exercise = workout.exercises.first(where: { $0.id == old }) else { return }
+          saveNote(exercise: exercise, date: data.date, templateId: workout.id)
+        }
+        .sheet(isPresented: $adding) {
+          SessionExercisePicker(
+            catalog: data.exerciseCatalog, chosen: Set(workout.exercises.map(\.id))
+          ) { item in
+            Task {
+              await store.addExercise(
+                .init(date: data.date, workoutTemplateId: workout.id, exerciseId: item.id))
+              open = item.id
+            }
+          }
+        }
       }
     }
     .task { if store.dashboard?.workout == nil { dismiss() } }
@@ -180,10 +201,15 @@ struct WorkoutSessionScreen: View {
 
   private func card(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
     VStack(alignment: .leading, spacing: Space.l) {
-      Text(exercise.muscleGroup.lowercased())
-        .font(.caption2.weight(.medium)).foregroundStyle(accent.base)
-        .padding(.horizontal, 9).padding(.vertical, 4)
-        .background(accent.base.opacity(0.12), in: .capsule)
+      HStack(spacing: Space.s) {
+        Text(exercise.muscleGroup.lowercased())
+          .font(.caption2.weight(.medium)).foregroundStyle(accent.base)
+          .padding(.horizontal, 9).padding(.vertical, 4)
+          .background(accent.base.opacity(0.12), in: .capsule)
+        if exercise.isFromSession {
+          onlyTodayChip(exercise: exercise, date: date, templateId: templateId)
+        }
+      }
       Text(exercise.name.lowercased())
         .font(.system(size: 30, weight: .medium)).tracking(-1.3)
         .fixedSize(horizontal: false, vertical: true)
@@ -199,7 +225,9 @@ struct WorkoutSessionScreen: View {
             index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone,
             failure: set.toFailure)
         }
+        setCountRow(exercise: exercise, date: date, templateId: templateId)
       }
+      noteField(exercise: exercise, date: date, templateId: templateId)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(Space.xl)
@@ -271,6 +299,100 @@ struct WorkoutSessionScreen: View {
     // A próxima série ganha o fundo. Com a mão no peso, achar a linha certa não
     // pode depender de contar de cima para baixo.
     .background(isNext ? Color.surfaceMuted : .clear, in: .rect(cornerRadius: SetRowScale.session.radius))
+  }
+
+  /// Mais ou menos uma série valendo. Tirar só aparece enquanto a última ainda
+  /// está em aberto: o servidor não esconde série feita, então o botão sumir é
+  /// mais honesto do que pedir e receber a mesma contagem de volta.
+  private func setCountRow(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
+    let count = exercise.sets.work.count
+    let canRemove = count > Limits.workSets.lowerBound && exercise.sets.work.last?.isDone == false
+    return HStack(spacing: Space.s) {
+      Button("+ série") {
+        Task { await store.setCount(.init(date: date, workoutTemplateId: templateId,
+          exerciseId: exercise.id, kind: .work, count: count + 1)) }
+      }
+      .disabled(count >= Limits.workSets.upperBound)
+      .accessibilityIdentifier("sessao.adicionar-serie.\(exercise.id)")
+      if canRemove {
+        Button("− série") {
+          Task { await store.setCount(.init(date: date, workoutTemplateId: templateId,
+            exerciseId: exercise.id, kind: .work, count: count - 1)) }
+        }
+        .accessibilityIdentifier("sessao.remover-serie.\(exercise.id)")
+      }
+      Spacer(minLength: 0)
+    }
+    .font(.footnote.weight(.medium)).foregroundStyle(Color.ink)
+    .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
+    .tint(Color.ink.opacity(0.7))
+    .padding(.top, Space.xs)
+  }
+
+  private func noteField(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
+    TextField("anotação para esse exercício", text: noteBinding(exercise), axis: .vertical)
+      .lineLimit(1...2)
+      .font(.footnote).foregroundStyle(Color.ink)
+      .focused($noteFocus, equals: exercise.id)
+      .submitLabel(.done)
+      .onSubmit { noteFocus = nil }
+      #if os(iOS)
+      .textInputAutocapitalization(.never)
+      #endif
+      .padding(.horizontal, Space.m).padding(.vertical, Space.s)
+      .background(Color.surfaceMuted, in: .rect(cornerRadius: Radius.field))
+      .accessibilityLabel("anotação")
+      .accessibilityIdentifier("sessao.nota.\(exercise.id)")
+  }
+
+  private func noteBinding(_ exercise: DashboardExercise) -> Binding<String> {
+    Binding(
+      get: { noteDrafts[exercise.id] ?? exercise.note ?? "" },
+      set: { noteDrafts[exercise.id] = $0 })
+  }
+
+  private func saveNote(exercise: DashboardExercise, date: CalendarDate, templateId: String) {
+    guard let draft = noteDrafts.removeValue(forKey: exercise.id) else { return }
+    let input = SetExerciseNoteInput(
+      date: date, workoutTemplateId: templateId, exerciseId: exercise.id, note: draft)
+    guard input.note != exercise.note else { return }
+    Task { await store.setNote(input) }
+  }
+
+  /// A marca de "só hoje" é também o menu para tirar o exercício. O servidor
+  /// recusa se já houver série feita, e a recusa chega pelo banner da store.
+  private func onlyTodayChip(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
+    Menu {
+      Button("tirar de hoje", systemImage: "minus.circle", role: .destructive) {
+        Task {
+          await store.removeExercise(
+            .init(date: date, workoutTemplateId: templateId, exerciseId: exercise.id))
+        }
+      }
+      .accessibilityIdentifier("sessao.remover-exercicio.\(exercise.id)")
+    } label: {
+      Label("só hoje", systemImage: "chevron.down")
+        .labelStyle(.titleAndIcon)
+        .font(.caption2.weight(.medium)).foregroundStyle(Color.mutedInk)
+        .padding(.horizontal, 9).padding(.vertical, 4)
+        .background(Color.surfaceMuted, in: .capsule)
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("sessao.so-hoje.\(exercise.id)")
+  }
+
+  private var addExerciseButton: some View {
+    Button {
+      adding = true
+    } label: {
+      Text("+ exercício")
+        .font(.callout.weight(.medium)).foregroundStyle(Color.ink)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.m)
+        .background(Color.surfaceMuted, in: .rect(cornerRadius: Radius.tile))
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("sessao.adicionar-exercicio")
   }
 
   private var restOptions: [TimeInterval] { [30, 45, 60, 75, 90, 120, 150, 180, 240, 300] }

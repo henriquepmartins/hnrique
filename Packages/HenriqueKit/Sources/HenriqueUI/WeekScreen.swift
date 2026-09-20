@@ -601,7 +601,8 @@ private struct MuscleChip: View {
   }
 }
 
-private struct ExercisePickerRow: View {  let item: ExerciseCatalogItem
+struct ExercisePickerRow: View {
+  let item: ExerciseCatalogItem
   let picked: Bool
   let action: () -> Void
 
