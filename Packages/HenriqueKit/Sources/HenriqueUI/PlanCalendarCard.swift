@@ -7,6 +7,10 @@ import SwiftUI
 struct PlanCalendarCard: View {
   @Environment(\.locale) private var locale
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @AppStorage("planCalendar.hasSeenMarkerEntrance") private var hasSeenMarkerEntrance = false
+  @State private var paintProgress = 0.0
+  @State private var isPainting = false
+  @State private var hasLoadedAttendance = false
   @State private var period: AttendancePeriod = .month(containing: .today)
   @State private var calendarGrid: PlanCalendar
   let attendance: [CalendarDate: AttendanceDay]
@@ -40,7 +44,9 @@ struct PlanCalendarCard: View {
         // uma grade 10pt por cima da outra deixava as duas legíveis ao mesmo
         // tempo, com os números de dois meses sobrepostos. `blurReplace` é a
         // troca que o sistema usa para conteúdo que muda no lugar.
-        PlanMonthGrid(grid: calendarGrid, workoutsById: workoutsById)
+        PlanMonthGrid(
+          grid: calendarGrid, workoutsById: workoutsById,
+          paintProgress: reduceMotion || (hasSeenMarkerEntrance && !isPainting) ? 1 : paintProgress)
           .id(period)
           .transition(.blurReplace)
       }
@@ -48,12 +54,52 @@ struct PlanCalendarCard: View {
       PlanLegend()
     }
     .padding(Space.xl).paperCard()
-    .onChange(of: period) { rebuild() }
-    .onChange(of: attendance, initial: true) { rebuild() }
-    .onChange(of: weekPlan) { rebuild() }
+    .onChange(of: period) {
+      finishPainting()
+      rebuild()
+    }
+    .onChange(of: attendance, initial: true) {
+      rebuild()
+      if hasLoadedAttendance { startPainting() }
+    }
+    .onChange(of: weekPlan) {
+      rebuild()
+      if hasLoadedAttendance { startPainting() }
+    }
+    .onDisappear { if isPainting { finishPainting() } }
+    .onChange(of: reduceMotion) { if reduceMotion { finishPainting() } }
     .task(id: period) {
       let range = period.range()
       await load(range.lowerBound, range.upperBound)
+      guard !Task.isCancelled else { return }
+      hasLoadedAttendance = true
+      startPainting()
+    }
+  }
+
+  private func startPainting() {
+    guard !hasSeenMarkerEntrance, !isPainting else { return }
+    guard calendarGrid.weeks.contains(where: { $0.cells.contains { $0.mark != .none } }) else { return }
+    guard !reduceMotion else {
+      finishPainting()
+      return
+    }
+    isPainting = true
+    hasSeenMarkerEntrance = true
+    withAnimation(.linear(duration: 0.9)) {
+      paintProgress = 1
+    } completion: {
+      isPainting = false
+    }
+  }
+
+  private func finishPainting() {
+    var transaction = Transaction(animation: nil)
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      paintProgress = 1
+      isPainting = false
+      hasSeenMarkerEntrance = true
     }
   }
 
@@ -77,6 +123,7 @@ private struct PlanMonthGrid: View {
   @Environment(\.locale) private var locale
   let grid: PlanCalendar
   let workoutsById: [String: WeekPlanItem]
+  let paintProgress: Double
 
   private var weekdayInitials: [(weekday: Int, initial: String)] {
     var calendar = Calendar.autoupdatingCurrent
@@ -99,7 +146,7 @@ private struct PlanMonthGrid: View {
       ForEach(grid.weeks) { week in
         HStack(spacing: 4) {
           ForEach(week.cells) { cell in
-            DayCell(cell: cell, workoutsById: workoutsById)
+            DayCell(cell: cell, workoutsById: workoutsById, paintProgress: paintProgress)
               .aspectRatio(1, contentMode: .fit).frame(maxWidth: .infinity)
           }
         }
@@ -113,6 +160,7 @@ private struct DayCell: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let cell: PlanCalendar.Cell
   let workoutsById: [String: WeekPlanItem]
+  let paintProgress: Double
   private let radius: CGFloat = 8
 
   private var workout: WeekPlanItem? {
@@ -130,7 +178,14 @@ private struct DayCell: View {
 
   var body: some View {
     if let date = cell.date {
-      background
+      RoundedRectangle(cornerRadius: radius)
+        .fill(Color.ink.opacity(0.04))
+        .overlay {
+          background
+            .mask {
+              PlanMarkerMask(progress: paintProgress, day: cell.slot.day)
+            }
+        }
         // A frequência chega depois da rede, e sem isto a casa saltava do cinza
         // para a cor do treino no quadro em que a resposta volta. Só a cor
         // atravessa, para a grade não mudar de forma no meio da entrada.
@@ -145,7 +200,6 @@ private struct DayCell: View {
         }
         .accessibilityElement()
         .accessibilityLabel(label(for: date))
-        .subtleEntrance()
     } else {
       Color.clear.accessibilityHidden(true)
     }
@@ -155,7 +209,7 @@ private struct DayCell: View {
     let shape = RoundedRectangle(cornerRadius: radius)
     switch cell.mark {
     case .none:
-      shape.fill(Color.ink.opacity(0.04))
+      shape.fill(.clear)
     case .done:
       shape.fill(workout?.tone.top ?? Color.ink.opacity(0.18))
     case .planned:
@@ -198,6 +252,37 @@ private struct DayCell: View {
     case .planned: return "\(day), planejado" + (workout.map { ", \($0.name)" } ?? "")
     case .missed: return "\(day), planejado, não treinou"
     }
+  }
+}
+
+/// Cinco passadas sobrepostas revelam a cor sem mover o texto ou a grade.
+@Animatable
+struct PlanMarkerMask: Shape {
+  var progress: Double
+  @AnimatableIgnored var day: Int
+
+  func path(in rect: CGRect) -> Path {
+    let delay = Double(max(0, min(day - 1, 30))) / 30 * 0.64
+    let local = max(0, min(1, (progress - delay) / 0.36))
+    guard local > 0 else { return Path() }
+    guard local < 1 else { return Path(rect) }
+    let eased = 1 - pow(1 - local, 1.35)
+    let slant = day.isMultiple(of: 2) ? 0.035 : -0.035
+    var stroke = Path()
+    for pass in 0..<5 {
+      let y = rect.minY + rect.height * (0.06 + Double(pass) * 0.22)
+      let startX = rect.minX - rect.width * 0.12
+      let endX = rect.maxX + rect.width * 0.12
+      let forward = pass.isMultiple(of: 2)
+      let start = CGPoint(x: forward ? startX : endX, y: y + rect.height * slant)
+      let end = CGPoint(x: forward ? endX : startX, y: y - rect.height * slant)
+      if pass == 0 { stroke.move(to: start) } else { stroke.addLine(to: start) }
+      stroke.addQuadCurve(
+        to: end,
+        control: CGPoint(x: rect.midX, y: y + rect.height * (forward ? -0.025 : 0.025)))
+    }
+    return stroke.trimmedPath(from: 0, to: eased)
+      .strokedPath(StrokeStyle(lineWidth: rect.height * 0.32, lineCap: .round, lineJoin: .round))
   }
 }
 
