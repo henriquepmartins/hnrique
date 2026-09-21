@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "32",
+          "date": "2026-09-21T09:14:51-03:00",
+          "localizedDescription": "• feat: rework the home around the design board and move presence to progress",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-32/Henrique.ipa",
+          "size": 4618676,
+          "sha256": "cfdfbe6fb66ef111887e82c61e319b74fdc8bb8e4270fac6ffb543f89220aade",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "31",
           "date": "2026-09-20T18:24:45-03:00",
           "localizedDescription": "• fix(session): a keyboard bar inside the workout, and steadier UI drives\n• test(ui): drive the session set count, note and one-day exercise flows\n• feat(session): add and remove sets, notes and one-day exercises in the workout screen\n• feat(api): set-count, add-exercise, remove-exercise and set-note routes\n• feat(core): session overlay fields on exercises and the four workout inputs",
