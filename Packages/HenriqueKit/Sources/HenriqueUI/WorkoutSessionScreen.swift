@@ -45,6 +45,8 @@ struct WorkoutSessionScreen: View {
   @Environment(\.accent) private var accent
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .title) private var nameSize = 27.0
+  @ScaledMetric(relativeTo: .body) private var collapsedNameSize = 17.0
   @State private var open: String?
   @State private var entered = false
   @State private var rest: RestState?
@@ -55,10 +57,8 @@ struct WorkoutSessionScreen: View {
   @State private var noteDrafts: [String: String] = [:]
   @FocusState private var noteFocus: String?
 
-  private static let grow = Animation.spring(response: 0.46, dampingFraction: 0.66)
-  private static let settle = Animation.spring(response: 0.34, dampingFraction: 0.74)
-  private var grow: Animation? { reduceMotion ? nil : Self.grow }
-  private var settle: Animation? { reduceMotion ? nil : Self.settle }
+  private var hairline: Color { Color.ink.opacity(0.08) }
+  private var glide: Animation? { reduceMotion ? nil : Motion.glide }
 
   var body: some View {
     // A tela abre em tela cheia, e sem uma pilha de navegação o iOS não desenha a
@@ -78,33 +78,38 @@ struct WorkoutSessionScreen: View {
       if let data = store.dashboard, let workout = data.workout {
         let progress = SessionProgress(workout)
         let openId = openExercise(in: workout)
-        VStack(spacing: 0) {
-          top(workout: workout, progress: progress).revealEntrance(index: 0, shown: entered)
-          ScrollView {
-            LazyVStack(spacing: Space.m) {
-              ForEach(workout.exercises) { exercise in
-                if openId == exercise.id {
-                  card(exercise: exercise, date: data.date, templateId: workout.id)
-                } else {
-                  collapsed(exercise: exercise)
-                }
+        ScrollView {
+          LazyVStack(spacing: Space.m) {
+            ForEach(workout.exercises) { exercise in
+              if openId == exercise.id {
+                card(exercise: exercise, date: data.date, templateId: workout.id)
+                  .transition(.opacity)
+              } else {
+                collapsed(exercise: exercise)
+                  .transition(.opacity)
               }
-              addExerciseButton
             }
-            .padding(.horizontal, Space.l).padding(.top, Space.s).padding(.bottom, Space.page)
+            addExerciseButton
           }
-          .scrollDismissesKeyboard(.interactively)
-          .revealEntrance(index: 1, shown: entered)
-          // A barra entra no fluxo, não por cima: sobreposta ela cobria a linha
-          // da série seguinte, que é justamente o que o dedo procura depois.
+          .padding(.horizontal, Space.l).padding(.top, Space.l)
+          // A barra de descanso flutua sobre a lista, então o fim dela ganha o
+          // respiro que a barra cobre, e a linha seguinte continua alcançável.
+          .padding(.bottom, rest == nil ? Space.page : 230)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .top, spacing: 0) {
+          top(workout: workout, progress: progress).revealEntrance(index: 0, shown: entered)
+        }
+        .overlay(alignment: .bottom) {
           if let rest {
             RestTimerBar(rest: rest, onAdjust: adjustRest) { self.rest = nil }
-              .padding(.horizontal, 16).padding(.bottom, Space.s)
+              .padding(.horizontal, 12).padding(.bottom, 12)
               .transition(.move(edge: .bottom).combined(with: .opacity))
           }
         }
-        .animation(grow, value: rest)
-        .animation(grow, value: openId)
+        .revealEntrance(index: 1, shown: entered)
+        .animation(glide, value: rest == nil)
+        .animation(reduceMotion ? nil : Motion.subtleEntrance, value: openId)
         .onChange(of: progress.done) { old, new in
           rest = new > old ? startRest(workout: workout) : nil
         }
@@ -136,43 +141,68 @@ struct WorkoutSessionScreen: View {
   }
 
   private func top(workout: WorkoutSummary, progress: SessionProgress) -> some View {
-    VStack(spacing: Space.m) {
+    VStack(spacing: 14) {
       HStack(spacing: Space.m) {
-        Button("fechar", systemImage: "chevron.down") { dismiss() }
-          .labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.large)
-          .accessibilityIdentifier("sessao.fechar")
-        VStack(alignment: .leading, spacing: 1) {
-          SessionClock(timing: WorkoutSessionTiming(workout), name: workout.name)
+        Button { dismiss() } label: {
+          Image(systemName: "chevron.down")
+            .font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.ink)
+            .frame(width: 40, height: 40)
+            .background(.white, in: .circle)
+            .overlay(Circle().strokeBorder(hairline))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        Button("encerrar") { dismiss() }
-          .buttonStyle(.glass).controlSize(.regular)
-          .accessibilityIdentifier("sessao.encerrar")
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel("fechar")
+        .accessibilityIdentifier("sessao.fechar")
+        SessionClock(timing: WorkoutSessionTiming(workout), name: workout.name)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        Button { dismiss() } label: {
+          Text("encerrar")
+            .font(.system(size: 14, weight: .medium)).foregroundStyle(Color.ink)
+            .padding(.vertical, 11).padding(.horizontal, 16)
+            .background(.white, in: .capsule)
+            .overlay(Capsule().strokeBorder(hairline))
+        }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityIdentifier("sessao.encerrar")
       }
       VStack(spacing: 6) {
-        HStack {
-          Text("\(progress.done)").contentTransition(.numericText(value: Double(progress.done)))
+        HStack(spacing: 0) {
+          Text("\(progress.done)")
+            .contentTransition(.numericText(value: Double(progress.done)))
+            .animation(reduceMotion ? nil : Motion.roll, value: progress.done)
+          Text(" ")
           Text("de \(progress.total) séries")
           Spacer()
-          Text("\(progress.volumeKg.formatted(.number.precision(.fractionLength(0)))) kg até agora")
+          Text(progress.volumeKg.formatted(.number.precision(.fractionLength(0))))
+            .contentTransition(.numericText(value: progress.volumeKg))
+            .animation(reduceMotion ? nil : Motion.roll, value: progress.volumeKg)
+          Text(" kg até agora")
         }
-        .font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(Color.mutedInk)
+        .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Color.mutedInk)
         GeometryReader { geo in
-          Capsule().fill(Color.ink.opacity(0.07))
+          Capsule().fill(Color.surfaceMuted)
             .overlay(alignment: .leading) {
               Capsule().fill(accent.signal)
                 // Zero séries é barra vazia. A ponta mínima existe para uma
                 // série feita não sumir, não para fingir progresso que não há.
                 .frame(width: progress.done == 0 ? 0 : max(6, geo.size.width * progress.fraction))
+                .animation(glide, value: progress.done)
             }
         }
         .frame(height: 8)
       }
-      .animation(settle, value: progress.done)
     }
-    .padding(.horizontal, Space.l).padding(.top, Space.s).padding(.bottom, Space.m)
-    .background(Color.canvas.opacity(0.94))
-    .overlay(alignment: .bottom) { Divider().opacity(0.5) }
+    .padding(.top, 4).padding(.horizontal, 16).padding(.bottom, 12)
+    .background {
+      // A versão possível do `backdrop-filter: blur(20px)` do board. O material
+      // desfoca o que rola por baixo e a tinta do papel devolve a cor.
+      ZStack {
+        Rectangle().fill(.ultraThinMaterial)
+        Color.canvas.opacity(0.86)
+      }
+      .ignoresSafeArea(edges: .top)
+    }
+    .overlay(alignment: .bottom) { Divider() }
   }
 
   /// O exercício fechado. Diz o que falta nele sem abrir, que é o que decide se o
@@ -181,22 +211,25 @@ struct WorkoutSessionScreen: View {
     Button {
       open = exercise.id
     } label: {
-      HStack(spacing: Space.m) {
+      HStack(spacing: 14) {
+        // O board pinta a barra com a cor do treino. O modelo não tem cor por
+        // exercício, então ela continua dizendo só se o exercício acabou.
         Capsule().fill(exercise.isComplete ? accent.base : Color.ink.opacity(0.12))
           .frame(width: 4, height: 36)
         VStack(alignment: .leading, spacing: 2) {
           Text(exercise.name.lowercased())
-            .font(.callout.weight(.medium)).foregroundStyle(Color.ink).lineLimit(1)
+            .font(.system(size: collapsedNameSize, weight: .medium)).tracking(collapsedNameSize * -0.015)
+            .foregroundStyle(Color.ink).lineLimit(1)
           Text(subtitle(exercise))
-            .font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk).lineLimit(1)
+            .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk).lineLimit(1)
         }
         Spacer(minLength: Space.s)
         Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
-          .font(.caption).monospacedDigit().foregroundStyle(Color.mutedInk)
+          .font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.mutedInk)
           .padding(.horizontal, 10).padding(.vertical, 5)
           .background(Color.surfaceMuted, in: .capsule)
       }
-      .padding(.horizontal, Space.l).padding(.vertical, Space.m)
+      .padding(.horizontal, 18).padding(.vertical, 16)
       .frame(maxWidth: .infinity, alignment: .leading)
       .paperCard(radius: Radius.tile)
       .contentShape(.rect)
@@ -212,22 +245,23 @@ struct WorkoutSessionScreen: View {
   }
 
   private func card(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
-    VStack(alignment: .leading, spacing: Space.l) {
+    VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: Space.s) {
         Text(exercise.muscleGroup.lowercased())
-          .font(.caption2.weight(.medium)).foregroundStyle(accent.base)
-          .padding(.horizontal, 9).padding(.vertical, 4)
-          .background(accent.base.opacity(0.12), in: .capsule)
+          .font(.system(size: 12, weight: .medium)).foregroundStyle(accent.deep)
+          .padding(.horizontal, 11).padding(.vertical, 5)
+          .background(accent.pale, in: .capsule)
         if exercise.isFromSession {
           onlyTodayChip(exercise: exercise, date: date, templateId: templateId)
         }
       }
       Text(exercise.name.lowercased())
-        .font(.system(size: 30, weight: .medium)).tracking(-1.3)
+        .font(.system(size: nameSize, weight: .semibold)).tracking(nameSize * -0.045)
         .fixedSize(horizontal: false, vertical: true)
-      meta(exercise)
-      VStack(spacing: Space.s) {
-        header
+        .padding(.top, 12)
+      meta(exercise).padding(.top, 8)
+      header.padding(.top, 18).padding(.bottom, 8)
+      VStack(spacing: 2) {
         ForEach(exercise.sets.prep) { set in
           row(exercise: exercise, date: date, templateId: templateId, kind: .prep,
             index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone, failure: false)
@@ -237,127 +271,144 @@ struct WorkoutSessionScreen: View {
             index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone,
             failure: set.toFailure)
         }
-        setCountRow(exercise: exercise, date: date, templateId: templateId)
       }
-      noteField(exercise: exercise, date: date, templateId: templateId)
+      setCountRow(exercise: exercise, date: date, templateId: templateId).padding(.top, 10)
+      noteField(exercise: exercise, date: date, templateId: templateId).padding(.top, 12)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(Space.xl)
-    // As linhas de série da sessão têm raio 20 a 20 de respiro.
-    .paperCard(radius: Radius.concentric(SetRowScale.session.radius, padding: Space.xl))
+    .padding(20)
+    // Sem `Radius.concentric` aqui. As linhas de série não são ladrilhos
+    // embutidos, são fatias rentes à coluna de texto, então o raio de fora não
+    // sai do de dentro.
+    .paperCard(radius: 28)
   }
 
+  /// O botão de descanso segue a meta na mesma linha. Em tela estreita a linha
+  /// quebra em duas em vez de cortar.
   private func meta(_ exercise: DashboardExercise) -> some View {
-    HStack(spacing: Space.s) {
-      Text("\(exercise.prescription.workSets) séries valendo")
-      if exercise.prescription.workToFailure {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 8) {
+        metaText(exercise)
         Text("·")
-        Text("última à falha")
+        restPicker(exercise)
       }
-      Spacer(minLength: 0)
-      Menu {
-        Picker("descanso", selection: restBinding(exercise.id)) {
-          ForEach(restOptions, id: \.self) { seconds in
-            Text(clock(seconds)).tag(seconds)
-          }
-        }
-      } label: {
-        Label(
-          "descanso \(clock(restSeconds[exercise.id] ?? defaultRestSeconds))",
-          systemImage: "timer")
-          .font(.caption).monospacedDigit()
-          .padding(.horizontal, 10).padding(.vertical, 6)
-          .background(Color.surfaceMuted, in: .capsule)
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) { metaText(exercise) }
+        restPicker(exercise)
       }
-      .buttonStyle(.plain).foregroundStyle(Color.ink)
-      .accessibilityIdentifier("sessao.descanso.\(exercise.id)")
     }
-    .font(.footnote).foregroundStyle(Color.mutedInk)
-  }
-
-  private var header: some View {
-    HStack(spacing: 8) {
-      Text("#").frame(width: 22)
-      Text("anterior").frame(width: 72, alignment: .leading)
-      Spacer()
-      Text("kg e reps")
-    }
-    .font(.caption2).foregroundStyle(Color.mutedInk)
-    .accessibilityHidden(true)
+    .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk)
   }
 
   @ViewBuilder
+  private func metaText(_ exercise: DashboardExercise) -> some View {
+    Text("\(exercise.prescription.workSets) séries valendo")
+    if exercise.prescription.workToFailure {
+      Text("·")
+      Text("última à falha")
+    }
+  }
+
+  private func restPicker(_ exercise: DashboardExercise) -> some View {
+    Menu {
+      Picker("descanso", selection: restBinding(exercise.id)) {
+        ForEach(restOptions, id: \.self) { seconds in
+          Text(clock(seconds)).tag(seconds)
+        }
+      }
+    } label: {
+      HStack(spacing: 5) {
+        Image(systemName: "clock").font(.system(size: 12))
+        Text("descanso \(clock(restSeconds[exercise.id] ?? defaultRestSeconds))")
+      }
+      .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Color.ink)
+      .padding(.horizontal, 11).padding(.vertical, 5)
+      .background(Color.surfaceMuted, in: .capsule)
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("sessao.descanso.\(exercise.id)")
+  }
+
+  /// As mesmas cinco colunas da linha, com as mesmas larguras, para o título
+  /// cair em cima do que nomeia.
+  private var header: some View {
+    HStack(spacing: 8) {
+      Text("#").frame(width: 30)
+      Text("anterior").frame(maxWidth: .infinity, alignment: .leading)
+      Text("kg").frame(minWidth: 56, maxWidth: 66)
+      Text("reps").frame(minWidth: 56, maxWidth: 66)
+      Color.clear.frame(width: SetRowScale.session.check, height: 1)
+    }
+    .padding(.horizontal, 2)
+    .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.mutedInk)
+    .accessibilityHidden(true)
+  }
+
   private func row(
     exercise: DashboardExercise, date: CalendarDate, templateId: String, kind: SetKey.Kind,
     index: Int, weight: Double, reps: Int, done: Bool, failure: Bool
   ) -> some View {
     let isNext = kind == .work && !done && exercise.sets.work.first(where: { !$0.isDone })?.index == index
-    HStack(spacing: 8) {
-      Text(kind == .prep ? "A" : "\(index)")
-        .font(.caption.weight(isNext ? .semibold : .regular))
-        .foregroundStyle(kind == .prep ? Color.orange : Color.ink)
-        .frame(width: 22)
-      Text(kind == .prep ? "aquecimento" : previousLabel(exercise.previous, index: index) ?? "estreia")
-        .font(.caption).monospacedDigit()
-        .foregroundStyle(Color.mutedInk)
-        .lineLimit(1).minimumScaleFactor(0.75)
-        .frame(width: 72, alignment: .leading)
-      TrainingSetRow(
-        key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: kind, index: index),
-        weight: weight, repetitions: reps, done: done, failure: failure, scale: .session,
-        showsIndex: false)
-    }
-    .padding(.vertical, 2).padding(.horizontal, isNext ? 6 : 0)
-    // A próxima série ganha o fundo. Com a mão no peso, achar a linha certa não
-    // pode depender de contar de cima para baixo.
-    .background(isNext ? Color.surfaceMuted : .clear, in: .rect(cornerRadius: SetRowScale.session.radius))
+    return TrainingSetRow(
+      key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: kind, index: index),
+      weight: weight, repetitions: reps, done: done, failure: failure, scale: .session,
+      isNext: isNext, previous: previousLabel(exercise.previous, index: index))
   }
 
   /// Mais ou menos uma série valendo. Tirar só aparece enquanto a última ainda
-  /// está em aberto: o servidor não esconde série feita, então o botão sumir é
-  /// mais honesto do que pedir e receber a mesma contagem de volta.
+  /// está em aberto, porque o servidor não esconde série feita, e o botão sumir
+  /// é mais honesto do que pedir e receber a mesma contagem de volta.
   private func setCountRow(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
     let count = exercise.sets.work.count
     let canRemove = count > Limits.workSets.lowerBound && exercise.sets.work.last?.isDone == false
     return HStack(spacing: Space.s) {
-      Button("+ série") {
+      ghostButton("+ adicionar série", color: accent.base) {
         Task { await store.setCount(.init(date: date, workoutTemplateId: templateId,
           exerciseId: exercise.id, kind: .work, count: count + 1)) }
       }
       .disabled(count >= Limits.workSets.upperBound)
       .accessibilityIdentifier("sessao.adicionar-serie.\(exercise.id)")
       if canRemove {
-        Button("− série") {
+        ghostButton("− série", color: Color.mutedInk) {
           Task { await store.setCount(.init(date: date, workoutTemplateId: templateId,
             exerciseId: exercise.id, kind: .work, count: count - 1)) }
         }
         .accessibilityIdentifier("sessao.remover-serie.\(exercise.id)")
       }
-      Spacer(minLength: 0)
     }
-    .font(.footnote.weight(.medium)).foregroundStyle(Color.ink)
-    .buttonStyle(.bordered).buttonBorderShape(.capsule).controlSize(.small)
-    .tint(Color.ink.opacity(0.7))
-    .padding(.top, Space.xs)
+  }
+
+  private func ghostButton(_ title: String, color: Color, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Text(title)
+        .font(.system(size: 14.5, weight: .medium)).foregroundStyle(color)
+        .frame(maxWidth: .infinity)
+        .padding(11)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(hairline))
+    }
+    .buttonStyle(PressScaleStyle())
   }
 
   private func noteField(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
-    TextField("anotação para esse exercício", text: noteBinding(exercise), axis: .vertical)
-      .lineLimit(1...2)
-      .font(.footnote).foregroundStyle(Color.ink)
-      .focused($noteFocus, equals: exercise.id)
-      .submitLabel(.done)
-      .onSubmit { noteFocus = nil }
-      #if os(iOS)
-      .textInputAutocapitalization(.never)
-      #endif
-      .padding(.horizontal, Space.m).padding(.vertical, Space.s)
-      .background(Color.surfaceMuted, in: .rect(cornerRadius: Radius.field))
-      .accessibilityLabel("anotação")
-      .accessibilityIdentifier("sessao.nota.\(exercise.id)")
-      // Num campo de mais de uma linha o retorno quebra linha em vez de encerrar,
-      // então sem a barra a anotação prende o teclado aberto.
-      .keyboardDone()
+    HStack(alignment: .top, spacing: 9) {
+      Image(systemName: "text.alignleft")
+        .font(.system(size: 15)).foregroundStyle(Color.mutedInk)
+        .padding(.top, 2)
+      TextField("anotação", text: noteBinding(exercise), axis: .vertical)
+        .lineLimit(1...2)
+        .font(.system(size: 13.5)).foregroundStyle(Color.mutedInk)
+        .focused($noteFocus, equals: exercise.id)
+        .submitLabel(.done)
+        .onSubmit { noteFocus = nil }
+        #if os(iOS)
+        .textInputAutocapitalization(.never)
+        #endif
+        .accessibilityLabel("anotação")
+        .accessibilityIdentifier("sessao.nota.\(exercise.id)")
+        // Num campo de mais de uma linha o retorno quebra linha em vez de encerrar,
+        // então sem a barra a anotação prende o teclado aberto.
+        .keyboardDone()
+    }
   }
 
   private func noteBinding(_ exercise: DashboardExercise) -> Binding<String> {
@@ -388,8 +439,8 @@ struct WorkoutSessionScreen: View {
     } label: {
       Label("só hoje", systemImage: "chevron.down")
         .labelStyle(.titleAndIcon)
-        .font(.caption2.weight(.medium)).foregroundStyle(Color.mutedInk)
-        .padding(.horizontal, 9).padding(.vertical, 4)
+        .font(.system(size: 12, weight: .medium)).foregroundStyle(Color.mutedInk)
+        .padding(.horizontal, 11).padding(.vertical, 5)
         .background(Color.surfaceMuted, in: .capsule)
     }
     .buttonStyle(.plain)
@@ -400,13 +451,13 @@ struct WorkoutSessionScreen: View {
     Button {
       adding = true
     } label: {
-      Text("+ exercício")
-        .font(.callout.weight(.medium)).foregroundStyle(Color.ink)
+      Text("+ adicionar exercício")
+        .font(.system(size: 15)).foregroundStyle(Color.mutedInk)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, Space.m)
-        .background(Color.surfaceMuted, in: .rect(cornerRadius: Radius.tile))
+        .padding(16)
+        .overlay(RoundedRectangle(cornerRadius: Radius.row).strokeBorder(hairline))
     }
-    .buttonStyle(.plain)
+    .buttonStyle(PressScaleStyle())
     .accessibilityIdentifier("sessao.adicionar-exercicio")
   }
 
@@ -423,8 +474,6 @@ struct WorkoutSessionScreen: View {
     return String(format: "%d:%02d", total / 60, total % 60)
   }
 
-  /// O descanso nasce da série marcada, e a duração é a do exercício: um agachamento
-  /// pesado não pede a mesma pausa que uma rosca.
   /// Qual exercício está aberto. `open` guarda só a escolha explícita, e o resto sai do
   /// treino a cada pintura: amarrar isso a `onAppear` deixava a lista toda fechada
   /// quando o painel ainda não tinha chegado na primeira vez que a tela apareceu.
@@ -433,6 +482,8 @@ struct WorkoutSessionScreen: View {
     return workout.exercises[safe: firstOpenExercise(in: workout)]?.id
   }
 
+  /// O descanso nasce da série marcada, e a duração é a do exercício, porque um
+  /// agachamento pesado não pede a mesma pausa que uma rosca.
   private func startRest(workout: WorkoutSummary) -> RestState {
     let id = openExercise(in: workout)
     let index = workout.exercises.firstIndex { $0.id == id } ?? 0
@@ -461,6 +512,7 @@ extension Array {
 private struct SessionClock: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .largeTitle) private var clockSize = 30.0
   let timing: WorkoutSessionTiming?
   let name: String
 
@@ -474,7 +526,7 @@ private struct SessionClock: View {
     } else {
       VStack(alignment: .leading, spacing: 1) {
         Text(name.lowercased()).font(.headline.weight(.semibold))
-        Text("nenhuma série marcada ainda").font(.caption2).foregroundStyle(Color.mutedInk)
+        Text("nenhuma série marcada ainda").font(.system(size: 13)).foregroundStyle(Color.mutedInk)
       }
     }
   }
@@ -485,16 +537,19 @@ private struct SessionClock: View {
       ? .hourMinuteSecond : .minuteSecond(padMinuteToLength: 2)))
     let start = timing.startedAt.formatted(.dateTime.hour().minute())
     return VStack(alignment: .leading, spacing: 1) {
-      HStack(spacing: 7) {
+      HStack(spacing: 8) {
         if live {
           Circle().fill(accent.signal).frame(width: 8, height: 8)
             .modifier(Pulse(active: !reduceMotion))
         }
         Text(time)
-          .font(.system(size: 28, weight: .semibold)).monospacedDigit().tracking(-1.2)
+          .font(.system(size: clockSize, weight: .semibold)).monospacedDigit()
+          .tracking(clockSize * -0.05)
+          .contentTransition(.numericText(value: Double(seconds)))
+          .animation(reduceMotion ? nil : Motion.roll, value: seconds)
       }
       Text("\(name.lowercased()) · começou \(start)")
-        .font(.caption2).foregroundStyle(Color.mutedInk).lineLimit(1)
+        .font(.system(size: 13)).foregroundStyle(Color.mutedInk).lineLimit(1)
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel("tempo de treino")

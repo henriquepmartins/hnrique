@@ -268,6 +268,12 @@ enum Motion {
   static let expand = Animation.spring(duration: 0.38, bounce: 0.1)
   /// Com movimento reduzido só a opacidade muda, e rápido.
   static let plain = Animation.easeOut(duration: 0.15)
+  /// O rolo de dígito, a mola do board convertida. Os K 280, C 18 e M 0.3 dele
+  /// dão 30,55 rad/s e amortecimento 0,98, que em resposta e fração são estes.
+  static let roll = Animation.spring(response: 0.21, dampingFraction: 0.98)
+  /// A barra de progresso e a barra de descanso subindo. Sem repique, que é o
+  /// que a curva (.22,1,.36,1) do board faz.
+  static let glide = Animation.spring(response: 0.45, dampingFraction: 1)
   /// O quanto um botão encolhe sob o dedo. Abaixo de 0.95 o botão parece
   /// afundar, e aí o toque vira um evento em vez de uma resposta.
   static let press: CGFloat = 0.96

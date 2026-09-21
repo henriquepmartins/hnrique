@@ -82,7 +82,8 @@ struct ExerciseCard: View {
 
 /// O tamanho da linha de série. A tela de hoje lista para conferir, com a mão
 /// livre; a sessão é para marcar com o peso na mão, então lá o número e o alvo
-/// do dedo crescem.
+/// do dedo crescem e a linha vira a grade de cinco colunas do board, com o
+/// índice e o "anterior" dentro dela.
 enum SetRowScale {
   case list, session
 
@@ -90,15 +91,15 @@ enum SetRowScale {
   var value: Font { self == .list ? .subheadline : .system(size: 19, weight: .medium) }
   var padding: CGFloat { self == .list ? 6 : 8 }
   var radius: CGFloat { Radius.concentric(Radius.field, padding: padding) }
-  /// A lista tem uma linha de cabeçalho dizendo qual coluna é qual. A sessão
-  /// mostra um exercício só e não tem cabeçalho, então a unidade vai na linha.
-  var showsUnits: Bool { self == .session }
 }
 
 struct TrainingSetRow: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .body) private var tileHeight = 46.0
+  @ScaledMetric(relativeTo: .footnote) private var indexSize = 13.0
+  @ScaledMetric(relativeTo: .caption2) private var unitSize = 10.0
   @State private var weightDraft: Double?
   @State private var repsDraft: Int?
   @FocusState private var focused: Field?
@@ -113,9 +114,11 @@ struct TrainingSetRow: View {
   let done: Bool
   let failure: Bool
   var scale: SetRowScale = .list
-  /// A sessão desenha o número da série junto da coluna "anterior", então a linha
-  /// não repete o número ao lado dos campos.
-  var showsIndex: Bool = true
+  /// A próxima série a marcar. Só a sessão pinta isso; a lista de hoje não
+  /// guia a mão.
+  var isNext: Bool = false
+  /// O que a série tem a bater, na coluna "anterior" da sessão.
+  var previous: String? = nil
 
   private var fieldID: String { "set.\(key.exerciseId).\(kind == .prep ? "prep" : "work").\(index)" }
   private var waiting: Bool { store.isWaiting(key) }
@@ -128,10 +131,21 @@ struct TrainingSetRow: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      if showsIndex {
+      switch scale {
+      case .list:
         Text(kind == .prep ? "P\(index)" : "\(index)").font(.caption).frame(width: 26)
+      case .session:
+        Text(kind == .prep ? "A" : "\(index)")
+          .font(.system(size: indexSize, weight: isNext ? .medium : .regular, design: .monospaced))
+          .foregroundStyle(kind == .prep ? Color.orange : Color.ink)
+          .frame(width: 30)
+        Text(kind == .prep ? "aquecimento" : previous ?? "estreia")
+          .font(.system(size: indexSize)).monospacedDigit()
+          .foregroundStyle(done ? accent.deep.opacity(0.6) : Color.mutedInk)
+          .lineLimit(1).minimumScaleFactor(0.8)
+          .frame(maxWidth: .infinity, alignment: .leading)
       }
-      HStack(spacing: 2) {
+      cell(unit: unit("kg")) {
         TextField("0", value: $weightDraft, format: .number.precision(.fractionLength(0...2)))
           #if os(iOS)
           .keyboardType(.decimalPad)
@@ -144,9 +158,8 @@ struct TrainingSetRow: View {
           .onChange(of: weightDraft) { _, new in
             if let new, new.isFinite, !Limits.setWeightKg.contains(new) { weightDraft = new.clamped(to: Limits.setWeightKg) }
           }
-        Text("kg").font(.caption2).foregroundStyle(Color.mutedInk)
-      }.padding(8).background(.white, in: .rect(cornerRadius: Radius.field))
-      HStack(spacing: 2) {
+      }
+      cell(unit: repsUnit) {
         TextField("0", value: $repsDraft, format: .number)
           #if os(iOS)
           .keyboardType(.numberPad)
@@ -159,43 +172,33 @@ struct TrainingSetRow: View {
           .onChange(of: repsDraft) { _, new in
             if let new, new > Limits.reps.upperBound { repsDraft = Limits.reps.upperBound }
           }
-        if failure {
-          Text("falha").font(.system(size: 9)).foregroundStyle(accent.base)
-        } else if scale.showsUnits {
-          Text("reps").font(.caption2).foregroundStyle(Color.mutedInk)
-        }
-      }.padding(8).background(.white, in: .rect(cornerRadius: Radius.field))
+      }
       Button {
         commit(completed: !currentDone)
         focused = nil
         tapCount += 1
       } label: {
-        // O círculo vazio com a borda é o estado não marcado, e o visto entra
-        // por cima dele. Um visto fantasma parado no lugar não deixava espaço
-        // para a entrada, e era o que fazia a confirmação passar em branco.
-        ZStack {
-          if done {
-            Image(systemName: "checkmark").font(.body.weight(.semibold))
-              .foregroundStyle(accent.deep)
-              .transition(.iconAppear)
+        // O visto está sempre desenhado e só muda de cor. É o cinza dele que
+        // diz "ainda não", e o verde na próxima série que convida ao toque.
+        Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+          .foregroundStyle(done ? Color.white : isNext ? accent.base : Color.ink.opacity(0.28))
+          .frame(width: scale.check, height: scale.check)
+          .background(done ? accent.base : .white, in: .circle)
+          .overlay(Circle().strokeBorder(
+            done ? .clear : isNext ? accent.base : Color.ink.opacity(0.16), lineWidth: 1.5))
+          // Borda tracejada enquanto a marcação não chegou ao servidor. O visto
+          // cheio sozinho prometia coisa que às vezes não tinha acontecido.
+          .overlay {
+            if waiting {
+              Circle().strokeBorder(
+                accent.deep.opacity(0.55),
+                style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+            }
           }
-        }
-        .frame(width: scale.check, height: scale.check)
-        .background(done ? accent.acid : .white, in: .circle)
-        // A borda carrega sozinha o estado não marcado agora que o visto
-        // fantasma saiu, então ela ganhou o peso que ele tinha.
-        .overlay(Circle().strokeBorder(Color.ink.opacity(done ? 0 : 0.18), lineWidth: 1.5))
-        // Borda tracejada enquanto a marcação não chegou ao servidor. O visto
-        // cheio sozinho prometia coisa que às vezes não tinha acontecido.
-        .overlay {
-          if waiting {
-            Circle().strokeBorder(
-              accent.deep.opacity(0.55),
-              style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-          }
-        }
-        .scaleEffect(done ? 1 : 0.94)
-      }.buttonStyle(SetCompletionStyle()).disabled(!Limits.setWeightKg.contains(weightDraft ?? -1) || !Limits.reps.contains(repsDraft ?? 0))
+      }
+      // O check encolhe mais que os outros botões, como no board.
+      .buttonStyle(PressScaleStyle(scale: 0.92))
+      .disabled(!Limits.setWeightKg.contains(weightDraft ?? -1) || !Limits.reps.contains(repsDraft ?? 0))
         .accessibilityIdentifier(fieldID + ".completion")
         .animation(reduceMotion ? nil : Motion.confirm, value: done)
         .accessibilityLabel(done ? "Desmarcar série \(index)" : "Concluir série \(index)")
@@ -203,7 +206,8 @@ struct TrainingSetRow: View {
         .sensoryFeedback(currentDone ? .success : .impact(weight: .light), trigger: tapCount)
     }
     .font(.subheadline).monospacedDigit().multilineTextAlignment(.center)
-    .padding(scale.padding).background(kind == .prep ? Color.surfaceMuted : accent.pale.opacity(0.5), in: .rect(cornerRadius: scale.radius))
+    .modifier(RowChrome(scale: scale, kind: kind, done: done, isNext: isNext, accent: accent))
+    .animation(reduceMotion ? nil : Motion.crossfade, value: isNext)
     .onChange(of: weight, initial: true) { if focused == nil { weightDraft = weight } }
     .onChange(of: repetitions, initial: true) { if focused == nil { repsDraft = repetitions } }
     .onChange(of: focused) { old, new in
@@ -211,6 +215,46 @@ struct TrainingSetRow: View {
       if new == nil { submitted = nil }
     }
     .onSubmit { commit(completed: currentDone); focused = nil }
+  }
+
+  /// A unidade de reps. A lista de hoje tem cabeçalho e só escreve "falha"; a
+  /// sessão escreve a unidade embaixo do número.
+  private var repsUnit: Text? {
+    if failure { return unit("falha", toFailure: true) }
+    return scale == .session ? unit("reps") : nil
+  }
+
+  /// A unidade já sai daqui com fonte e cor. Quem pinta é a própria unidade,
+  /// não o ladrilho, senão a série à falha esverdeia o quilo junto com o reps.
+  private func unit(_ text: String, toFailure: Bool = false) -> Text {
+    Text(text)
+      .font(scale == .session
+        ? .system(size: unitSize)
+        : toFailure ? .system(size: 9) : .caption2)
+      .foregroundStyle(toFailure ? accent.base : Color.mutedInk)
+  }
+
+  /// O ladrilho de kg ou reps. Na lista o número e a unidade ficam lado a lado
+  /// numa pílula branca; na sessão a unidade vai embaixo, num ladrilho que muda
+  /// de fundo com o estado da linha.
+  @ViewBuilder
+  private func cell<Field: View>(unit: Text?, @ViewBuilder field: () -> Field) -> some View {
+    switch scale {
+    case .list:
+      HStack(spacing: 2) {
+        field()
+        unit
+      }
+      .padding(8).background(.white, in: .rect(cornerRadius: Radius.field))
+    case .session:
+      VStack(spacing: 0) {
+        field()
+        unit
+      }
+      .frame(minWidth: 56, maxWidth: 66).frame(height: tileHeight)
+      .background(done ? .clear : isNext ? .white : Color.surfaceMuted, in: .rect(cornerRadius: 12))
+      .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.ink.opacity(isNext && !done ? 0.08 : 0)))
+    }
   }
 
   private func commit(completed: Bool) {
@@ -226,14 +270,24 @@ struct TrainingSetRow: View {
   }
 }
 
-private struct SetCompletionStyle: ButtonStyle {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// O fundo da linha. Na lista de hoje é a cor do tipo de série; na sessão é o
+/// estado (parada, próxima, feita), que é o que diz ao dedo onde ir.
+private struct RowChrome: ViewModifier {
+  let scale: SetRowScale
+  let kind: SetKey.Kind
+  let done: Bool
+  let isNext: Bool
+  let accent: Accent
 
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .scaleEffect(configuration.isPressed && !reduceMotion ? Motion.press : 1)
-      .opacity(configuration.isPressed ? 0.8 : 1)
-      .animation(configuration.isPressed || reduceMotion ? nil : Motion.tap, value: configuration.isPressed)
+  func body(content: Content) -> some View {
+    switch scale {
+    case .list:
+      content.padding(scale.padding)
+        .background(kind == .prep ? Color.surfaceMuted : accent.pale.opacity(0.5), in: .rect(cornerRadius: scale.radius))
+    case .session:
+      content.padding(.vertical, 7).padding(.horizontal, 2)
+        .background(done ? accent.base.opacity(0.06) : isNext ? Color.surfaceMuted : .clear, in: .rect(cornerRadius: 18))
+    }
   }
 }
 
