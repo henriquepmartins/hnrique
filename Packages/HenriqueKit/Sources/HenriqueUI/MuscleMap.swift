@@ -6,13 +6,18 @@ import SwiftUI
 /// deixaria o mês inteiro no degrau de cima e a semana inteira no de baixo.
 struct MuscleMap: View {
   @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .body) private var nameSize = 16.0
+  @ScaledMetric(relativeTo: .footnote) private var valueSize = 13.5
+  @ScaledMetric(relativeTo: .caption2) private var captionSize = 11.0
+  @ScaledMetric(relativeTo: .caption2) private var legendSize = 11.5
   @State private var period: MusclePeriod = .week
   @State private var picked: MuscleSlug?
   let load: [MuscleLoad]
   let today: CalendarDate
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
+    VStack(alignment: .leading, spacing: 0) {
       HStack {
         Text("músculos").font(.title3.weight(.medium)).tracking(-0.6)
         Spacer()
@@ -24,19 +29,28 @@ struct MuscleMap: View {
         .pickerStyle(.segmented)
         .frame(width: 136)
       }
-      HStack(spacing: Space.s) {
-        figure(BodyChart.anterior, caption: "frente")
-        figure(BodyChart.posterior, caption: "costas")
+      .padding(.bottom, Space.m)
+      // As curvas ficam daqui para baixo, e não em volta do cabeçalho. Trocar o
+      // período redesenha o corpo e o aviso, e o seletor que disparou a troca não
+      // deve se mexer junto com o que ele mandou mudar.
+      VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
+          HStack(spacing: 10) {
+            figure(BodyChart.anterior, caption: "frente")
+            figure(BodyChart.posterior, caption: "costas")
+          }
+          readout
+          legend
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
+        .paperCard(radius: Radius.tile)
+        if let gap { GapNote(text: gap).padding(.top, 10) }
       }
-      readout
-      legend
-      if let gap { GapNote(text: gap) }
+      .animation(reduceMotion ? Motion.plain : Motion.crossfade, value: period)
+      .animation(reduceMotion ? Motion.plain : Motion.tap, value: picked)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(Space.xl)
-    .paperCard()
-    .animation(Motion.crossfade, value: period)
-    .animation(Motion.tap, value: picked)
   }
 
   private var byGroup: [MuscleSlug: MuscleLoad] {
@@ -48,59 +62,69 @@ struct MuscleMap: View {
   }
 
   private func figure(_ polygons: [BodyPolygon], caption: String) -> some View {
-    VStack(spacing: Space.s) {
+    VStack(spacing: 8) {
       ZStack {
-        BodyShape(polygons.filter { $0.group == nil }).fill(Color.ink.opacity(0.07))
+        BodyShape(polygons.filter { $0.group == nil }).fill(Color.ink.opacity(0.14))
         ForEach(MuscleSlug.allCases, id: \.self) { group in
           let shape = BodyShape(polygons.filter { $0.group == group })
           shape
             .fill(heat(for: group))
-            .opacity(picked == nil || picked == group ? 1 : 0.45)
+            .opacity(picked == nil || picked == group ? 1 : 0.5)
             .overlay {
               if picked == group { shape.stroke(Color.ink, lineWidth: 1) }
             }
-            .contentShape(shape)
+            // Sem o recorte de acessibilidade junto, cada músculo ocupa o
+            // retângulo inteiro para o VoiceOver e o toque exploratório lê
+            // sempre o último do empilhamento.
+            .contentShape([.interaction, .accessibility], shape)
             .onTapGesture { picked = picked == group ? nil : group }
+            .accessibilityElement()
             .accessibilityLabel(group.label)
+            .accessibilityValue("\(byGroup[group]?.sets(in: period) ?? 0) séries em \(period.span)")
+            .accessibilityAddTraits(picked == group ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { picked = picked == group ? nil : group }
         }
       }
       .aspectRatio(BodyChart.frame.width / BodyChart.frame.height, contentMode: .fit)
-      .frame(maxWidth: 150)
-      .padding(.top, Space.s)
-      Text(caption).font(.caption2).foregroundStyle(Color.mutedInk)
+      .frame(maxWidth: 136)
+      Text(caption).font(.system(size: captionSize, design: .monospaced)).tracking(captionSize * 0.01)
+        .foregroundStyle(Color.mutedInk)
     }
     .frame(maxWidth: .infinity)
-    .padding(.bottom, Space.s)
-    .background(Color.surfaceMuted.opacity(0.5), in: .rect(cornerRadius: Radius.tile))
   }
 
+  /// Lê a mesma tabela da legenda. Duas listas de cor separadas dão certo no dia
+  /// em que são escritas e depois divergem, e aí a régua passa a mentir.
   private func heat(for group: MuscleSlug) -> Color {
     let sets = byGroup[group]?.sets(in: period) ?? 0
-    guard sets > 0, peak > 0 else { return Color.ink.opacity(0.13) }
-    let level = max(1, min(4, Int(ceil(Double(sets) / Double(peak) * 4))))
-    return switch level {
-    case 1: accent.base.opacity(0.22)
-    case 2: accent.base.opacity(0.46)
-    case 3: accent.base.opacity(0.74)
-    default: accent.deep
-    }
+    guard sets > 0, peak > 0 else { return swatch(0) }
+    return swatch(max(1, min(4, Int(ceil(Double(sets) / Double(peak) * 4)))))
   }
 
   private var readout: some View {
-    VStack(alignment: .leading, spacing: 3) {
-      if let picked, let item = byGroup[picked] {
-        Text(picked.label).font(.subheadline.weight(.medium))
-        Text("\(item.sets(in: period)) séries em \(period.span) · \(lastLabel(item))")
-          .font(.caption).monospacedDigit().foregroundStyle(Color.mutedInk)
-      } else {
-        Text("toque num músculo").font(.subheadline.weight(.medium))
-        Text("volume dos últimos \(period.span)")
-          .font(.caption).foregroundStyle(Color.mutedInk)
+    VStack(spacing: 14) {
+      Rectangle().fill(Color.ink.opacity(0.08)).frame(height: 1)
+      // O espaçamento da pilha vale dos dois lados do Spacer, então com ele em 12
+      // a folga mínima aqui seria 36 e o número quebraria em duas linhas antes da
+      // hora. O Spacer sozinho carrega a folga.
+      HStack(spacing: 0) {
+        Text(picked.map { $0.label } ?? "toque num músculo")
+          .font(.system(size: nameSize, weight: .medium))
+        Spacer(minLength: 12)
+        Text(readoutValue)
+          .font(.system(size: valueSize)).monospacedDigit().foregroundStyle(Color.mutedInk)
+          .multilineTextAlignment(.trailing)
       }
+      .frame(minHeight: 44)
+      .accessibilityElement(children: .combine)
     }
+    .padding(.top, 14)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, Space.m).padding(.vertical, Space.m)
-    .background(Color.surfaceMuted, in: .rect(cornerRadius: Radius.tile))
+  }
+
+  private var readoutValue: String {
+    guard let picked, let item = byGroup[picked] else { return "volume dos últimos \(period.span)" }
+    return "\(item.sets(in: period)) séries em \(period.span) · \(lastLabel(item))"
   }
 
   /// A escala é relativa, então sem a régua quatro verdes não dizem o que separa um
@@ -108,24 +132,25 @@ struct MuscleMap: View {
   private var legend: some View {
     HStack(spacing: 5) {
       Spacer()
-      Text("menos").font(.caption2).foregroundStyle(Color.mutedInk)
+      Text("menos").font(.system(size: legendSize)).foregroundStyle(Color.mutedInk)
       ForEach(0..<5) { level in
         RoundedRectangle(cornerRadius: 4)
           .fill(swatch(level))
           .frame(width: 13, height: 13)
       }
-      Text("mais").font(.caption2).foregroundStyle(Color.mutedInk)
+      Text("mais").font(.system(size: legendSize)).foregroundStyle(Color.mutedInk)
     }
+    .padding(.top, 12)
     .accessibilityHidden(true)
   }
 
   private func swatch(_ level: Int) -> Color {
     switch level {
-    case 0: Color.ink.opacity(0.13)
-    case 1: accent.base.opacity(0.22)
-    case 2: accent.base.opacity(0.46)
-    case 3: accent.base.opacity(0.74)
-    default: accent.deep
+    case 0: Color.ink.opacity(0.08)
+    case 1: accent.base.opacity(0.20)
+    case 2: accent.base.opacity(0.45)
+    case 3: accent.base.opacity(0.80)
+    default: accent.base
     }
   }
 
@@ -171,8 +196,8 @@ struct GapNote: View {
     }
     .foregroundStyle(Color(red: 0.54, green: 0.18, blue: 0.18))
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.horizontal, Space.m).padding(.vertical, Space.m)
-    .background(Color(red: 0.99, green: 0.95, blue: 0.95), in: .rect(cornerRadius: Radius.tile))
+    .padding(.horizontal, Space.l).padding(.vertical, 13)
+    .background(Color(red: 0.99, green: 0.95, blue: 0.95), in: .rect(cornerRadius: 18))
     .accessibilityIdentifier("musculos.lacuna")
   }
 }

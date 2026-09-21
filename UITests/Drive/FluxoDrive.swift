@@ -199,32 +199,36 @@ final class FluxoDrive: XCTestCase {
     dismissKeyboard()
   }
 
-  /// O mapa de frequência na aba "hoje" e a bolinha do dia atual na fita da
+  /// O mapa de frequência na aba "progresso" e a bolinha do dia atual na fita da
   /// aba "treino", que são as duas coisas que nenhum outro teste passa perto.
-  func testZHojeEMapa() {
+  func testZProgressoEMapa() {
     launch()
     ensureWorkoutToday()
-    app.tabBars.buttons["hoje"].tap()
+    app.tabBars.buttons["progresso"].tap()
     let mes = app.buttons["frequencia.mes"]
     XCTAssert(mes.waitForExistence(timeout: 10), "mapa de frequência apareceu")
-    shot("20-hoje-mes")
+    shot("20-progresso-mes")
     app.buttons["frequencia.ano"].tap()
     XCTAssert(app.buttons["frequencia.ano"].waitForExistence(timeout: 3), "mapa trocou para o ano")
-    shot("21-hoje-ano")
+    shot("21-progresso-ano")
     mes.tap()
     app.tabBars.buttons["treino"].tap()
     XCTAssert(app.buttons["Voltar uma semana"].waitForExistence(timeout: 10), "fita do calendário apareceu")
     shot("22-calendario-bolinha")
   }
 
-  /// A home tem que dizer o que fazer hoje, quanto peso saiu na semana e quais
-  /// músculos ficaram sem estímulo.
-  func testHomeVolumeEMusculos() {
+  /// A home tem que dizer o que fazer hoje, quantos treinos da semana já saíram
+  /// e quais músculos ficaram sem estímulo.
+  func testHomeAderenciaEMusculos() {
     launch()
     ensureWorkoutToday()
     app.tabBars.buttons["hoje"].tap()
     XCTAssert(app.buttons["hoje.abrir"].waitForExistence(timeout: 10), "cartão do dia apareceu")
     shot("40-home-topo")
+
+    XCTAssert(
+      app.descendants(matching: .any)["hoje.aderencia"].waitForExistence(timeout: 5),
+      "o cartão da semana apareceu")
 
     let semana = app.buttons["musculos.week"]
     XCTAssert(semana.waitForExistence(timeout: 5), "mapa muscular apareceu")

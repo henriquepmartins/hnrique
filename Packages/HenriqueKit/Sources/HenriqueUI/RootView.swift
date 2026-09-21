@@ -385,10 +385,11 @@ private struct AppSwitcherRow: View {
 }
 
 /// A home responde uma pergunta só, o que eu faço agora, e depois desce para o
-/// diagnóstico. A ordem é essa: ação, o que vem a seguir, o que mudou, o que falta.
+/// diagnóstico. A ordem é essa: ação, o que vem a seguir, o que mudou, quanto do
+/// plano da semana saiu, quais músculos ficaram sem estímulo. Presença e
+/// constância moram em "progresso".
 struct OverviewScreen: View {
   @Environment(AcademiaStore.self) private var store
-  @Environment(\.accent) private var accent
   let onWorkout: () -> Void
   let onPlan: () -> Void
 
@@ -397,33 +398,26 @@ struct OverviewScreen: View {
       VStack(alignment: .leading, spacing: Space.xxl) {
         GreetingHeader(date: store.selectedDate)
         if let data = store.dashboard {
-          DayCard(workout: data.workout, onWorkout: onWorkout).subtleEntrance()
+          DayCard(workout: data.workout, onWorkout: onWorkout)
+            .staggeredEntrance(index: 0, isReady: true)
           NextDaysStrip(
             days: plannedDays(
               from: data.date, plan: data.weekPlan, done: Set(data.sessionDates ?? [])),
             plan: data.weekPlan, onPlan: onPlan)
-            .subtleEntrance()
+            .staggeredEntrance(index: 1, isReady: true)
           if let records = data.records, !records.isEmpty {
-            RecordsCard(records: records, today: data.date).subtleEntrance()
+            RecordsCard(records: records, today: data.date)
+              .staggeredEntrance(index: 2, isReady: true)
           }
-          if let volume = data.volume {
-            WeeklyVolumeCard(volume: volume).subtleEntrance()
+          if data.weekPlan.contains(where: { !$0.weekdays.isEmpty }) {
+            WeeklyAdherenceCard(
+              plan: data.weekPlan, done: Set(data.sessionDates ?? []), today: data.date)
+              .staggeredEntrance(index: 3, isReady: true)
           }
           if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {
-            MuscleMap(load: load, today: data.date).subtleEntrance()
+            MuscleMap(load: load, today: data.date)
+              .staggeredEntrance(index: 4, isReady: true)
           }
-        }
-        AttendanceMap(attendance: store.attendance) { from, to in
-          await store.loadAttendance(from: from, to: to)
-        }
-        if let data = store.dashboard {
-          VStack(alignment: .leading, spacing: 10) {
-            Text("\(data.consistencyPercent)%").font(.system(size: 48, weight: .medium)).monospacedDigit()
-            Text("constância, 4 semanas").font(.subheadline)
-          }
-          .foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
-          .padding(Space.xl).background(accent.deep, in: .rect(cornerRadius: Radius.card))
-          .subtleEntrance()
         }
       }.padding(Space.l).padding(.bottom, Space.page)
     }

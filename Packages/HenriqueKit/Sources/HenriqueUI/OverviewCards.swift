@@ -32,46 +32,6 @@ struct GreetingHeader: View {
   }
 }
 
-/// O volume da semana em quilos, com a variação sobre a semana anterior. Tonelada
-/// cabia melhor no cartão, mas ninguém levanta pensando em "2,1 t".
-struct WeeklyVolumeCard: View {
-  @Environment(\.accent) private var accent
-  let volume: VolumeSummary
-
-  var body: some View {
-    HStack(alignment: .bottom, spacing: Space.l) {
-      VStack(alignment: .leading, spacing: 4) {
-        Text("volume desta semana").font(.caption.weight(.medium)).foregroundStyle(accent.base)
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-          Text(volume.weekKg.formatted(.number.precision(.fractionLength(0))))
-            .font(.system(size: 42, weight: .semibold)).monospacedDigit().tracking(-1.8)
-          Text("kg").font(.callout.weight(.medium)).foregroundStyle(Color.mutedInk)
-        }
-        Text(subtitle).font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      if let points = volume.trendPoints {
-        Sparkline(values: points)
-          .stroke(accent.base, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-          .overlay(alignment: .topTrailing) {
-            SparklineTip(values: points).fill(accent.base)
-          }
-          .frame(width: 92, height: 52)
-          .accessibilityLabel("volume das últimas \(points.count) semanas")
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(Space.xl)
-    .paperCard()
-  }
-
-  private var subtitle: String {
-    let sessions = "\(volume.weekSessions) treinos registrados"
-    guard let delta = volume.deltaPercent else { return sessions }
-    return "\(sessions), \(delta >= 0 ? "+" : "")\(delta)% sobre a semana passada"
-  }
-}
-
 /// O treino do dia na home, em quatro estados: programado, em andamento, feito e
 /// descanso. O cartão anterior mostrava só o nome e uma seta, e dizia a mesma
 /// coisa nos quatro.
@@ -116,47 +76,5 @@ struct DayCard: View {
     guard workout != nil else { return "ver o plano" }
     if percent >= 100 { return "ver o treino" }
     return percent > 0 ? "continuar" : "começar"
-  }
-}
-
-/// A linha das últimas semanas. Desenhada à mão em vez de virar um gráfico do Charts
-/// porque são seis pontos sem eixo, sem legenda e sem toque: o traço é o dado inteiro.
-struct Sparkline: Shape {
-  let values: [Double]
-
-  func path(in rect: CGRect) -> Path {
-    var path = Path()
-    let points = Sparkline.points(values, in: Sparkline.plot(rect))
-    guard let first = points.first else { return path }
-    path.move(to: first)
-    path.addLines(Array(points.dropFirst()))
-    return path
-  }
-
-  /// O mesmo recorte para a linha e para o ponto, senão um sai de cima do outro. A
-  /// folga é o raio do ponto mais a espessura do traço.
-  static func plot(_ rect: CGRect) -> CGRect { rect.insetBy(dx: 5, dy: 5) }
-
-  /// O piso é zero, não o menor valor: uma semana fraca deve aparecer baixa, e não
-  /// colada na base porque foi a pior de seis.
-  static func points(_ values: [Double], in rect: CGRect) -> [CGPoint] {
-    guard values.count > 1 else { return [] }
-    let peak = max(values.max() ?? 0, 1)
-    let step = rect.width / CGFloat(values.count - 1)
-    return values.enumerated().map { index, value in
-      CGPoint(
-        x: rect.minX + CGFloat(index) * step,
-        y: rect.maxY - rect.height * CGFloat(value / peak))
-    }
-  }
-}
-
-/// O ponto da semana corrente, onde a linha termina.
-struct SparklineTip: Shape {
-  let values: [Double]
-
-  func path(in rect: CGRect) -> Path {
-    guard let last = Sparkline.points(values, in: Sparkline.plot(rect)).last else { return Path() }
-    return Path(ellipseIn: CGRect(x: last.x - 4, y: last.y - 4, width: 8, height: 8))
   }
 }

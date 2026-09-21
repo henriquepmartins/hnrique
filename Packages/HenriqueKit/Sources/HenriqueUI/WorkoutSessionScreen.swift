@@ -79,7 +79,7 @@ struct WorkoutSessionScreen: View {
         let progress = SessionProgress(workout)
         let openId = openExercise(in: workout)
         VStack(spacing: 0) {
-          top(workout: workout, progress: progress).springEntrance(index: 0, shown: entered)
+          top(workout: workout, progress: progress).revealEntrance(index: 0, shown: entered)
           ScrollView {
             LazyVStack(spacing: Space.m) {
               ForEach(workout.exercises) { exercise in
@@ -94,7 +94,7 @@ struct WorkoutSessionScreen: View {
             .padding(.horizontal, Space.l).padding(.top, Space.s).padding(.bottom, Space.page)
           }
           .scrollDismissesKeyboard(.interactively)
-          .springEntrance(index: 1, shown: entered)
+          .revealEntrance(index: 1, shown: entered)
           // A barra entra no fluxo, não por cima: sobreposta ela cobria a linha
           // da série seguinte, que é justamente o que o dedo procura depois.
           if let rest {

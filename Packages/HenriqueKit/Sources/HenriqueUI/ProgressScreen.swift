@@ -35,6 +35,7 @@ enum GoalKind: Hashable, CaseIterable, Identifiable {
 
 struct ProgressScreen: View {
   @Environment(AcademiaStore.self) private var store
+  @Environment(\.accent) private var accent
   @State private var editing: GoalKind?
   var onWorkout: () -> Void = {}
 
@@ -67,6 +68,21 @@ struct ProgressScreen: View {
             .buttonStyle(.glassProminent).controlSize(.large)
             .disabled(dashboard.exerciseCatalog.isEmpty)
             .subtleEntrance()
+        }
+        // Fora do painel de propósito. O mapa lê a própria frequência e carrega a
+        // faixa visível sozinho, então esperar o painel só atrasaria a primeira
+        // abertura da aba.
+        AttendanceMap(attendance: store.attendance) { from, to in
+          await store.loadAttendance(from: from, to: to)
+        }
+        if let dashboard = store.dashboard {
+          VStack(alignment: .leading, spacing: 10) {
+            Text("\(dashboard.consistencyPercent)%").font(.system(size: 48, weight: .medium)).monospacedDigit()
+            Text("constância, 4 semanas").font(.subheadline)
+          }
+          .foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
+          .padding(Space.xl).background(accent.deep, in: .rect(cornerRadius: Radius.card))
+          .subtleEntrance()
           if dashboard.progress.isEmpty {
             ContentUnavailableView("sem histórico", systemImage: "chart.xyaxis.line")
               .padding(.vertical, 40)

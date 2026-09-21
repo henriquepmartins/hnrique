@@ -1,7 +1,7 @@
 import HenriqueCore
 import SwiftUI
 
-/// O mapa de frequência da tela "hoje", no estilo do GitHub. Recebe a
+/// O mapa de frequência da tela de progresso, no estilo do GitHub. Recebe a
 /// frequência já carregada e pede o intervalo do período visível a quem tem
 /// o servidor; assim o preview roda com dados fabricados.
 struct AttendanceMap: View {
@@ -20,10 +20,17 @@ struct AttendanceMap: View {
       // A grade é uma peça só. O que anima é a cor da casa, dentro do
       // `DaySquare`. Uma animação aqui em cima pegaria o layout junto e fazia a
       // fita do ano deslizar de lado até a borda direita ao entrar.
-      switch period {
-      case .month: MonthGrid(grid: grid)
-      case .year: YearGrid(grid: grid)
+      Group {
+        switch period {
+        case .month: MonthGrid(grid: grid)
+        case .year: YearGrid(grid: grid)
+        }
       }
+      // A casa é identificada pela data, então trocar de mês troca as trinta e
+      // cinco de uma vez e a animação de cor de cada uma nunca chega a correr. A
+      // grade inteira atravessa como uma peça só.
+      .id(period)
+      .transition(.opacity)
       AttendanceLegend()
         .opacity(grid.total > 0 ? 1 : 0)
         .animation(reduceMotion ? Motion.plain : Motion.crossfade, value: grid.total > 0)
@@ -52,14 +59,16 @@ private struct AttendanceHeader: View {
     Binding {
       if case .month = period { .month } else { .year }
     } set: { scope in
-      switch (scope, period) {
-      case (.month, .year(let year)):
-        let today = CalendarDate.today
-        period = year == today.year ? .month(containing: today) : .month(year: year, month: 12)
-      case (.year, .month(let year, _)):
-        period = .year(year)
-      default:
-        break
+      withAnimation(Motion.swap) {
+        switch (scope, period) {
+        case (.month, .year(let year)):
+          let today = CalendarDate.today
+          period = year == today.year ? .month(containing: today) : .month(year: year, month: 12)
+        case (.year, .month(let year, _)):
+          period = .year(year)
+        default:
+          break
+        }
       }
     }
   }
@@ -73,8 +82,12 @@ private struct AttendanceHeader: View {
       Text(title).font(.subheadline).foregroundStyle(Color.ink)
         .lineLimit(1).minimumScaleFactor(0.8)
       Spacer(minLength: 4)
-      IconButton(title: "Período anterior", systemImage: "chevron.left", glass: true) { period = period.previous }
-      IconButton(title: "Próximo período", systemImage: "chevron.right", glass: true) { period = period.next }
+      IconButton(title: "Período anterior", systemImage: "chevron.left", glass: true) {
+        withAnimation(Motion.swap) { period = period.previous }
+      }
+      IconButton(title: "Próximo período", systemImage: "chevron.right", glass: true) {
+        withAnimation(Motion.swap) { period = period.next }
+      }
         .disabled(nextIsFuture)
       Picker("Escala", selection: scope) {
         Text("mês").tag(AttendanceScope.month).accessibilityIdentifier("frequencia.mes")

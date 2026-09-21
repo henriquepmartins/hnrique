@@ -157,6 +157,9 @@ enum Radius {
   static let card: CGFloat = 32
   static let tile: CGFloat = 24
   static let field: CGFloat = 10
+  /// O raio da linha de lista, menor que o do cartão porque ela é uma fatia
+  /// e não uma superfície.
+  static let row: CGFloat = 20
 
   /// O raio de fora de uma peça que abraça outra: o de dentro mais o respiro
   /// entre as duas. Acima de 24 de respiro as duas já leem como superfícies
@@ -244,8 +247,9 @@ struct PageHeading: View {
 /// que o sistema move em volta dele. Números soltos por tela eram o que fazia
 /// duas telas vizinhas entrarem em ritmos diferentes.
 enum Motion {
+  /// Entrada é só opacidade. Conteúdo que já estava ali não deveria chegar
+  /// deslizando.
   static let subtleEntrance = Animation.easeOut(duration: 0.3)
-  static let subtleRise: CGFloat = 6
   /// Conteúdo que chega e se acomoda: cascata de lista, cartão que nasce.
   static let entrance = Animation.smooth(duration: 0.4)
   /// A mesma entrada para quem cresce no lugar, com o repique quase no fim.
@@ -264,8 +268,6 @@ enum Motion {
   static let expand = Animation.spring(duration: 0.38, bounce: 0.1)
   /// Com movimento reduzido só a opacidade muda, e rápido.
   static let plain = Animation.easeOut(duration: 0.15)
-  /// O quanto um item sobe ao entrar.
-  static let rise: CGFloat = 8
   /// O quanto um botão encolhe sob o dedo. Abaixo de 0.95 o botão parece
   /// afundar, e aí o toque vira um evento em vez de uma resposta.
   static let press: CGFloat = 0.96
@@ -368,11 +370,9 @@ private struct SubtleEntrance: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      // A curva fica só no fade e no deslocamento, sem animar o layout da grade.
+      // A curva fica só no fade, sem animar o layout da grade.
       .animation(reduceMotion ? Motion.plain : Motion.subtleEntrance) { view in
-        view
-          .opacity(shown ? 1 : 0)
-          .offset(y: shown || reduceMotion ? 0 : Motion.subtleRise)
+        view.opacity(shown ? 1 : 0)
       }
       .onAppear { shown = true }
   }
@@ -387,7 +387,6 @@ private struct StudyStaggeredEntrance: ViewModifier {
   func body(content: Content) -> some View {
     content
       .opacity(shown ? 1 : 0)
-      .offset(y: shown || reduceMotion ? 0 : Motion.rise)
       .animation(animation, value: shown)
       .onChange(of: isReady, initial: true) { _, ready in
         if ready { shown = true }
@@ -395,7 +394,7 @@ private struct StudyStaggeredEntrance: ViewModifier {
   }
 
   private var animation: Animation {
-    reduceMotion ? Motion.plain : Motion.entrance.delay(Motion.delay(index: index))
+    reduceMotion ? Motion.plain : Motion.subtleEntrance.delay(Motion.delay(index: index))
   }
 }
 
@@ -453,29 +452,23 @@ func dismissKeyboard() {
 }
 
 extension View {
-  /// A entrada das telas que crescem no lugar. `staggeredEntrance` desliza o
-  /// conteúdo para cima, que é o gesto certo numa lista já montada; aqui a tela
-  /// inteira nasce, então cada peça cresce a partir do próprio centro e nada
-  /// anda de lado.
-  func springEntrance(index: Int, shown: Bool) -> some View {
-    modifier(SpringEntrance(index: index, shown: shown))
+  /// A entrada das telas que nascem inteiras, controlada por quem chama em vez de
+  /// pelo `onAppear`. Cada peça só aparece, em cascata, sem crescer nem andar.
+  func revealEntrance(index: Int, shown: Bool) -> some View {
+    modifier(RevealEntrance(index: index, shown: shown))
   }
 }
 
-private struct SpringEntrance: ViewModifier {
+private struct RevealEntrance: ViewModifier {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let index: Int
   let shown: Bool
 
   func body(content: Content) -> some View {
     content
-      // Nada no mundo nasce de tamanho zero. Começar em 0.94 deixa a peça já
-      // com forma antes de assentar, e o olho lê isso como uma coisa só
-      // chegando, não como uma aparição.
-      .scaleEffect(visible ? 1 : 0.94)
       .opacity(visible ? 1 : 0)
       .animation(
-        reduceMotion ? nil : Motion.grow.delay(Motion.delay(index: index)),
+        reduceMotion ? nil : Motion.subtleEntrance.delay(Motion.delay(index: index)),
         value: shown)
   }
 

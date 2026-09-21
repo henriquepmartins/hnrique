@@ -5,11 +5,12 @@ import Foundation
 public enum RecordKind: String, Codable, Hashable, Sendable {
   case carga, reps, estreia
 
-  /// O selo da esquerda, curto porque cabe em 42 pontos.
+  /// O selo da esquerda, com o número em cima e a unidade embaixo. Em uma linha
+  /// só, "+2,5 kg" não cabe nos 42 pontos do quadrado.
   public func badge(delta: Double) -> String {
     switch self {
-    case .carga: "+\(Formatting.trim(delta)) kg"
-    case .reps: "+\(Int(delta)) rep"
+    case .carga: "+\(Formatting.trim(delta))\nkg"
+    case .reps: "+\(Int(delta))\nrep"
     case .estreia: "1º"
     }
   }
