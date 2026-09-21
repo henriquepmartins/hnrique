@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "33",
+          "date": "2026-09-21T09:54:09-03:00",
+          "localizedDescription": "• feat: rebuild the session screen from the design board",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-33/Henrique.ipa",
+          "size": 4643495,
+          "sha256": "8af854ebe82636fd71c96c7751671fe4711cde66c09f6d3785da9d64bdc58cd3",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "32",
           "date": "2026-09-21T09:14:51-03:00",
           "localizedDescription": "• feat: rework the home around the design board and move presence to progress",
