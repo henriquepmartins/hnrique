@@ -7,12 +7,10 @@ import SwiftUI
 struct PlanCalendarCard: View {
   @Environment(\.locale) private var locale
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @AppStorage("planCalendar.hasSeenMarkerEntrance") private var hasSeenMarkerEntrance = false
-  @State private var paintProgress = 0.0
-  @State private var isPainting = false
+  @State private var painting = PlanMarkerPlayback()
+  @State private var isVisible = false
   @State private var hasLoadedAttendance = false
   @State private var period: AttendancePeriod = .month(containing: .today)
-  @State private var calendarGrid: PlanCalendar
   let attendance: [CalendarDate: AttendanceDay]
   let weekPlan: [WeekPlanItem]
   let load: (CalendarDate, CalendarDate) async -> Void
@@ -24,8 +22,10 @@ struct PlanCalendarCard: View {
     self.attendance = attendance
     self.weekPlan = weekPlan
     self.load = load
-    _calendarGrid = State(
-      initialValue: PlanCalendar(period: .month(containing: .today), attendance: attendance, weekPlan: weekPlan))
+  }
+
+  private var calendarGrid: PlanCalendar {
+    PlanCalendar(period: period, attendance: attendance, weekPlan: weekPlan)
   }
 
   private var workoutsById: [String: WeekPlanItem] {
@@ -37,37 +37,39 @@ struct PlanCalendarCard: View {
   }
 
   var body: some View {
+    let grid = calendarGrid
+    let workouts = workoutsById
     VStack(alignment: .leading, spacing: 16) {
       header
-      ZStack {
-        // Um mês é uma peça só, e o mês seguinte tem a mesma forma. Deslizar
-        // uma grade 10pt por cima da outra deixava as duas legíveis ao mesmo
-        // tempo, com os números de dois meses sobrepostos. `blurReplace` é a
-        // troca que o sistema usa para conteúdo que muda no lugar.
+      TimelineView(.animation(paused: !painting.isDrawing || reduceMotion)) { timeline in
         PlanMonthGrid(
-          grid: calendarGrid, workoutsById: workoutsById,
-          paintProgress: reduceMotion || (hasSeenMarkerEntrance && !isPainting) ? 1 : paintProgress)
-          .id(period)
-          .transition(.blurReplace)
+          grid: grid, workoutsById: workouts,
+          paintProgress: reduceMotion ? 1 : painting.progress(at: timeline.date))
       }
-      .animation(reduceMotion ? nil : Motion.tap, value: period)
+      .transaction { $0.animation = nil }
       PlanLegend()
     }
     .padding(Space.xl).paperCard()
-    .onChange(of: period) {
-      finishPainting()
-      rebuild()
+    .onAppear {
+      isVisible = true
+      hasLoadedAttendance = false
+      painting.reset()
     }
-    .onChange(of: attendance, initial: true) {
-      rebuild()
+    .onChange(of: period) {
+      hasLoadedAttendance = false
+      painting.reset()
+    }
+    .onChange(of: attendance) {
       if hasLoadedAttendance { startPainting() }
     }
     .onChange(of: weekPlan) {
-      rebuild()
       if hasLoadedAttendance { startPainting() }
     }
-    .onDisappear { if isPainting { finishPainting() } }
-    .onChange(of: reduceMotion) { if reduceMotion { finishPainting() } }
+    .onDisappear {
+      isVisible = false
+      painting.finish()
+    }
+    .onChange(of: reduceMotion) { if reduceMotion { painting.finish() } }
     .task(id: period) {
       let range = period.range()
       await load(range.lowerBound, range.upperBound)
@@ -75,32 +77,23 @@ struct PlanCalendarCard: View {
       hasLoadedAttendance = true
       startPainting()
     }
+    .task(id: painting.startedAt) {
+      guard let start = painting.startedAt else { return }
+      do {
+        try await Task.sleep(for: .seconds(max(0, PlanMarkerPlayback.duration - Date().timeIntervalSince(start))))
+      } catch { return }
+      guard !Task.isCancelled, painting.startedAt == start else { return }
+      painting.finish()
+    }
   }
 
   private func startPainting() {
-    guard !hasSeenMarkerEntrance, !isPainting else { return }
-    guard calendarGrid.weeks.contains(where: { $0.cells.contains { $0.mark != .none } }) else { return }
+    guard isVisible else { return }
     guard !reduceMotion else {
-      finishPainting()
+      painting.finish()
       return
     }
-    isPainting = true
-    hasSeenMarkerEntrance = true
-    withAnimation(.linear(duration: 0.9)) {
-      paintProgress = 1
-    } completion: {
-      isPainting = false
-    }
-  }
-
-  private func finishPainting() {
-    var transaction = Transaction(animation: nil)
-    transaction.disablesAnimations = true
-    withTransaction(transaction) {
-      paintProgress = 1
-      isPainting = false
-      hasSeenMarkerEntrance = true
-    }
+    painting.start(at: .now)
   }
 
   private var header: some View {
@@ -114,8 +107,33 @@ struct PlanCalendarCard: View {
     }
   }
 
-  private func rebuild() {
-    calendarGrid = PlanCalendar(period: period, attendance: attendance, weekPlan: weekPlan)
+}
+
+/// Cada entrada e cada resposta nova podem iniciar uma pintura completa.
+struct PlanMarkerPlayback {
+  static let duration = 1.15
+  private(set) var startedAt: Date?
+  private var completed = false
+  var isDrawing: Bool { startedAt != nil }
+
+  mutating func reset() {
+    startedAt = nil
+    completed = false
+  }
+
+  mutating func start(at date: Date) {
+    startedAt = date
+    completed = false
+  }
+
+  mutating func finish() {
+    startedAt = nil
+    completed = true
+  }
+
+  func progress(at date: Date) -> Double {
+    guard let startedAt else { return completed ? 1 : 0 }
+    return max(0, min(1, date.timeIntervalSince(startedAt) / Self.duration))
   }
 }
 
@@ -157,7 +175,6 @@ private struct PlanMonthGrid: View {
 
 private struct DayCell: View {
   @Environment(\.locale) private var locale
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let cell: PlanCalendar.Cell
   let workoutsById: [String: WeekPlanItem]
   let paintProgress: Double
@@ -186,10 +203,6 @@ private struct DayCell: View {
               PlanMarkerMask(progress: paintProgress, day: cell.slot.day)
             }
         }
-        // A frequência chega depois da rede, e sem isto a casa saltava do cinza
-        // para a cor do treino no quadro em que a resposta volta. Só a cor
-        // atravessa, para a grade não mudar de forma no meio da entrada.
-        .animation(reduceMotion ? nil : Motion.crossfade, value: cell.mark)
         .overlay { content }
         .overlay {
           if cell.isToday {
@@ -266,7 +279,7 @@ struct PlanMarkerMask: Shape {
     let local = max(0, min(1, (progress - delay) / 0.36))
     guard local > 0 else { return Path() }
     guard local < 1 else { return Path(rect) }
-    let eased = 1 - pow(1 - local, 1.35)
+    let eased = 1 - pow(1 - local, 3)
     let slant = day.isMultiple(of: 2) ? 0.035 : -0.035
     var stroke = Path()
     for pass in 0..<5 {

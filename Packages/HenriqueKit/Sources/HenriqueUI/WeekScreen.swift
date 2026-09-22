@@ -15,7 +15,6 @@ struct WeekScreen: View {
           attendance: store.attendance,
           weekPlan: store.weekPlan,
           load: { from, to in await store.loadAttendance(from: from, to: to) })
-          .subtleEntrance()
         Button("novo treino", systemImage: "plus") {
           editorStep = .identidade
           editor = .new(weekdays: [])
