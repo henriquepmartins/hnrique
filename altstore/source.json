@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "34",
+          "date": "2026-09-22T10:38:11-03:00",
+          "localizedDescription": "• fix: alinha ícones, números e margens pelo olho nos três apps\n• fix: redesenha o calendário do plano toda vez que a tela volta\n• feat: anima o calendário do plano com traços de marcador",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-34/Henrique.ipa",
+          "size": 4673252,
+          "sha256": "525601f9cd3836be3563c3be670652f1eee31cf2c3a928693fea1635b160a714",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "33",
           "date": "2026-09-21T09:54:09-03:00",
           "localizedDescription": "• feat: rebuild the session screen from the design board",
