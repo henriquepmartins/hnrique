@@ -59,13 +59,14 @@ struct StudyAssignmentsCalendarCard: View {
       Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Color.studyInk)
         .lineLimit(1).minimumScaleFactor(0.8)
       Spacer(minLength: 4)
-      IconButton(title: "Mês anterior", systemImage: "chevron.left", glass: true) {
+      IconButton(title: "Mês anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) {
         month = previousMonth(of: month)
       }
-      IconButton(title: "Próximo mês", systemImage: "chevron.right", glass: true) {
+      IconButton(title: "Próximo mês", systemImage: "chevron.right", glass: true, nudge: CGSize(width: -1, height: 0)) {
         month = nextMonth(of: month)
       }
     }
+    .padding(.trailing, -6)
   }
 
   private var title: String {

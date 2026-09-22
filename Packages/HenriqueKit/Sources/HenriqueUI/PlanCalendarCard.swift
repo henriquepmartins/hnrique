@@ -101,8 +101,8 @@ struct PlanCalendarCard: View {
       Text(period.title(locale: locale)).font(.subheadline).foregroundStyle(Color.ink)
         .lineLimit(1).minimumScaleFactor(0.8)
       Spacer(minLength: 4)
-      IconButton(title: "Mês anterior", systemImage: "chevron.left", glass: true) { period = period.previous }
-      IconButton(title: "Próximo mês", systemImage: "chevron.right", glass: true) { period = period.next }
+      IconButton(title: "Mês anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) { period = period.previous }
+      IconButton(title: "Próximo mês", systemImage: "chevron.right", glass: true, nudge: CGSize(width: -1, height: 0)) { period = period.next }
         .disabled(nextIsFuture)
     }
   }

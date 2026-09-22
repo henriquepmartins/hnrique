@@ -106,7 +106,7 @@ struct WorkoutEditor: View {
   private var flow: some View {
     VStack(spacing: 0) {
       HStack {
-        RoundButton(systemImage: "chevron.left", fill: Color.surfaceMuted, ink: Color.ink, label: "fechar") {
+        RoundButton(systemImage: "chevron.left", fill: Color.surfaceMuted, ink: Color.ink, label: "fechar", nudge: 1) {
           dismiss()
         }
         .disabled(isSaving)
@@ -130,7 +130,7 @@ struct WorkoutEditor: View {
       .accessibilityHidden(true)
 
       ZStack {
-        RoundButton(systemImage: "arrow.left", fill: Color.ink, ink: .white, label: "voltar") {
+        RoundButton(systemImage: "arrow.left", fill: Color.ink, ink: .white, label: "voltar", nudge: 0.5) {
           go(to: step.previous)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -209,6 +209,7 @@ private struct RoundButton: View {
   let fill: Color
   let ink: Color
   let label: String
+  var nudge: CGFloat = 0
   let action: () -> Void
 
   var body: some View {
@@ -220,6 +221,7 @@ private struct RoundButton: View {
           Image(systemName: systemImage)
             .font(.system(.body, weight: .semibold))
             .foregroundStyle(ink)
+            .offset(x: nudge)
         }
     }
     .buttonStyle(StudyPressStyle())
@@ -446,6 +448,7 @@ private struct WeekdayToggle: View {
             .foregroundStyle(isOn ? .white : Color.ink)
             .lineLimit(1)
             .minimumScaleFactor(0.5)
+            .offset(y: -1)
             .padding(4)
         }
         .aspectRatio(1, contentMode: .fit)

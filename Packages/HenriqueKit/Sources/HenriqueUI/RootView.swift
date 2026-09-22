@@ -365,7 +365,7 @@ private struct AppSwitcherRow: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 12) {
-        Image(systemName: app.symbol).font(.system(size: 17)).frame(width: 24)
+        Image(systemName: app.symbol).font(.system(size: 17)).frame(width: 24, height: 20)
         Text(app.label).font(.body.weight(.medium))
         Spacer(minLength: 0)
         if isCurrent {

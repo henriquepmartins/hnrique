@@ -439,6 +439,7 @@ private struct DayMarker: View {
           Image(systemName: "checkmark")
             .font(.system(size: size * 0.42, weight: .bold))
             .foregroundStyle(.white)
+            .offset(y: -0.5)
         }
     case .missed:
       Circle().strokeBorder(Color.ink.opacity(0.16), lineWidth: 1.5)

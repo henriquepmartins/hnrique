@@ -30,8 +30,8 @@ struct DayStrip: View {
   var body: some View {
     VStack(spacing: 12) {
       HStack {
-        Button("Voltar uma semana", systemImage: "chevron.left") { move(-7) }
-          .labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.large)
+        Button { move(-7) } label: { Image(systemName: "chevron.left").offset(x: 1) }
+          .accessibilityLabel("Voltar uma semana").buttonStyle(.glass).controlSize(.large)
         Spacer()
         Button { moveTo(.today) } label: {
           Label(selected.date().formatted(.dateTime.month(.wide).year()), systemImage: "calendar")
@@ -39,8 +39,8 @@ struct DayStrip: View {
             .frame(minHeight: 44).contentShape(.rect)
         }.buttonStyle(StudyPressStyle()).accessibilityLabel("Ir para hoje")
         Spacer()
-        Button("Avançar uma semana", systemImage: "chevron.right") { move(7) }
-          .labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.large)
+        Button { move(7) } label: { Image(systemName: "chevron.right").offset(x: -1) }
+          .accessibilityLabel("Avançar uma semana").buttonStyle(.glass).controlSize(.large)
       }
       ScrollView(.horizontal) {
         LazyHStack(spacing: 0) {
@@ -105,7 +105,7 @@ struct DayChip: View {
       VStack(spacing: 10) {
         Text(day.date(), format: .dateTime.weekday(.abbreviated))
           .font(.caption2).foregroundStyle(isSelected ? accent.deep : Color.mutedInk)
-        Text("\(day.day)").font(.body.weight(isSelected ? .semibold : .regular)).monospacedDigit()
+        Text("\(day.day)").font(.body.weight(isSelected ? .semibold : .regular))
           .frame(width: 40, height: 40)
           .foregroundStyle(isSelected ? .white : Color.ink)
           .background {

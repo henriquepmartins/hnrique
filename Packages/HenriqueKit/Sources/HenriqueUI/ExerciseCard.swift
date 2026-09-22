@@ -18,7 +18,7 @@ struct ExerciseCard: View {
             ExerciseThumb(imageUrl: exercise.imageUrl, size: 48)
           } else {
             Image(systemName: "dumbbell").font(.title3).foregroundStyle(accent.base)
-              .frame(width: 48, height: 48).background(accent.pale.opacity(0.4), in: .circle)
+              .frame(width: 48, height: 48).background(accent.pale.opacity(0.4), in: .rect(cornerRadius: 48 * 0.32))
           }
           VStack(alignment: .leading, spacing: 6) {
             Text(exercise.name.lowercased()).font(.headline.weight(.medium))
@@ -73,7 +73,7 @@ struct ExerciseCard: View {
   }
   private func group(_ title: String, color: Color) -> some View {
     HStack(spacing: 6) {
-      Circle().fill(color).frame(width: 5, height: 5)
+      Circle().fill(color).frame(width: 5, height: 5).offset(y: 1)
       Text(title).font(.caption)
       Spacer()
     }.foregroundStyle(color).padding(.top, 8)
@@ -182,6 +182,7 @@ struct TrainingSetRow: View {
         // diz "ainda não", e o verde na próxima série que convida ao toque.
         Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
           .foregroundStyle(done ? Color.white : isNext ? accent.base : Color.ink.opacity(0.28))
+          .offset(y: -0.5)
           .frame(width: scale.check, height: scale.check)
           .background(done ? accent.base : .white, in: .circle)
           .overlay(Circle().strokeBorder(

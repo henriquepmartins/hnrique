@@ -466,7 +466,7 @@ struct ExercisePicker: View {
               if !search.trimmingCharacters(in: .whitespaces).isEmpty, !exactMatch {
                 Button { createCustom() } label: {
                   HStack(spacing: 12) {
-                    Circle().fill(Color.surfaceMuted).frame(width: 56, height: 56)
+                    RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
                       .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
                     VStack(alignment: .leading, spacing: 2) {
                       Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
@@ -498,6 +498,8 @@ struct ExercisePicker: View {
                 if !search.isEmpty {
                   IconButton(title: "Limpar busca", systemImage: "xmark.circle.fill", size: 17) { search = "" }
                     .tint(Color.mutedInk)
+                    // Sem isso o botão de 44pt estica o campo de 32 para 56.
+                    .padding(.vertical, -12).padding(.trailing, -10)
                 }
               }
               .padding(.horizontal, 12).padding(.vertical, 6)

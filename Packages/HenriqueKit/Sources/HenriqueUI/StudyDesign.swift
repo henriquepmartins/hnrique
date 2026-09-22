@@ -444,7 +444,7 @@ struct StudyDbRow<End: View>: View {
   }
 
   private var row: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: 6) {
       Group {
         if let icon {
           Image(systemName: icon).font(.system(size: 20)).foregroundStyle(Color.studyInk60)
@@ -452,7 +452,7 @@ struct StudyDbRow<End: View>: View {
           StudyDot(color: dot)
         }
       }
-      .frame(width: 22, alignment: .leading)
+      .frame(width: 26)
       VStack(alignment: .leading, spacing: 1) {
         Text(title)
           .font(.subheadline.weight(.medium))
@@ -490,11 +490,11 @@ struct StudyCallout: View {
   var detail: String?
 
   var body: some View {
-    HStack(spacing: 10) {
+    HStack(spacing: 6) {
       Image(systemName: icon)
         .font(.system(size: 20))
         .foregroundStyle(tone?.icon ?? Color.studyInk60)
-        .frame(width: 20)
+        .frame(width: 24, height: 24)
       VStack(alignment: .leading, spacing: 1) {
         Text(title).font(.subheadline.weight(.medium))
         if let detail {
@@ -536,6 +536,8 @@ struct StudyEmptyState: View {
         // Na lousa o ink40 do web sumiria no preto, então a versão creme usa o
         // tom apagado do próprio creme.
         .foregroundStyle(cream ? Color.studyCream50 : Color.studyInk40)
+        .frame(height: 28)
+        .offset(x: -2)
       Text(title)
         .font(.callout.weight(.semibold))
         .foregroundStyle(cream ? Color.studyCream : Color.studyInk)
@@ -574,7 +576,6 @@ struct StudyMetric: View {
     VStack(alignment: .leading, spacing: 4) {
       Text(value)
         .font(.system(size: valueSize, weight: .semibold))
-        .monospacedDigit()
         .tracking(-valueSize * 0.02)
         .contentTransition(.numericText())
         .animation(Motion.crossfade, value: value)
@@ -650,6 +651,7 @@ struct StudyTaskCard: View {
             Image(systemName: "checkmark")
               .font(.system(size: 12, weight: .bold))
               .foregroundStyle(.white)
+              .offset(y: -0.5)
               .transition(.iconAppear)
           }
         }

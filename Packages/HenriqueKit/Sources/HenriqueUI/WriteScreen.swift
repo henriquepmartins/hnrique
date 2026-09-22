@@ -186,7 +186,7 @@ public struct WriteScreen: View {
 
   private var props: some View {
     VStack(alignment: .leading, spacing: 2) {
-      WritePropRow(icon: "book", label: "matéria") {
+      WritePropRow(icon: "book", label: "matéria", lineHeight: 44) {
         ForEach(subjects) { item in
           StudyChip(label: item.name, count: nil, isActive: item.id == draft.subjectId) {
             draft.subjectId = draft.subjectId == item.id ? nil : item.id
@@ -347,6 +347,7 @@ public struct WriteScreen: View {
 private struct WritePropRow<Content: View>: View {
   let icon: String
   let label: String
+  var lineHeight: CGFloat = 30
   @ViewBuilder let content: Content
 
   var body: some View {
@@ -357,9 +358,9 @@ private struct WritePropRow<Content: View>: View {
       }
       .font(.footnote)
       .foregroundStyle(Color.studyInk40)
-      .frame(width: 104, height: 30, alignment: .leading)
+      .frame(width: 104, height: lineHeight, alignment: .leading)
       StudyWrap(spacing: 4, lineSpacing: 4) { content }
-        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: lineHeight, alignment: .leading)
     }
   }
 }
@@ -374,6 +375,7 @@ private struct WriteKeybar: ViewModifier {
           Button { insert(.wrap(before: "/", after: "")) } label: {
             Text("/")
               .font(.system(size: 13, weight: .semibold))
+              .offset(y: -1)
               .frame(minWidth: 44, minHeight: 44)
               .elevated(Capsule())
           }

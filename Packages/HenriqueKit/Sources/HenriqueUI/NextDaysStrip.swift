@@ -71,8 +71,8 @@ struct NextDaysStrip: View {
         .foregroundStyle(day.isToday ? .white : Color.ink)
         .padding(.top, 1)
       Spacer(minLength: Space.s)
-      HStack(spacing: 6) {
-        Circle().fill(dot(day)).frame(width: 8, height: 8)
+      HStack(alignment: .top, spacing: 6) {
+        Circle().fill(dot(day)).frame(width: 8, height: 8).padding(.top, 4)
         Text(day.title)
           .font(.caption)
           .foregroundStyle(day.isToday ? Color.white.opacity(0.86)

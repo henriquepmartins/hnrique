@@ -69,7 +69,8 @@ private struct FocoTimerView: View {
         Spacer(minLength: 0)
         IconButton(title: "minimizar", systemImage: "chevron.down", size: 20, action: minimize)
       }
-      .padding(.horizontal, 16)
+      .padding(.leading, 16)
+      .padding(.trailing, 3)
       Spacer(minLength: 0)
       TimelineView(.periodic(from: .now, by: 1)) { context in
         let seconds = run.seconds(at: context.date)
@@ -83,6 +84,7 @@ private struct FocoTimerView: View {
             .tracking(-timerSize * 0.011)
             .lineLimit(1)
             .minimumScaleFactor(0.4)
+            .offset(x: -1.5)
             .contentTransition(.numericText())
             .animation(reduceMotion ? nil : Motion.crossfade, value: Int(seconds))
             .accessibilityLabel("\(FocoFormat.spoken(seconds)) nesta sessão")
@@ -96,7 +98,9 @@ private struct FocoTimerView: View {
       }
       .background { aura }
       Spacer(minLength: 0)
-      Button("parar", systemImage: "stop.fill", action: stop)
+      Button(action: stop) {
+        Label("parar", systemImage: "stop.fill").padding(.leading, -1.5)
+      }
         .buttonStyle(.glassProminent)
         .tint(color)
         .controlSize(.large)

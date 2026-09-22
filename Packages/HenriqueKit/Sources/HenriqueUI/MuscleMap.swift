@@ -189,7 +189,7 @@ struct GapNote: View {
   let text: String
 
   var body: some View {
-    HStack(alignment: .top, spacing: Space.s) {
+    HStack(alignment: .firstTextBaseline, spacing: Space.s) {
       Image(systemName: "exclamationmark.circle")
         .font(.footnote.weight(.medium))
       Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)

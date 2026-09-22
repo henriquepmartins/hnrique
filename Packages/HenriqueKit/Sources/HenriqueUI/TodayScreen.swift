@@ -58,9 +58,9 @@ public struct TodayScreen: View {
               .onChange(of: compact) { openIds = defaultOpenIds() }
             }
             HStack {
-              IconButton(title: "progresso", systemImage: "chart.xyaxis.line", glass: true, action: onProgress)
+              IconButton(title: "progresso", systemImage: "chart.xyaxis.line", glass: true, nudge: CGSize(width: 0.5, height: -0.5), action: onProgress)
               Spacer()
-              IconButton(title: "editar plano", systemImage: "square.and.pencil", glass: true, action: onPlan)
+              IconButton(title: "editar plano", systemImage: "square.and.pencil", glass: true, nudge: CGSize(width: -0.5, height: -0.75), action: onPlan)
             }
             .firstEntrance(index: 2, settled: enteredDates.contains(data.date.iso))
             ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in

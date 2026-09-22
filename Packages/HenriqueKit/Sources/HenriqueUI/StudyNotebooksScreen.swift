@@ -331,7 +331,9 @@ struct NotebookBlockView: View {
     case .checkListItem:
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Image(systemName: block.checked == true ? "checkmark.square" : "square")
+          .font(.system(size: 16))
           .foregroundStyle(block.checked == true ? Color.studyBlue : Color.studyInk40)
+          .frame(width: 24, alignment: .trailing)
         paragraph(block.text)
           .strikethrough(block.checked == true)
           .foregroundStyle(block.checked == true ? Color.studyInk40 : Color.studyInk)
@@ -359,7 +361,7 @@ struct NotebookBlockView: View {
       symbol
         .font(.system(size: 16))
         .foregroundStyle(Color.studyInk40)
-        .frame(minWidth: 16, alignment: .trailing)
+        .frame(width: 24, alignment: .trailing)
       paragraph(block.text)
     }
   }

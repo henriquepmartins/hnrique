@@ -158,7 +158,7 @@ struct WorkoutSessionScreen: View {
         Button { dismiss() } label: {
           Text("encerrar")
             .font(.system(size: 14, weight: .medium)).foregroundStyle(Color.ink)
-            .padding(.vertical, 11).padding(.horizontal, 16)
+            .padding(.top, 10).padding(.bottom, 12).padding(.horizontal, 16)
             .background(.white, in: .capsule)
             .overlay(Capsule().strokeBorder(hairline))
         }
@@ -540,6 +540,7 @@ private struct SessionClock: View {
       HStack(spacing: 8) {
         if live {
           Circle().fill(accent.signal).frame(width: 8, height: 8)
+            .offset(y: 1)
             .modifier(Pulse(active: !reduceMotion))
         }
         Text(time)

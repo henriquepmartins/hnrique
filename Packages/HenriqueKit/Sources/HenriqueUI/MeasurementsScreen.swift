@@ -96,7 +96,6 @@ struct MeasurementsLink: View {
         Image(systemName: "arrow.right")
           .font(.headline)
           .foregroundStyle(accent.base)
-          .padding(.top, 4)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(Space.xl)
@@ -126,7 +125,7 @@ struct MeasurementMetric: View {
   let symbol: String
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Image(systemName: symbol).foregroundStyle(accent.base)
+      Image(systemName: symbol).foregroundStyle(accent.base).frame(height: 24)
       Text(title).font(.caption).foregroundStyle(Color.mutedInk)
       HStack(alignment: .firstTextBaseline, spacing: 4) {
         Text(value.map { $0.formatted(.number.precision(.fractionLength(0...1))) } ?? "sem registro")

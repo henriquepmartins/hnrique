@@ -209,6 +209,8 @@ struct IconButton: View {
   let systemImage: String
   var size: CGFloat = 15
   var glass = false
+  // Ajuste óptico: o chevron pesa para o lado que aponta.
+  var nudge: CGSize = .zero
   let action: () -> Void
 
   var body: some View {
@@ -216,6 +218,7 @@ struct IconButton: View {
       Image(systemName: systemImage)
         .font(.system(size: size, weight: .semibold))
         .foregroundStyle(.tint)
+        .offset(nudge)
         .frame(width: 32, height: 32)
         .glassEffect(glass ? .regular.interactive() : .identity, in: .circle)
         .frame(width: 44, height: 44)
@@ -225,6 +228,13 @@ struct IconButton: View {
     }
     .buttonStyle(StudyPressStyle())
     .accessibilityLabel(title)
+  }
+}
+
+extension Text {
+  // O "1" tabular deixa um vão na margem; o primeiro dígito fica proporcional.
+  static func clock(_ s: String) -> Text {
+    Text(String(s.prefix(1))) + Text(String(s.dropFirst())).monospacedDigit()
   }
 }
 

@@ -88,7 +88,7 @@ struct StudySubjectCard: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 22) {
       HStack {
-        Image(systemName: "book").font(.system(size: 20))
+        Image(systemName: "book").font(.system(size: 20)).offset(x: -1.5)
         Spacer(minLength: 8)
         if let code = subject.code {
           Text(code)

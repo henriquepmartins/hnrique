@@ -82,10 +82,10 @@ private struct AttendanceHeader: View {
       Text(title).font(.subheadline).foregroundStyle(Color.ink)
         .lineLimit(1).minimumScaleFactor(0.8)
       Spacer(minLength: 4)
-      IconButton(title: "Período anterior", systemImage: "chevron.left", glass: true) {
+      IconButton(title: "Período anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) {
         withAnimation(Motion.swap) { period = period.previous }
       }
-      IconButton(title: "Próximo período", systemImage: "chevron.right", glass: true) {
+      IconButton(title: "Próximo período", systemImage: "chevron.right", glass: true, nudge: CGSize(width: -1, height: 0)) {
         withAnimation(Motion.swap) { period = period.next }
       }
         .disabled(nextIsFuture)

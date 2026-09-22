@@ -131,7 +131,8 @@ struct StreakGoalCard: View {
   var body: some View {
     Button(action: action) {
       VStack(alignment: .leading, spacing: Space.m) {
-        Label(kind.face.label, systemImage: kind.face.systemImage).font(.headline)
+        Label { Text(kind.face.label) } icon: { Image(systemName: kind.face.systemImage).frame(width: 24) }
+          .font(.headline)
         HStack(alignment: .firstTextBaseline, spacing: 6) {
           Text("\(current)")
             .font(.largeTitle.weight(.semibold))
@@ -175,7 +176,8 @@ struct GoalCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
-      Label(exerciseName, systemImage: "target").font(.headline)
+      Label { Text(exerciseName) } icon: { Image(systemName: "target").frame(width: 24) }
+        .font(.headline)
       HStack(alignment: .firstTextBaseline, spacing: 6) {
         Text(weightLabel(projection?.current ?? 0))
           .font(.largeTitle.weight(.semibold))
@@ -484,8 +486,11 @@ struct MetricDetailScreen: View {
 
   private func action(_ title: String, symbol: String, perform: @escaping () -> Void) -> some View {
     VStack(spacing: 8) {
-      Button(title, systemImage: symbol, action: perform)
-        .labelStyle(.iconOnly).buttonStyle(.glass).controlSize(.large)
+      Button(action: perform) {
+        Image(systemName: symbol)
+          .offset(symbol == "square.and.pencil" ? CGSize(width: -0.5, height: -0.5) : .zero)
+      }
+      .accessibilityLabel(title).buttonStyle(.glass).controlSize(.large)
       Text(title).font(.caption2)
     }.frame(maxWidth: .infinity)
   }

@@ -25,7 +25,7 @@ public struct IdiomasProgressoScreen: View {
               HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(progress.figure.count)")
                   .font(.system(size: 44, weight: .semibold))
-                  .monospacedDigit()
+                  .padding(.leading, -1.5)
                   .foregroundStyle(Color.idiomasTeal)
                 if let target = progress.figure.target {
                   Text("/\(target) dias")
@@ -102,6 +102,7 @@ private struct IdiomasDayMarker: View {
           Image(systemName: "checkmark")
             .font(.system(size: 13, weight: .bold))
             .foregroundStyle(.white)
+            .offset(y: -0.5)
         }
     case .missed:
       Circle().strokeBorder(Color.studyInk20, lineWidth: 1.5)

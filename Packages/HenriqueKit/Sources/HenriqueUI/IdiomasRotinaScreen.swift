@@ -145,9 +145,11 @@ public struct IdiomasRotinaScreen: View {
             .foregroundStyle(Color.studyInk60)
             .fixedSize(horizontal: false, vertical: true)
         }
-        Button("ouvir", systemImage: "play.fill") {
+        Button {
           speech.speak(drill.promptDE)
           reduce(.play, drill: drill, drills: drills)
+        } label: {
+          Label("ouvir", systemImage: "play.fill").padding(.leading, -1.5)
         }
         .buttonStyle(.glass)
         .controlSize(.large)
@@ -302,11 +304,13 @@ public struct IdiomasRotinaScreen: View {
             Text(rating.localHint).font(.system(size: 11)).foregroundStyle(Color.studyInk40)
           }
           .multilineTextAlignment(.center)
+          .foregroundStyle(rating == .facil ? .white : Color.studyInk)
           .padding(6)
           .frame(maxWidth: .infinity, minHeight: 52)
+          .modifier(StudyGradeSurface(fill: rating == .facil ? .idiomasTeal : nil))
+          .contentShape(.capsule)
         }
-        .buttonStyle(.glass)
-        .tint(rating == .facil ? .idiomasTeal : Color.studyInk)
+        .buttonStyle(StudyPressStyle())
       }
     }
   }

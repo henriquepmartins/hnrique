@@ -49,6 +49,8 @@ struct SessionExercisePicker: View {
               if !search.isEmpty {
                 IconButton(title: "Limpar busca", systemImage: "xmark.circle.fill", size: 17) { search = "" }
                   .tint(Color.mutedInk)
+                  // Sem isso o botão de 44pt estica o campo de 32 para 56.
+                  .padding(.vertical, -12).padding(.trailing, -10)
               }
             }
             .padding(.horizontal, 12).padding(.vertical, 6)

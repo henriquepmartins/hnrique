@@ -107,14 +107,14 @@ public struct FocoScreen: View {
     let percent = Int((seconds / goal * 100).rounded(.down))
     return StudyCard {
       VStack(alignment: .leading, spacing: 12) {
-        Text(FocoFormat.clock(seconds))
+        Text.clock(FocoFormat.clock(seconds))
           .font(.system(size: clockSize, weight: .semibold).leading(.tight))
-          .monospacedDigit()
           .tracking(-clockSize * 0.03)
           .contentTransition(.numericText())
           .animation(reduceMotion ? nil : Motion.crossfade, value: Int(seconds))
           .lineLimit(1)
           .minimumScaleFactor(0.5)
+          .offset(x: -2)
           .accessibilityIdentifier("foco.relogio")
           .accessibilityLabel("\(FocoFormat.spoken(seconds)) hoje")
         FocoGoalBar(fraction: fraction, color: .studyBlue)
@@ -447,9 +447,8 @@ struct FocoTodayCard: View {
       StudyCard {
         VStack(alignment: .leading, spacing: 12) {
           HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(FocoFormat.clock(seconds))
+            Text.clock(FocoFormat.clock(seconds))
               .font(.system(size: clockSize, weight: .semibold).leading(.tight))
-              .monospacedDigit()
               .tracking(-clockSize * 0.03)
               .contentTransition(.numericText())
               .animation(reduceMotion ? nil : Motion.crossfade, value: Int(seconds))

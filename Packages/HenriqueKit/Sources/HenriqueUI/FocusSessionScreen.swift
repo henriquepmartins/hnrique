@@ -194,6 +194,7 @@ public struct FocusSessionScreen: View {
         .tint(Color.studyCream)
       Spacer(minLength: 0)
     }
+    .padding(.horizontal, 2)
   }
 
   // MARK: Estados
@@ -276,12 +277,12 @@ public struct FocusSessionScreen: View {
     return VStack(alignment: .leading, spacing: 0) {
       if let subjectName { label(subjectName, color: .studyMarigold) }
       title(isPaused ? "pausado" : "\(state.minutes) min")
-      Text(StudyFormat.clock(remaining))
+      Text.clock(StudyFormat.clock(remaining))
         .font(.system(size: timerSize, weight: .semibold).leading(.tight))
-        .monospacedDigit()
         .tracking(-timerSize * 0.011)
         .lineLimit(1)
         .minimumScaleFactor(0.4)
+        .offset(x: -3)
         .padding(.top, Space.xxl)
         .accessibilityLabel("faltam \(StudyFormat.minutes(Int(remaining / 60)))")
       progressBar(fraction: state.progress(at: now))
@@ -329,12 +330,12 @@ public struct FocusSessionScreen: View {
     VStack(alignment: .leading, spacing: 0) {
       if let subjectName { label(subjectName, color: .studyMarigold) }
       title("concluído")
-      Text(StudyFormat.minutes(completedMinutes))
+      Text.clock(StudyFormat.minutes(completedMinutes))
         .font(.system(size: timerSize, weight: .semibold).leading(.tight))
-        .monospacedDigit()
         .tracking(-timerSize * 0.011)
         .lineLimit(1)
         .minimumScaleFactor(0.4)
+        .offset(x: -3)
         .padding(.top, Space.xxl)
       if let noteStatus {
         Text(noteStatus)
