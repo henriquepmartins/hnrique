@@ -6,31 +6,26 @@ import SwiftUI
 #endif
 
 /// A tela escura do cronômetro. Enquanto roda mostra a sessão; ao parar, a
-/// mesma tela troca para o resultado.
+/// mesma tela troca para o resumo.
 struct FocoRunningScreen: View {
   @Environment(FocoStore.self) private var foco
-  @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var result: FocoResult?
 
   var body: some View {
     Group {
-      if let result {
-        FocoResultView(result: result, track: result.entry?.track ?? foco.ledger.running?.track) {
-          dismiss()
-        }
-        .transition(.blurReplace)
+      if let result = foco.result {
+        FocoResultView(result: result) { foco.closeResult() }
+          .transition(.blurReplace)
       } else if let run = foco.ledger.running {
-        FocoTimerView(run: run, minimize: { dismiss() }) {
-          result = foco.stop()
-        }
-        .transition(.blurReplace)
+        FocoTimerView(run: run, minimize: { foco.isShowingRun = false }) { foco.stop() }
+          .transition(.blurReplace)
       } else {
-        // A corrida foi parada pela lista com o cover fechado; nada a mostrar.
-        Color.clear.onAppear { dismiss() }
+        // A corrida foi parada de outro lugar com a tela fechada.
+        Color.clear.onAppear { foco.isShowingRun = false }
       }
     }
-    .animation(reduceMotion ? nil : Motion.crossfade, value: result == nil)
+    .animation(reduceMotion ? nil : Motion.crossfade, value: foco.result == nil)
+    .focoPresenceCheck(inCover: true)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color.studyBlack.ignoresSafeArea())
     .foregroundStyle(Color.studyCream)
@@ -72,10 +67,10 @@ private struct FocoTimerView: View {
       .padding(.leading, 16)
       .padding(.trailing, 3)
       Spacer(minLength: 0)
-      TimelineView(.periodic(from: .now, by: 1)) { context in
-        let seconds = run.seconds(at: context.date)
+      FocoTicker(running: !run.isPaused) { now in
+        let seconds = run.seconds(at: now)
         let today = foco.ledger.seconds(
-          on: CalendarDate(context.date, in: StudyFormat.calendar), now: context.date,
+          on: CalendarDate(now, in: StudyFormat.calendar), now: now,
           calendar: StudyFormat.calendar)
         VStack(spacing: 12) {
           Text(FocoFormat.clock(seconds))
@@ -87,8 +82,9 @@ private struct FocoTimerView: View {
             .offset(x: -1.5)
             .contentTransition(.numericText())
             .animation(reduceMotion ? nil : Motion.crossfade, value: Int(seconds))
+            .opacity(run.isPaused ? 0.45 : 1)
             .accessibilityLabel("\(FocoFormat.spoken(seconds)) nesta sessão")
-          Text("hoje \(FocoFormat.clock(today))")
+          Text(run.isPaused ? "pausado · hoje \(FocoFormat.clock(today))" : "hoje \(FocoFormat.clock(today))")
             .font(.subheadline)
             .monospacedDigit()
             .contentTransition(.numericText())
@@ -98,15 +94,24 @@ private struct FocoTimerView: View {
       }
       .background { aura }
       Spacer(minLength: 0)
-      Button(action: stop) {
-        Label("parar", systemImage: "stop.fill").padding(.leading, -1.5)
-      }
+      HStack(spacing: 12) {
+        Button {
+          if run.isPaused { foco.resume() } else { foco.pause() }
+        } label: {
+          Label(
+            run.isPaused ? "continuar" : "pausar",
+            systemImage: run.isPaused ? "play.fill" : "pause.fill")
+        }
+        .buttonStyle(.glass)
+        Button(action: stop) {
+          Label("parar", systemImage: "stop.fill").padding(.leading, -1.5)
+        }
         .buttonStyle(.glassProminent)
         .tint(color)
-        .controlSize(.large)
-        .font(.headline)
-        .accessibilityLabel("parar")
-        .padding(.bottom, 32)
+      }
+      .controlSize(.large)
+      .font(.headline)
+      .padding(.bottom, 32)
     }
     .padding(.top, 8)
   }
@@ -141,34 +146,45 @@ private struct FocoResultView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .largeTitle) private var bigSize = 72.0
   let result: FocoResult
-  let track: FocoTrack?
   let close: () -> Void
 
-  @State private var minutes = 0
+  @State private var shown = 0
   @State private var streakShown: Int
   @State private var celebrate = false
 
-  init(result: FocoResult, track: FocoTrack?, close: @escaping () -> Void) {
+  init(result: FocoResult, close: @escaping () -> Void) {
     self.result = result
-    self.track = track
     self.close = close
     _streakShown = State(initialValue: result.streakBefore.current)
   }
 
+  private var recorded: Bool { !result.entries.isEmpty }
+  private var inSeconds: Bool { result.seconds < 60 }
   private var streakRose: Bool { result.streakAfter.current > result.streakBefore.current }
-  private var party: Bool { result.entry != nil && (streakRose || result.goalJustReached) }
+  private var party: Bool { recorded && (streakRose || result.goalJustReached) }
 
   var body: some View {
     VStack(spacing: 24) {
       Spacer(minLength: 0)
-      if let entry = result.entry {
-        Text(entry.seconds < 60 ? "+\(minutes) s" : "+\(minutes) min")
-          .font(.system(size: bigSize, weight: .semibold).leading(.tight))
-          .monospacedDigit()
-          .tracking(-bigSize * 0.02)
-          .contentTransition(.numericText(value: Double(minutes)))
-          .animation(reduceMotion ? nil : .easeOut(duration: 0.8), value: minutes)
-          .accessibilityLabel(entry.seconds < 60 ? "mais \(minutes) segundos" : "mais \(minutes) minutos")
+      if recorded {
+        VStack(spacing: 10) {
+          Text(inSeconds ? "+\(shown) s" : "+\(shown) min")
+            .font(.system(size: bigSize, weight: .semibold).leading(.tight))
+            .monospacedDigit()
+            .tracking(-bigSize * 0.02)
+            .contentTransition(.numericText(value: Double(shown)))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.8), value: shown)
+            .accessibilityLabel("mais \(FocoFormat.spoken(result.seconds))")
+          HStack(spacing: 8) {
+            Circle().fill(Color(hexString: result.track.color)).frame(width: 8, height: 8)
+            Text(result.track.name)
+            Text("·").foregroundStyle(Color.studyCream50)
+            Text("hoje \(FocoFormat.short(minutes: Int(result.todaySeconds / 60)))")
+              .monospacedDigit()
+          }
+          .font(.subheadline)
+          .accessibilityElement(children: .combine)
+        }
         if streakRose {
           VStack(spacing: 8) {
             flame
@@ -202,9 +218,9 @@ private struct FocoResultView: View {
     .padding(.horizontal, 24)
     .sensoryFeedback(.success, trigger: celebrate) { _, fired in fired && party }
     .task {
-      guard let entry = result.entry else { return }
+      guard recorded else { return }
       try? await Task.sleep(for: .milliseconds(150))
-      minutes = entry.seconds < 60 ? Int(entry.seconds) : Int(entry.seconds / 60)
+      shown = inSeconds ? Int(result.seconds) : Int(result.seconds / 60)
       celebrate = true
       try? await Task.sleep(for: .milliseconds(400))
       streakShown = result.streakAfter.current
@@ -212,7 +228,7 @@ private struct FocoResultView: View {
   }
 
   private var burstColors: [Color] {
-    [Color(hexString: track?.color), .studyCoral, .studyMarigold]
+    [Color(hexString: result.track.color), .studyCoral, .studyMarigold]
   }
 
   private var flame: some View {

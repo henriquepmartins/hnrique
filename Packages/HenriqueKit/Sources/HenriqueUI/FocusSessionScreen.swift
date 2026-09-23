@@ -1,5 +1,6 @@
 import HenriqueCore
 import SwiftUI
+import UserNotifications
 
 #if canImport(UIKit)
   import UIKit
@@ -9,8 +10,9 @@ import SwiftUI
 
 /// Os quatro momentos do bloco. O tempo corrido sai sempre da diferença entre
 /// dois instantes, nunca de uma contagem de ticks, então o app pode ficar
-/// minutos no segundo plano sem o cronômetro atrasar.
-private enum FocusSessionState {
+/// minutos no segundo plano sem o cronômetro atrasar, e o bloco gravado no
+/// disco volta certo depois de o sistema matar o app.
+private enum FocusSessionState: Codable, Hashable {
   case idle(subjectId: String?, minutes: Int)
   case running(
     session: StudySession, subjectId: String?, minutes: Int, since: Date, before: TimeInterval)
@@ -127,7 +129,7 @@ public struct FocusSessionScreen: View {
   @ScaledMetric(relativeTo: .body) private var rowSize = 16.0
   @ScaledMetric(relativeTo: .subheadline) private var metaSize = 14.0
 
-  @State private var state = FocusSessionState.idle(subjectId: nil, minutes: 25)
+  @State private var state = FocusBlockFile.load() ?? .idle(subjectId: nil, minutes: 25)
   @State private var quickNote = ""
   @State private var noteSession: StudySession?
   @State private var busy = false
@@ -173,15 +175,24 @@ public struct FocusSessionScreen: View {
     .foregroundStyle(Color.studyCream)
     .tint(Color.studyCream)
     .preferredColorScheme(.dark)
-    .task { await store.loadSubjects() }
+    .task {
+      // O bloco que venceu com o app fechado termina ao abrir, sem esperar o
+      // relógio da tela mudar de valor.
+      if state.isRunning, state.remaining(at: .now) == 0 { await finish() }
+      await store.loadSubjects()
+    }
     .onChange(of: state.isRunning, initial: true) { _, running in
       keepScreenAwake(running)
+    }
+    .onChange(of: state) {
+      FocusBlockFile.save(state)
+      FocusBlockAlarm.update(for: state)
     }
     .onDisappear { keepScreenAwake(false) }
     .confirmationDialog(
       "descartar sessão?", isPresented: $askLeave, titleVisibility: .visible
     ) {
-      Button("descartar", role: .destructive) { dismiss() }
+      Button("descartar", role: .destructive) { discard() }
       Button("continuar", role: .cancel) {}
     }
   }
@@ -499,6 +510,18 @@ public struct FocusSessionScreen: View {
     }
   }
 
+  /// O servidor não tem rota de descarte. Fechar a sessão com zero minuto é o
+  /// que tira o bloco de aberto lá sem contar tempo que não valeu.
+  private func discard() {
+    let session = state.session
+    FocusBlockFile.save(nil)
+    FocusBlockAlarm.update(for: nil)
+    state = .idle(subjectId: state.subjectId, minutes: state.minutes)
+    dismiss()
+    guard let session else { return }
+    Task { _ = try? await store.finishSession(id: session.id, minutes: 0) }
+  }
+
   private func start() async {
     guard case .idle = state, !busy else { return }
     busy = true
@@ -511,6 +534,7 @@ public struct FocusSessionScreen: View {
       let session = try await store.startSession(id: id, subjectId: state.subjectId)
       state.started(session, at: .now)
       pendingSessionID = nil
+      await FocusBlockAlarm.requestPermission()
     } catch {
       startFailed = true
     }
@@ -574,6 +598,75 @@ public struct FocusSessionScreen: View {
   /// pelo fuso do aparelho daria outro arquivo para a mesma sessão.
   private static let noteDay = Date.ISO8601FormatStyle().year().month().day()
     .dateSeparator(.dash)
+}
+
+// MARK: - Bloco no disco
+
+/// O bloco em andamento, gravado como o foco grava a corrida. Só existe arquivo
+/// enquanto o bloco corre ou está pausado; parado ou concluído, some. A cópia
+/// em memória existe porque a casca pergunta a cada vez que se redesenha.
+@MainActor
+private enum FocusBlockFile {
+  static var url: URL { URL.applicationSupportDirectory.appending(path: "estudos-bloco.json") }
+  private static var loaded: FocusSessionState??
+
+  static func load() -> FocusSessionState? {
+    if let loaded { return loaded }
+    let state = (try? Data(contentsOf: url))
+      .flatMap { try? JSONDecoder.henrique().decode(FocusSessionState.self, from: $0) }
+      .flatMap { $0.phase == .timing ? $0 : nil }
+    loaded = .some(state)
+    return state
+  }
+
+  static func save(_ state: FocusSessionState?) {
+    let active = state.flatMap { $0.phase == .timing ? $0 : nil }
+    loaded = .some(active)
+    guard let active, let data = try? JSONEncoder.henrique().encode(active) else {
+      try? FileManager.default.removeItem(at: url)
+      return
+    }
+    try? FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? data.write(to: url, options: .atomic)
+  }
+}
+
+extension FocusSessionScreen {
+  /// Para a casca reabrir o bloco que estava rodando quando o app fechou.
+  static var hasActiveBlock: Bool { FocusBlockFile.load() != nil }
+}
+
+/// O aviso de fim do bloco com o app fechado. O prefixo "estudos." separa estes
+/// avisos dos da academia, que usam a mesma central.
+private enum FocusBlockAlarm {
+  static let identifier = "estudos.bloco"
+
+  static func requestPermission() async {
+    _ = try? await UNUserNotificationCenter.current()
+      .requestAuthorization(options: [.alert, .sound])
+  }
+
+  /// Rodando, agenda para o fim; pausado, parado ou concluído, cancela. O mesmo
+  /// identificador substitui o aviso anterior, então chamar de novo não duplica.
+  static func update(for state: FocusSessionState?) {
+    let center = UNUserNotificationCenter.current()
+    guard let state, state.isRunning else {
+      center.removePendingNotificationRequests(withIdentifiers: [identifier])
+      return
+    }
+    let remaining = state.remaining(at: .now)
+    guard remaining > 0 else {
+      center.removePendingNotificationRequests(withIdentifiers: [identifier])
+      return
+    }
+    let content = UNMutableNotificationContent()
+    content.title = "bloco de \(state.minutes) min concluído"
+    content.body = "abra o app para salvar a sessão."
+    content.sound = .default
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: remaining, repeats: false)
+    center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
+  }
 }
 
 // MARK: - Peças

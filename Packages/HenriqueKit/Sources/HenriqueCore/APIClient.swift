@@ -1,18 +1,39 @@
 import Foundation
+import Observation
 
 public enum APIError: Error, Equatable, Sendable {
   case unauthorized
+  /// O 401 do login. Nas outras rotas o mesmo status quer dizer sessão vencida.
+  case invalidCredentials
   case http(status: Int, message: String)
-  case transport(host: String, detail: String)
+  case transport(detail: String)
   case decoding(String)
+
+  public static let offlineMessage = "sem conexão"
 
   public var message: String {
     switch self {
     case .unauthorized: "sessão expirou"
+    case .invalidCredentials: "usuário ou senha incorretos"
     case .http(_, let message): message
-    case .transport(let host, _): "sem conexão com \(host)"
+    case .transport: Self.offlineMessage
     case .decoding: "resposta inválida"
     }
+  }
+}
+
+/// Se o último pedido chegou ao servidor. Qualquer resposta HTTP conta, até um
+/// 500: quem responde está no ar. A casca do app lê isto para mostrar a faixa
+/// de sem conexão sem cada tela abrir o próprio alerta.
+@MainActor
+@Observable
+public final class Connectivity {
+  public private(set) var isOffline = false
+
+  public nonisolated init() {}
+
+  public func report(reached: Bool) {
+    if isOffline == reached { isOffline = !reached }
   }
 }
 
@@ -67,6 +88,7 @@ public actor APIClient {
   private let tokenStore: any TokenStore
   private let encoder: JSONEncoder
   private let decoder: JSONDecoder
+  public nonisolated let connectivity = Connectivity()
 
   public init(
     baseURL: URL, tokenStore: any TokenStore, session: URLSession? = nil
@@ -85,6 +107,9 @@ public actor APIClient {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpShouldSetCookies = false
     configuration.httpCookieStorage = nil
+    // Os 60 s padrão seguravam o giro do puxar para atualizar um minuto
+    // inteiro quando o servidor não respondia.
+    configuration.timeoutIntervalForRequest = 20
     return URLSession(configuration: configuration)
   }
 
@@ -319,13 +344,17 @@ public actor APIClient {
       if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
         throw CancellationError()
       }
-      throw APIError.transport(host: Self.host(of: baseURL), detail: error.localizedDescription)
+      await connectivity.report(reached: false)
+      throw APIError.transport(detail: error.localizedDescription)
     }
     try Task.checkCancellation()
     guard let http = response as? HTTPURLResponse else {
-      throw APIError.transport(host: Self.host(of: baseURL), detail: "resposta sem status")
+      await connectivity.report(reached: false)
+      throw APIError.transport(detail: "resposta sem status")
     }
+    await connectivity.report(reached: true)
     if http.statusCode == 401 {
+      if route == .signIn { throw APIError.invalidCredentials }
       tokenStore.write(nil)
       throw APIError.unauthorized
     }
@@ -333,15 +362,6 @@ public actor APIClient {
       throw APIError.http(status: http.statusCode, message: Self.serverMessage(from: data))
     }
     return (data, http)
-  }
-
-  /// O endereço aparece no erro porque o modo de falha mais comum é o app
-  /// apontar para um servidor que não está rodando. Sem o endereço, "não
-  /// consegui falar com o servidor" não diz com qual.
-  static func host(of url: URL) -> String {
-    guard let host = url.host() else { return url.absoluteString }
-    guard let port = url.port else { return host }
-    return "\(host):\(port)"
   }
 
   /// O corpo do 400 traz `data.issues`, a lista do zod com o campo e o motivo.

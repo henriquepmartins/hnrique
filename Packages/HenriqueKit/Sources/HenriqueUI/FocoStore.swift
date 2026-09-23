@@ -2,13 +2,18 @@ import Foundation
 import HenriqueCore
 import Observation
 
-/// O que a tela escura mostra depois de parar: a sessão gravada (ou nada, se
-/// foi curta demais) e o que mudou no streak e na meta por causa dela.
+/// O que a tela escura mostra depois de parar: quanto contou (nada, se foi
+/// curta demais), de qual matéria, quanto o dia soma agora e o que mudou no
+/// streak e na meta por causa dela.
 public struct FocoResult: Hashable, Sendable {
-  public var entry: FocoEntry?
+  public var track: FocoTrack
+  public var entries: [FocoEntry]
+  public var todaySeconds: TimeInterval
   public var streakBefore: FocoStreak
   public var streakAfter: FocoStreak
   public var goalJustReached: Bool
+
+  public var seconds: TimeInterval { entries.reduce(0) { $0 + $1.seconds } }
 }
 
 /// O registro local é a verdade e a fila offline. O servidor guarda as sessões
@@ -18,6 +23,13 @@ public struct FocoResult: Hashable, Sendable {
 @MainActor
 public final class FocoStore {
   public private(set) var ledger: FocoLedger
+  /// A tela escura fica na raiz para abrir de qualquer app: da lista de
+  /// matérias, da faixa acima das abas ou da pergunta de presença.
+  public var isShowingRun = false
+  public private(set) var result: FocoResult?
+  /// Preenchido quando a corrida passou de 4 h sem ninguém confirmar. É a hora
+  /// em que o app esteve aberto pela última vez, onde o corte cairia.
+  public private(set) var presenceCut: Date?
   /// Verdadeiro só entre abrir o app com uma corrida gravada e a primeira tela
   /// de foco reabrir o cronômetro. Minimizar depois disso não reabre.
   private var resumePending: Bool
@@ -25,6 +37,7 @@ public final class FocoStore {
   private let estudos: EstudosStore?
   private let calendar = StudyFormat.calendar
   @ObservationIgnored private var syncing = false
+  @ObservationIgnored private var lastSyncedAt: Date?
 
   static let batchSize = 500
 
@@ -48,11 +61,12 @@ public final class FocoStore {
   public var isRunning: Bool { ledger.running != nil }
 
   public func start(_ track: FocoTrack) {
+    let now = Date.now
     let previous = ledger.running
-    ledger.start(track, at: .now)
+    ledger.start(track, at: now, calendar: calendar)
     save()
     if let previous, let id = previous.serverSessionId {
-      finishOnServer(id: id, seconds: previous.seconds(at: .now))
+      finishOnServer(id: id, seconds: previous.seconds(at: now))
     }
     guard track.source == .estudos, let subjectId = track.subjectId, let estudos else { return }
     let startedAt = ledger.running?.startedAt
@@ -65,31 +79,103 @@ public final class FocoStore {
     }
   }
 
-  @discardableResult
-  public func stop() -> FocoResult? {
-    guard let run = ledger.running else { return nil }
-    let now = Date.now
-    let today = CalendarDate(now, in: calendar)
-    let before = ledger.streak(now: now, calendar: calendar)
-    let goalBefore = ledger.seconds(on: today, now: run.startedAt, calendar: calendar) >= goalSeconds
-    let entry = ledger.stop(at: now)
+  public func pause() {
+    ledger.pause(at: .now)
     save()
-    let after = ledger.streak(now: now, calendar: calendar)
-    let goalAfter = ledger.seconds(on: today, now: now, calendar: calendar) >= goalSeconds
-    if let id = run.serverSessionId {
-      finishOnServer(id: id, seconds: run.seconds(at: now))
-    }
-    let result = FocoResult(
-      entry: entry, streakBefore: before, streakAfter: after,
-      goalJustReached: goalAfter && !goalBefore)
-    Task { await sync() }
-    return result
   }
 
-  public func remove(_ entry: FocoEntry) {
-    ledger.remove(id: entry.id)
+  public func resume() {
+    ledger.resume(at: .now)
     save()
+  }
+
+  /// Para e deixa o resumo em `result` para a tela escura mostrar.
+  public func stop() {
+    stop(at: .now)
+  }
+
+  private func stop(at end: Date) {
+    guard let run = ledger.running else { return }
+    let today = CalendarDate(end, in: calendar)
+    let before = ledger.streak(now: end, calendar: calendar)
+    var withoutRun = ledger
+    withoutRun.running = nil
+    let goalBefore = withoutRun.seconds(on: today, now: end, calendar: calendar) >= goalSeconds
+    let entries = ledger.stop(at: end, calendar: calendar)
+    presenceCut = nil
+    save()
+    let todaySeconds = ledger.seconds(on: today, now: end, calendar: calendar)
+    if let id = run.serverSessionId {
+      finishOnServer(id: id, seconds: run.seconds(at: end))
+    }
+    result = FocoResult(
+      track: run.track, entries: entries, todaySeconds: todaySeconds,
+      streakBefore: before, streakAfter: ledger.streak(now: end, calendar: calendar),
+      goalJustReached: todaySeconds >= goalSeconds && !goalBefore)
+    isShowingRun = true
     Task { await sync() }
+  }
+
+  public func closeResult() {
+    result = nil
+    isShowingRun = false
+  }
+
+  // MARK: Presença
+
+  /// O app voltou para a frente. Uma corrida de mais de 4 h sem resposta vira
+  /// a pergunta; senão, este é o novo último momento em que alguém estava ali.
+  public func appBecameActive() {
+    let now = Date.now
+    guard let run = ledger.running else { return }
+    if run.needsPresenceCheck(at: now) {
+      presenceCut = run.lastPresence(fallback: now)
+    } else {
+      ledger.markSeen(at: now)
+      save()
+    }
+  }
+
+  public func appWentBackground() {
+    guard presenceCut == nil else { return }
+    ledger.markSeen(at: .now)
+    save()
+  }
+
+  public func confirmPresence() {
+    ledger.confirmPresence(at: .now)
+    presenceCut = nil
+    save()
+  }
+
+  public func stopAtLastPresence() {
+    stop(at: presenceCut ?? .now)
+  }
+
+  /// A sessão apagada some na hora e o servidor só fica sabendo depois de 4 s,
+  /// o tempo do aviso com "desfazer".
+  public private(set) var undoable: FocoEntry?
+  @ObservationIgnored private var undoTask: Task<Void, Never>?
+
+  public func remove(_ entry: FocoEntry) {
+    undoTask?.cancel()
+    ledger.remove(id: entry.id)
+    undoable = entry
+    save()
+    undoTask = Task {
+      try? await Task.sleep(for: .seconds(4))
+      guard !Task.isCancelled else { return }
+      undoable = nil
+      await sync()
+    }
+  }
+
+  public func undoRemove() {
+    guard let entry = undoable else { return }
+    undoTask?.cancel()
+    undoable = nil
+    ledger.restore(entry)
+    save()
   }
 
   public func setGoal(minutes: Int) {
@@ -103,6 +189,13 @@ public final class FocoStore {
   /// Sobe a fila e depois adota a lista do servidor. Um sync por vez; o segundo
   /// pedido enquanto um roda é descartado, porque o que ele subiria já está na
   /// fila do primeiro ou entra na próxima chamada.
+  /// O que as telas chamam ao aparecer. O cartão de hoje e a tela de foco
+  /// aparecem a cada troca de aba, e cada sync baixava a lista inteira.
+  public func syncIfStale() async {
+    if let lastSyncedAt, Date.now.timeIntervalSince(lastSyncedAt) < 60 { return }
+    await sync()
+  }
+
   public func sync() async {
     guard let client = estudos?.client, !syncing else { return }
     syncing = true
@@ -118,6 +211,7 @@ public final class FocoStore {
       let list = try await client.focoList()
       ledger.merge(server: list.entries, serverGoal: list.dailyGoalMinutes)
       save()
+      lastSyncedAt = .now
     } catch {
       // Sem rede ou sessão caída a fila fica como está. O 401 já derrubou o
       // token no cliente, e a próxima tela que falar com o servidor desloga.
@@ -139,8 +233,10 @@ public final class FocoStore {
   }
 
   private func pushRemovals(_ client: APIClient) async throws {
-    while !ledger.pendingRemovals.isEmpty {
-      let batch = Array(ledger.pendingRemovals.prefix(Self.batchSize))
+    while true {
+      let waiting = ledger.pendingRemovals.subtracting([undoable?.id].compactMap { $0 })
+      guard !waiting.isEmpty else { return }
+      let batch = Array(waiting.prefix(Self.batchSize))
       _ = try await client.focoRemove(ids: batch)
       ledger.markRemoved(batch)
       save()

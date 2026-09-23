@@ -98,13 +98,32 @@ struct IdiomasContractTests {
     #expect(!semChave.keys.contains("attemptId"))
   }
 
-  @Test("o fim da sessão manda os treinos feitos")
+  @Test("o fim da sessão manda os treinos feitos e o dia do aparelho")
   func finishInputEncodes() throws {
+    let day = try #require(CalendarDate(iso: "2026-09-22"))
     let json = try #require(
       JSONSerialization.jsonObject(
-        with: JSONEncoder.henrique().encode(LanguageFinishInput(drillIds: ["a", "b"])))
+        with: JSONEncoder.henrique().encode(LanguageFinishInput(drillIds: ["a", "b"], date: day)))
         as? [String: Any])
     #expect(json["drillIds"] as? [String] == ["a", "b"])
+    #expect(json["date"] as? String == "2026-09-22")
+  }
+
+  @Test("o treino concluído leva o dia do aparelho, que por padrão é hoje")
+  func completeInputSendsTheLocalDay() throws {
+    let day = try #require(CalendarDate(iso: "2026-09-22"))
+    let fixed = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder.henrique().encode(
+          LanguageCompleteInput(drillId: "d", text: "t", micUsed: false, date: day)))
+        as? [String: Any])
+    #expect(fixed["date"] as? String == "2026-09-22")
+    let standard = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder.henrique().encode(
+          LanguageCompleteInput(drillId: "d", text: "t", micUsed: false)))
+        as? [String: Any])
+    #expect(standard["date"] as? String == CalendarDate(Date()).iso)
   }
 
   @Test("a nota da revisão só vai quando existe")
@@ -133,8 +152,8 @@ struct IdiomasContractTests {
     #expect(FlashcardRating.facil.localHint == "3 dias")
   }
 
-  @Test("o erro de transporte não vira culpa de quem treina")
+  @Test("o erro de transporte não mostra o endereço do servidor")
   func transportErrorMessage() {
-    #expect(APIError.transport(host: "localhost:3000", detail: "x").message.contains("localhost:3000"))
+    #expect(APIError.transport(detail: "x").message == "sem conexão")
   }
 }

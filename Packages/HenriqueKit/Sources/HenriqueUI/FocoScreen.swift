@@ -17,12 +17,18 @@ enum FocoFormat {
   }
 
   static func spoken(_ seconds: TimeInterval) -> String {
-    let minutes = Int(seconds / 60)
+    let total = max(0, Int(seconds))
+    let minutes = total / 60
     let hours = minutes / 60
     let rest = minutes % 60
-    if minutes == 0 { return "\(Int(seconds)) segundos" }
-    if hours == 0 { return "\(rest) minutos" }
-    return "\(hours) \(hours == 1 ? "hora" : "horas") e \(rest) minutos"
+    if minutes == 0 { return count(total, "segundo", "segundos") }
+    if hours == 0 { return count(rest, "minuto", "minutos") }
+    if rest == 0 { return count(hours, "hora", "horas") }
+    return "\(count(hours, "hora", "horas")) e \(count(rest, "minuto", "minutos"))"
+  }
+
+  private static func count(_ value: Int, _ singular: String, _ plural: String) -> String {
+    "\(value) \(value == 1 ? singular : plural)"
   }
 }
 
@@ -53,7 +59,6 @@ public struct FocoScreen: View {
   @ScaledMetric(relativeTo: .largeTitle) private var clockSize = 64.0
 
   private let leading: FocoTrack.Source
-  @State private var showingRun = false
 
   public init(leading: FocoTrack.Source) {
     self.leading = leading
@@ -85,17 +90,23 @@ public struct FocoScreen: View {
       .padding(.bottom, 32)
     }
     .studyPage()
+    .overlay(alignment: .bottom) {
+      if let entry = foco.undoable {
+        FocoUndoToast(entry: entry) { foco.undoRemove() }
+          .padding(.horizontal, 16)
+          .padding(.bottom, 12)
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+      }
+    }
+    .animation(reduceMotion ? nil : Motion.crossfade, value: foco.undoable)
     .task {
       await estudos.loadSubjects()
-      if foco.takeResume() { showingRun = true }
-      await foco.sync()
+      if foco.takeResume() { foco.isShowingRun = true }
+      await foco.syncIfStale()
     }
     .onChange(of: scenePhase) {
-      if scenePhase == .active { Task { await foco.sync() } }
+      if scenePhase == .active { Task { await foco.syncIfStale() } }
     }
-    #if os(iOS)
-      .fullScreenCover(isPresented: $showingRun) { FocoRunningScreen() }
-    #endif
   }
 
   // MARK: Relógio do dia
@@ -221,7 +232,7 @@ public struct FocoScreen: View {
       foco.stop()
     } else {
       foco.start(track)
-      showingRun = true
+      foco.isShowingRun = true
     }
   }
 
@@ -479,6 +490,29 @@ struct FocoTodayCard: View {
         }
       }
     }
-    .task { await foco.sync() }
+    .task { await foco.syncIfStale() }
+  }
+}
+
+/// O aviso depois de apagar uma sessão. Fica 4 s, o tempo que o store segura a
+/// remoção antes de mandar ao servidor.
+struct FocoUndoToast: View {
+  let entry: FocoEntry
+  let undo: () -> Void
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Text("sessão de \(entry.track.name) apagada")
+        .font(.subheadline)
+        .lineLimit(1)
+      Spacer(minLength: 0)
+      Button("desfazer", action: undo)
+        .font(.subheadline.weight(.semibold))
+        .accessibilityIdentifier("foco.desfazer")
+    }
+    .padding(.leading, 16)
+    .padding(.trailing, 8)
+    .frame(minHeight: 48)
+    .glassEffect(in: .capsule)
   }
 }

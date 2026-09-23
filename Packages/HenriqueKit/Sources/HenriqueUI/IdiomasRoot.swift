@@ -36,6 +36,7 @@ struct IdiomasTabs: View {
         Color.clear
       }
     }
+    .focoAccessory()
     .onAppear { if tab == .apps { tab = .rotina; showingApps = true } }
     .tint(.idiomasTeal)
     .environment(speech)

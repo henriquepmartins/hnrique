@@ -41,7 +41,7 @@ struct FocoTests {
       Self.entry(Self.fisica, "2026-09-08", "14:05", "14:52"),
       Self.entry(.alemao, "2026-09-08", "16:00", "16:10"),
     ])
-    ledger.start(Self.fisica, at: Self.at("2026-09-08", "20:00"))
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "20:00"), calendar: Self.calendar)
     let now = Self.at("2026-09-08", "20:03")
     #expect(
       ledger.seconds(on: Self.day("2026-09-08"), now: now, calendar: Self.calendar)
@@ -55,9 +55,10 @@ struct FocoTests {
   @Test("sessão com menos de 10 segundos não grava")
   func shortSessionIsDropped() {
     var ledger = FocoLedger()
-    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"))
-    let entry = ledger.stop(at: Self.at("2026-09-08", "10:00").addingTimeInterval(9))
-    #expect(entry == nil)
+    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    let entries = ledger.stop(
+      at: Self.at("2026-09-08", "10:00").addingTimeInterval(9), calendar: Self.calendar)
+    #expect(entries.isEmpty)
     #expect(ledger.entries.isEmpty)
     #expect(ledger.running == nil)
   }
@@ -65,8 +66,8 @@ struct FocoTests {
   @Test("começar outra trilha fecha a que rodava")
   func startClosesThePreviousRun() {
     var ledger = FocoLedger()
-    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"))
-    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:20"))
+    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:20"), calendar: Self.calendar)
     #expect(ledger.entries.map(\.track.id) == [FocoTrack.alemao.id])
     #expect(ledger.entries.first?.seconds == 1200.0)
     #expect(ledger.running?.track == Self.fisica)
@@ -135,7 +136,7 @@ struct FocoTests {
   @Test("o registro faz ida e volta em JSON com a corrida")
   func ledgerRoundTripsThroughJSON() throws {
     var ledger = FocoLedger(entries: [Self.counted("2026-09-07")], dailyGoalMinutes: 180)
-    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:00"))
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
     ledger.running?.serverSessionId = "srv-1"
     let data = try JSONEncoder().encode(ledger)
     let decoded = try JSONDecoder().decode(FocoLedger.self, from: data)
@@ -164,19 +165,19 @@ struct FocoTests {
   @Test("parar enfileira a sessão gravada; a curta demais não")
   func stopQueuesTheEntry() {
     var ledger = FocoLedger()
-    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"))
-    let entry = ledger.stop(at: Self.at("2026-09-08", "10:20"))!
+    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    let entry = ledger.stop(at: Self.at("2026-09-08", "10:20"), calendar: Self.calendar)[0]
     #expect(ledger.pendingUploads == [entry.id])
-    ledger.start(.alemao, at: Self.at("2026-09-08", "11:00"))
-    ledger.stop(at: Self.at("2026-09-08", "11:00").addingTimeInterval(5))
+    ledger.start(.alemao, at: Self.at("2026-09-08", "11:00"), calendar: Self.calendar)
+    ledger.stop(at: Self.at("2026-09-08", "11:00").addingTimeInterval(5), calendar: Self.calendar)
     #expect(ledger.pendingUploads == [entry.id])
   }
 
   @Test("começar outra trilha enfileira a que fechou")
   func startQueuesTheClosedRun() {
     var ledger = FocoLedger()
-    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"))
-    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:20"))
+    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:20"), calendar: Self.calendar)
     #expect(ledger.pendingUploads == [ledger.entries[0].id])
   }
 
@@ -207,7 +208,7 @@ struct FocoTests {
     let fromServer = Self.entry(Self.fisica, "2026-09-07", "09:00", "09:30")
     var ledger = FocoLedger(
       entries: [synced, pending], pendingUploads: [pending.id], pendingRemovals: [removed.id])
-    ledger.start(.alemao, at: Self.at("2026-09-08", "12:00"))
+    ledger.start(.alemao, at: Self.at("2026-09-08", "12:00"), calendar: Self.calendar)
     let run = ledger.running
     ledger.merge(server: [fromServer, removed, synced], serverGoal: nil)
     #expect(ledger.entries.map(\.id) == [synced.id, fromServer.id, pending.id])
@@ -261,5 +262,108 @@ struct FocoTests {
     let list = try JSONDecoder.henrique().decode(FocoListResponse.self, from: Data(back.utf8))
     #expect(list.entries == [entry])
     #expect(list.dailyGoalMinutes == nil)
+  }
+  // MARK: Pausa, meia-noite e presença
+
+  @Test("a pausa não conta e cada trecho vira uma sessão com a hora real")
+  func pauseSplitsTheRun() {
+    var ledger = FocoLedger()
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    ledger.pause(at: Self.at("2026-09-08", "10:25"))
+    #expect(ledger.running?.seconds(at: Self.at("2026-09-08", "11:00")) == TimeInterval(25 * 60))
+    ledger.resume(at: Self.at("2026-09-08", "11:00"))
+    #expect(ledger.running?.seconds(at: Self.at("2026-09-08", "11:10")) == TimeInterval(35 * 60))
+    #expect(
+      ledger.seconds(
+        on: Self.day("2026-09-08"), now: Self.at("2026-09-08", "11:10"), calendar: Self.calendar)
+        == 35 * 60)
+    let entries = ledger.stop(at: Self.at("2026-09-08", "11:20"), calendar: Self.calendar)
+    #expect(entries.map(\.seconds) == [25 * 60, 20 * 60])
+    #expect(entries.map(\.startedAt) == [Self.at("2026-09-08", "10:00"), Self.at("2026-09-08", "11:00")])
+    #expect(ledger.pendingUploads == Set(entries.map(\.id)))
+  }
+
+  @Test("pausar duas vezes não cria trecho vazio")
+  func pauseIsIdempotent() {
+    var ledger = FocoLedger()
+    ledger.start(.alemao, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    ledger.pause(at: Self.at("2026-09-08", "10:10"))
+    ledger.pause(at: Self.at("2026-09-08", "10:30"))
+    #expect(ledger.running?.stretches.count == 1)
+    #expect(ledger.running?.seconds(at: Self.at("2026-09-08", "12:00")) == TimeInterval(600))
+  }
+
+  @Test("a corrida das 23:30 à 00:30 grava meia hora em cada dia")
+  func runAcrossMidnightSplits() {
+    var ledger = FocoLedger()
+    ledger.start(Self.fisica, at: Self.at("2026-09-07", "23:30"), calendar: Self.calendar)
+    let now = Self.at("2026-09-08", "00:30")
+    #expect(ledger.seconds(on: Self.day("2026-09-07"), now: now, calendar: Self.calendar) == 1800)
+    #expect(ledger.seconds(on: Self.day("2026-09-08"), now: now, calendar: Self.calendar) == 1800)
+    let entries = ledger.stop(at: now, calendar: Self.calendar)
+    #expect(entries.map(\.startedAt) == [Self.at("2026-09-07", "23:30"), Self.at("2026-09-08", "00:00")])
+    #expect(entries.map(\.endedAt) == [Self.at("2026-09-08", "00:00"), now])
+  }
+
+  @Test("mais de 4 h sem resposta pergunta e corta no último uso do app")
+  func presenceCheckCutsAtLastSeen() throws {
+    var ledger = FocoLedger()
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "09:00"), calendar: Self.calendar)
+    ledger.markSeen(at: Self.at("2026-09-08", "09:40"))
+    let later = Self.at("2026-09-08", "13:05")
+    let run = try #require(ledger.running)
+    #expect(run.needsPresenceCheck(at: Self.at("2026-09-08", "12:59")) == false)
+    #expect(run.needsPresenceCheck(at: later))
+    let cut = run.lastPresence(fallback: later)
+    #expect(cut == Self.at("2026-09-08", "09:40"))
+    let entries = ledger.stop(at: cut, calendar: Self.calendar)
+    #expect(entries.map(\.seconds) == [40 * 60])
+  }
+
+  @Test("responder que está ali adia a próxima pergunta por mais 4 h")
+  func confirmingPresencePostponesTheCheck() throws {
+    var ledger = FocoLedger()
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "09:00"), calendar: Self.calendar)
+    ledger.confirmPresence(at: Self.at("2026-09-08", "13:30"))
+    let run = try #require(ledger.running)
+    #expect(run.needsPresenceCheck(at: Self.at("2026-09-08", "17:00")) == false)
+    #expect(run.needsPresenceCheck(at: Self.at("2026-09-08", "17:31")))
+    #expect(run.lastPresence(fallback: Self.at("2026-09-08", "18:00")) == Self.at("2026-09-08", "13:30"))
+  }
+
+  @Test("pausada não pergunta, porque não está contando")
+  func pausedRunSkipsTheCheck() {
+    var ledger = FocoLedger()
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "09:00"), calendar: Self.calendar)
+    ledger.pause(at: Self.at("2026-09-08", "09:30"))
+    #expect(ledger.running?.needsPresenceCheck(at: Self.at("2026-09-08", "20:00")) == false)
+  }
+
+  @Test("a corrida gravada antes da pausa volta rodando desde o começo")
+  func legacyRunDecodesAsRunning() throws {
+    let json = """
+      {"entries":[],"pendingUploads":[],"running":{"track":{"id":"idiomas:alemao","name":"alemão","color":"#0b6e4f","source":"idiomas"},"startedAt":"2026-09-08T13:00:00Z","serverSessionId":"srv-9"}}
+      """
+    let ledger = try JSONDecoder.henrique().decode(FocoLedger.self, from: Data(json.utf8))
+    let run = try #require(ledger.running)
+    #expect(run.isPaused == false)
+    #expect(run.serverSessionId == "srv-9")
+    #expect(run.seconds(at: Self.at("2026-09-08", "10:30")) == 1800)
+  }
+
+  @Test("desfazer devolve a sessão e tira a remoção da fila")
+  func restoreUndoesRemove() {
+    let synced = Self.counted("2026-09-07")
+    let pending = Self.counted("2026-09-08")
+    var ledger = FocoLedger(entries: [synced, pending], pendingUploads: [pending.id])
+    ledger.remove(id: synced.id)
+    ledger.remove(id: pending.id)
+    #expect(ledger.pendingRemovals == [synced.id])
+    ledger.restore(synced)
+    ledger.restore(pending)
+    ledger.restore(pending)
+    #expect(ledger.entries.map(\.id) == [synced.id, pending.id])
+    #expect(ledger.pendingRemovals == [])
+    #expect(ledger.pendingUploads == [pending.id])
   }
 }
