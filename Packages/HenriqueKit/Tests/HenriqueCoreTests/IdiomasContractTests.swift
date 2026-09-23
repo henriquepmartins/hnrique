@@ -133,8 +133,8 @@ struct IdiomasContractTests {
     #expect(FlashcardRating.facil.localHint == "3 dias")
   }
 
-  @Test("o erro de transporte não vira culpa de quem treina")
+  @Test("o erro de transporte não mostra o endereço do servidor")
   func transportErrorMessage() {
-    #expect(APIError.transport(host: "localhost:3000", detail: "x").message.contains("localhost:3000"))
+    #expect(APIError.transport(detail: "x").message == "sem conexão")
   }
 }
