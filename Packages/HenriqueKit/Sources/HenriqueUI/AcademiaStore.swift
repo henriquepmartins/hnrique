@@ -451,6 +451,13 @@ public final class AcademiaStore {
     }
   }
 
+  /// Troca o treino do dia aberto. Nulo volta o dia para o plano.
+  @discardableResult
+  public func swapDay(workoutTemplateId: String?) async -> Bool {
+    let input = SwapDayInput(date: selectedDate, workoutTemplateId: workoutTemplateId)
+    return await apply { try await self.client.swapDay(input) }
+  }
+
   @discardableResult
   public func setStrengthGoal(_ input: SetStrengthGoalInput) async -> Bool {
     await apply { try await self.client.setStrengthGoal(input) }

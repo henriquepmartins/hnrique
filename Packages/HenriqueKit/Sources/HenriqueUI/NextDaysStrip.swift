@@ -22,13 +22,12 @@ struct PlannedDay: Identifiable, Equatable {
 
 /// Os próximos cinco dias do plano, a partir de hoje. Responde "o que vem depois"
 /// sem abrir a aba do plano, que é a pergunta seguinte a "o que eu faço agora".
-func plannedDays(from today: CalendarDate, plan: [WeekPlanItem], done: Set<CalendarDate>, count: Int = 5) -> [PlannedDay] {
+func plannedDays(from today: CalendarDate, schedule: PlanSchedule, done: Set<CalendarDate>, count: Int = 5) -> [PlannedDay] {
   (0..<count).map { offset in
     let date = today.adding(days: offset)
-    let weekday = date.weekday()
     return PlannedDay(
       date: date,
-      workout: plan.first { $0.weekdays.contains(weekday) },
+      workout: schedule.workout(on: date),
       isToday: offset == 0,
       isDone: done.contains(date))
   }
