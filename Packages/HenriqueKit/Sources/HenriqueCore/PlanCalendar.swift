@@ -38,10 +38,11 @@ public struct PlanCalendar: Hashable, Sendable {
 
   public init(
     period: AttendancePeriod, attendance: [CalendarDate: AttendanceDay],
-    weekPlan: [WeekPlanItem], today: CalendarDate = .today,
+    weekPlan: [WeekPlanItem], swaps: [DaySwap] = [], today: CalendarDate = .today,
     calendar: Calendar = .autoupdatingCurrent
   ) {
     let range = period.range(in: calendar)
+    let schedule = PlanSchedule(plan: weekPlan, swaps: swaps, calendar: calendar)
     let startOfWeek = today.adding(
       days: -((today.weekday(in: calendar) + 1 - calendar.firstWeekday + 7) % 7), in: calendar)
 
@@ -51,14 +52,10 @@ public struct PlanCalendar: Hashable, Sendable {
         // Servidor velho não manda os ids. O palpite é o treino que o plano
         // pede nesse weekday, para o feito sair na cor sólida do folder em
         // vez de cinza. Sem treino no dia, segue sem treino conhecido.
-        let weekday = date.weekday(in: calendar)
-        if let item = weekPlan.first(where: { $0.weekdays.contains(weekday) }) {
-          return .done([item.id])
-        }
+        if let item = schedule.workout(on: date) { return .done([item.id]) }
         return .done([])
       }
-      let weekday = date.weekday(in: calendar)
-      guard let item = weekPlan.first(where: { $0.weekdays.contains(weekday) }) else { return .none }
+      guard let item = schedule.workout(on: date) else { return .none }
       if date >= today { return .planned(item.id) }
       if date >= startOfWeek { return .missed(item.id) }
       return .none

@@ -14,10 +14,13 @@ public enum RecordSetInput: Hashable, Sendable, Encodable {
     public var weightKg: Double
     public var reps: Int
     public var completed: Bool
+    /// O toque na academia, não a chegada ao servidor. Uma série que ficou
+    /// horas na fila offline guarda a hora em que foi feita.
+    public var completedAt: Date?
 
     public init(
       date: CalendarDate, workoutTemplateId: String, exerciseId: String, setIndex: Int,
-      weightKg: Double, reps: Int, completed: Bool
+      weightKg: Double, reps: Int, completed: Bool, completedAt: Date? = nil
     ) {
       self.date = date
       self.workoutTemplateId = workoutTemplateId
@@ -26,11 +29,13 @@ public enum RecordSetInput: Hashable, Sendable, Encodable {
       self.weightKg = weightKg.clamped(to: Limits.setWeightKg)
       self.reps = reps.clamped(to: Limits.reps)
       self.completed = completed
+      self.completedAt = completed ? completedAt : nil
     }
   }
 
   private enum CodingKeys: String, CodingKey {
-    case kind, date, workoutTemplateId, exerciseId, setIndex, weightKg, reps, completed, toFailure
+    case kind, date, workoutTemplateId, exerciseId, setIndex, weightKg, reps, completed, toFailure,
+      completedAt
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -52,6 +57,7 @@ public enum RecordSetInput: Hashable, Sendable, Encodable {
     try container.encode(fields.weightKg, forKey: .weightKg)
     try container.encode(fields.reps, forKey: .reps)
     try container.encode(fields.completed, forKey: .completed)
+    try container.encodeIfPresent(fields.completedAt, forKey: .completedAt)
   }
 }
 
@@ -119,6 +125,8 @@ extension PlanExercise {
     copy.repsMin = repsMin.clamped(to: Limits.planReps)
     copy.repsMax = max(repsMax.clamped(to: Limits.planReps), copy.repsMin)
     copy.startingWeightKg = startingWeightKg.clamped(to: Limits.startingWeightKg)
+    copy.prepWeightKg = prepWeightKg?.clamped(to: Limits.startingWeightKg)
+    copy.restSeconds = restSeconds?.clamped(to: Limits.restSeconds)
     copy.name = name?.cut(to: Limits.exerciseNameLength)
     copy.muscleGroup = muscleGroup?.cut(to: Limits.muscleGroupLength)
     copy.equipment = equipment?.cut(to: Limits.equipmentLength)

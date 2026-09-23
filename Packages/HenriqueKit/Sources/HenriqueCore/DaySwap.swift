@@ -77,3 +77,14 @@ public struct PlanSchedule: Sendable {
 extension Dashboard {
   public var schedule: PlanSchedule { PlanSchedule(plan: weekPlan, swaps: daySwaps ?? []) }
 }
+
+extension Calendar {
+  /// A semana do treino começa na segunda, como a do servidor, que conta
+  /// `weeklyCompleted` e `daySwaps` a partir dela. Um calendário que começa no
+  /// domingo punha o treino de domingo numa semana que o resto do app não vê.
+  public static var trainingWeek: Calendar {
+    var calendar = Calendar.autoupdatingCurrent
+    calendar.firstWeekday = 2
+    return calendar
+  }
+}

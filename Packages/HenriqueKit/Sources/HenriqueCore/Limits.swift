@@ -24,6 +24,8 @@ public enum Limits {
   public static let workSets = 1...10
   public static let planReps = 1...50
   public static let startingWeightKg = 0.0...1_000.0
+  /// Ainda não está no zod; é a mesma faixa do ajuste de ±15 s da sessão.
+  public static let restSeconds = 15...600
   public static let exerciseNameLength = 2...80
   public static let muscleGroupLength = 2...40
   public static let equipmentLength = 2...40

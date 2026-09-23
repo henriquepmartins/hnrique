@@ -80,10 +80,17 @@ public struct DashboardExercise: Codable, Hashable, Sendable, Identifiable {
   /// Nulos no servidor antigo, que não guarda a sobreposição da sessão.
   public var note: String?
   public var origin: ExerciseOrigin?
+  /// Nulos no servidor antigo. `restSeconds` nulo é o descanso padrão.
+  public var prepWeightKg: Double? = nil
+  public var restSeconds: Int? = nil
+  public var previousPrep: PreviousWorkSets? = nil
 
   public var isComplete: Bool { sets.completedWorkCount >= prescription.workSets }
   public var isFromSession: Bool { origin == .sessao }
 }
+
+/// O descanso quando nem o plano nem o aparelho escolheram outro.
+public let defaultRestSeconds = 90
 
 public struct WorkoutSummary: Codable, Hashable, Sendable, Identifiable {
   public var id: String
@@ -104,18 +111,50 @@ public struct WorkoutSessionTiming: Equatable, Sendable {
   /// O aquecimento continua sendo a âncora do começo, porque é o que marca a chegada na
   /// academia. Sem nenhum aquecimento feito, vale a primeira série valendo: antes disso
   /// quem ia direto ao peso ficava sem relógio nenhum.
-  public init?(_ workout: WorkoutSummary) {
+  ///
+  /// `finishedAt` é o "encerrar" tocado antes de todas as séries saírem. Ele
+  /// para o relógio ali, e não na última série feita.
+  public init?(_ workout: WorkoutSummary, finishedAt closed: Date? = nil) {
     let prepDates = workout.exercises.flatMap { $0.sets.prep.map(\.completedAt) }
     let workDates = workout.exercises.flatMap { $0.sets.work.map(\.completedAt) }
     guard let startedAt = prepDates.compactMap({ $0 }).min()
       ?? workDates.compactMap({ $0 }).min() else { return nil }
     let dates = prepDates + workDates
     self.startedAt = startedAt
-    finishedAt = dates.allSatisfy { $0 != nil } ? dates.compactMap { $0 }.max() : nil
+    let allDone = dates.allSatisfy { $0 != nil } ? dates.compactMap { $0 }.max() : nil
+    finishedAt = allDone ?? closed.map { max($0, startedAt) }
   }
 
   public func elapsed(at now: Date) -> TimeInterval {
     max(0, (finishedAt ?? now).timeIntervalSince(startedAt))
+  }
+}
+
+/// O resumo que aparece ao encerrar o treino. A comparação usa só os
+/// exercícios que têm sessão anterior, senão um exercício novo parece progresso.
+public struct WorkoutRecap: Equatable, Sendable {
+  public let durationSeconds: Int?
+  public let workVolumeKg: Double
+  public let doneSets: Int
+  public let totalSets: Int
+  /// Volume de hoje e da última vez, só dos exercícios com `previous`. Nulo
+  /// quando nenhum exercício tem histórico.
+  public let comparison: VolumeComparison?
+
+  public struct VolumeComparison: Equatable, Sendable {
+    public let today: Double
+    public let previous: Double
+  }
+
+  public init(_ workout: WorkoutSummary, timing: WorkoutSessionTiming?, now: Date = .now) {
+    durationSeconds = timing.map { Int($0.elapsed(at: now)) }
+    workVolumeKg = workout.exercises.reduce(0) { $0 + HenriqueCore.workVolumeKg($1.sets.work) }
+    doneSets = workout.exercises.reduce(0) { $0 + $1.sets.completedWorkCount }
+    totalSets = workout.exercises.reduce(0) { $0 + $1.sets.work.count }
+    let compared = workout.exercises.filter { $0.previous != nil }
+    comparison = compared.isEmpty ? nil : VolumeComparison(
+      today: compared.reduce(0) { $0 + HenriqueCore.workVolumeKg($1.sets.work) },
+      previous: compared.reduce(0) { $0 + ($1.previous?.volumeKg ?? 0) })
   }
 }
 
@@ -159,6 +198,10 @@ public struct PlanExercise: Codable, Hashable, Sendable, Identifiable {
   public var repsMax: Int
   public var workToFailure: Bool
   public var startingWeightKg: Double
+  /// Nulo deixa o servidor calcular a carga do aquecimento.
+  public var prepWeightKg: Double?
+  /// Nulo é o descanso padrão.
+  public var restSeconds: Int?
   /// O que o servidor precisa para criar o exercício quando o id ainda não
   /// existe no banco. Nulo quando o exercício já é do catálogo.
   public var name: String?
@@ -170,7 +213,8 @@ public struct PlanExercise: Codable, Hashable, Sendable, Identifiable {
 
   public init(
     exerciseId: String, prepSets: Int, workSets: Int, repsMin: Int, repsMax: Int,
-    workToFailure: Bool, startingWeightKg: Double, name: String? = nil,
+    workToFailure: Bool, startingWeightKg: Double, prepWeightKg: Double? = nil,
+    restSeconds: Int? = nil, name: String? = nil,
     muscleGroup: String? = nil, equipment: String? = nil, imageUrl: String? = nil
   ) {
     self.exerciseId = exerciseId
@@ -180,6 +224,8 @@ public struct PlanExercise: Codable, Hashable, Sendable, Identifiable {
     self.repsMax = repsMax
     self.workToFailure = workToFailure
     self.startingWeightKg = startingWeightKg
+    self.prepWeightKg = prepWeightKg
+    self.restSeconds = restSeconds
     self.name = name
     self.muscleGroup = muscleGroup
     self.equipment = equipment
@@ -445,6 +491,8 @@ public func estimateOneRepMax(weightKg: Double, reps: Int) -> Double {
   return weightKg * (1 + Double(reps) / 30)
 }
 
+/// Só séries valendo. O aquecimento sai do chão também, mas somado ele faz o
+/// dia de aquecimento longo parecer treino mais forte.
 public func workVolumeKg(_ work: [WorkSet]) -> Double {
   work.reduce(0) { $0 + ($1.isDone ? $1.weightKg * Double($1.reps) : 0) }
 }
