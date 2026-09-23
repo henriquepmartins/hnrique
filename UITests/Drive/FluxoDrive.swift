@@ -409,6 +409,70 @@ final class FluxoDrive: XCTestCase {
       "voltou para a tela de hoje com a marca da sessão")
   }
 
+  /// O descanso sobrevive a minimizar a sessão, o campo de carga troca o número
+  /// inteiro e estranha carga fora do padrão, e encerrar mostra o resumo e muda o
+  /// card para "ver o treino".
+  func testSessaoDescansoEEncerrar() {
+    launch()
+    ensureWorkoutToday()
+    let close = openSession()
+
+    let check = app.buttons.matching(
+      NSPredicate(format:
+        "identifier CONTAINS '.work.' AND identifier ENDSWITH '.completion'"
+        + " AND label BEGINSWITH 'Concluir série'")).firstMatch
+    XCTAssert(check.waitForExistence(timeout: 5), "sessão tem série valendo em aberto")
+    let prep = app.buttons.matching(
+      NSPredicate(format: "identifier CONTAINS '.prep.' AND identifier ENDSWITH '.completion'")).firstMatch
+    if prep.exists {
+      XCTAssert(prep.label.hasSuffix("aquecimento 1"), "o aquecimento se anuncia como aquecimento: \(prep.label)")
+    }
+
+    let weightId = check.identifier.replacingOccurrences(of: ".completion", with: ".weight")
+    let weight = app.textFields[weightId].firstMatch
+    XCTAssert(weight.waitForExistence(timeout: 3), "a série tem campo de carga")
+    let original = weight.value as? String ?? ""
+    weight.tap()
+    XCTAssert(app.keyboards.firstMatch.waitForExistence(timeout: 3), "teclado abriu na carga")
+    weight.typeText("999")
+    XCTAssertEqual(weight.value as? String, "999", "digitar troca o número inteiro em vez de emendar")
+    let aviso = app.descendants(matching: .any)[weightId.replacingOccurrences(of: ".weight", with: ".aviso")].firstMatch
+    XCTAssert(aviso.waitForExistence(timeout: 2), "carga fora do padrão mostra aviso na linha")
+    shot("60-carga-aviso")
+    weight.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 3) + original)
+    XCTAssertEqual(weight.value as? String, original, "a carga voltou ao valor de antes")
+    dismissKeyboard()
+
+    check.tap()
+    XCTAssert(app.buttons["pular"].waitForExistence(timeout: 3), "marcar série valendo abre o descanso")
+    app.buttons["+15s"].tap()
+    shot("61-sessao-descanso")
+
+    close.tap()
+    XCTAssert(close.waitForNonExistence(timeout: 5), "sessão minimizada")
+    let chip = app.buttons["descanso.chip"].firstMatch
+    XCTAssert(chip.waitForExistence(timeout: 3), "o descanso continua no card de treino")
+    shot("62-descanso-minimizado")
+    chip.tap()
+    XCTAssert(close.waitForExistence(timeout: 5), "o chip volta para a sessão")
+    XCTAssert(app.buttons["pular"].waitForExistence(timeout: 3), "o descanso seguiu rodando com a sessão fechada")
+
+    app.buttons["sessao.encerrar"].tap()
+    let confirm = app.buttons["encerrar treino"]
+    if confirm.waitForExistence(timeout: 3) { confirm.tap() }
+    let resumo = app.buttons["resumo.fechar"]
+    XCTAssert(resumo.waitForExistence(timeout: 5), "encerrar mostra o resumo")
+    XCTAssertFalse(app.buttons["pular"].exists, "encerrar para o descanso")
+    shot("63-resumo")
+    resumo.tap()
+    XCTAssert(close.waitForNonExistence(timeout: 5), "fechar o resumo fecha a sessão encerrada")
+    XCTAssertFalse(app.buttons["descanso.chip"].exists, "sem descanso depois de encerrar")
+
+    app.tabBars.buttons["hoje"].tap()
+    XCTAssert(app.buttons["ver o treino"].waitForExistence(timeout: 5), "o card do dia diz ver o treino")
+    shot("64-hoje-encerrado")
+  }
+
   /// Abre a sessão pelo hero e devolve o botão de fechar, que é o sinal de que
   /// ela está na tela.
   @discardableResult
