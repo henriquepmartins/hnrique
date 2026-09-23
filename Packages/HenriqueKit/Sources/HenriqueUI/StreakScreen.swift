@@ -71,13 +71,20 @@ struct StreakCounter: View {
 // MARK: - A tela cheia
 
 struct StreakScreen: View {
+  @Environment(AcademiaStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// Os dias de presença da semana, quando a frequência dela chegou. Sem rede
+  /// fica nulo e a linha cai na contagem do servidor.
+  @State private var presentDays: Int?
+  @State private var weekChecked = false
   @Environment(\.dismiss) private var dismiss
   @State private var entered = false
   @State private var celebrating = false
   let snapshot: StreakSnapshot
 
-  private var streak: WorkoutStreak { snapshot.streak }
+  private var streak: WorkoutStreak {
+    presentDays.map { snapshot.streak.counting(presentDays: $0) } ?? snapshot.streak
+  }
 
   var body: some View {
     NavigationStack {
@@ -89,6 +96,8 @@ struct StreakScreen: View {
           }
           Text("\(streak.weeklyCompleted)/\(streak.weeklyPlanned) na semana")
             .font(.subheadline).monospacedDigit().foregroundStyle(Color.mutedInk)
+            .opacity(weekChecked ? 1 : 0)
+            .animation(.smooth(duration: 0.2), value: weekChecked)
           Text("até 5 dias entre treinos")
             .font(.subheadline).foregroundStyle(Color.mutedInk)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -112,6 +121,14 @@ struct StreakScreen: View {
       }
     }
     .presentationDragIndicator(.visible)
+    .task {
+      let today = CalendarDate.today
+      let monday = today.adding(days: -((today.weekday(in: .trainingWeek) + 6) % 7))
+      if await store.loadAttendance(from: monday, to: today) {
+        presentDays = WorkoutStreak.presentDays(in: store.attendance, today: today)
+      }
+      weekChecked = true
+    }
     .task {
       try? await Task.sleep(for: .seconds(Entrance.sheet))
       entered = true

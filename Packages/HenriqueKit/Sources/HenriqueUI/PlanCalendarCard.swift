@@ -13,19 +13,23 @@ struct PlanCalendarCard: View {
   @State private var period: AttendancePeriod = .month(containing: .today)
   let attendance: [CalendarDate: AttendanceDay]
   let weekPlan: [WeekPlanItem]
+  let swaps: [DaySwap]
   let load: (CalendarDate, CalendarDate) async -> Void
 
   init(
-    attendance: [CalendarDate: AttendanceDay], weekPlan: [WeekPlanItem],
+    attendance: [CalendarDate: AttendanceDay], weekPlan: [WeekPlanItem], swaps: [DaySwap] = [],
     load: @escaping (CalendarDate, CalendarDate) async -> Void
   ) {
     self.attendance = attendance
     self.weekPlan = weekPlan
+    self.swaps = swaps
     self.load = load
   }
 
   private var calendarGrid: PlanCalendar {
-    PlanCalendar(period: period, attendance: attendance, weekPlan: weekPlan)
+    PlanCalendar(
+      period: period, attendance: attendance, weekPlan: weekPlan, swaps: swaps,
+      calendar: .trainingWeek)
   }
 
   private var workoutsById: [String: WeekPlanItem] {
@@ -144,7 +148,7 @@ private struct PlanMonthGrid: View {
   let paintProgress: Double
 
   private var weekdayInitials: [(weekday: Int, initial: String)] {
-    var calendar = Calendar.autoupdatingCurrent
+    var calendar = Calendar.trainingWeek
     calendar.locale = locale
     let symbols = calendar.shortStandaloneWeekdaySymbols
     let first = calendar.firstWeekday - 1
