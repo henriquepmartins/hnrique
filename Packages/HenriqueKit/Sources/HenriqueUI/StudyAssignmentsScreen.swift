@@ -93,7 +93,8 @@ public struct StudyAssignmentsScreen: View {
     VStack(alignment: .leading, spacing: 20) {
       let visible = visibleGroups(groups, now: now)
       if visible.isEmpty {
-        StudyEmptyState(icon: "checkmark.circle", title: filter.emptyTitle)
+        StudyEmptyState(
+          icon: "checkmark.circle", title: filter.emptyTitle, detail: filter.emptyDetail)
       } else {
         ForEach(visible, id: \.group.id) { entry in
           VStack(alignment: .leading, spacing: 0) {
@@ -198,6 +199,10 @@ enum AssignmentFilter: String, Hashable, CaseIterable, Identifiable {
     case .mes: "mês livre"
     case .feitas: "nada feito"
     }
+  }
+
+  var emptyDetail: String? {
+    self == .todas ? "as do moodle entram sozinhas na próxima sincronização." : nil
   }
 }
 

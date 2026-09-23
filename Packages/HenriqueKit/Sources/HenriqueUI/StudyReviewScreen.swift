@@ -74,8 +74,11 @@ public struct StudyReviewScreen: View {
   @State private var cardY: CGFloat = 0
   @State private var cardOpacity: Double = 1
   @State private var flipAngle: Double = 0
+  private let onWrite: (() -> Void)?
 
-  public init() {}
+  public init(onWrite: (() -> Void)? = nil) {
+    self.onWrite = onWrite
+  }
 
   public var body: some View {
     ScrollView {
@@ -113,7 +116,10 @@ public struct StudyReviewScreen: View {
     if let deck {
       switch state {
       case .empty:
-        StudyEmptyState(icon: "rectangle.on.rectangle", title: "sem cartões")
+        StudyEmptyState(
+          icon: "rectangle.on.rectangle", title: "sem cartões",
+          detail: "os cartões nascem das notas. escreva uma aula e marque o trecho que quer lembrar.",
+          action: onWrite.map { (label: "escrever", perform: $0) })
       case .done:
         StudyEmptyState(icon: "checkmark.circle", title: "fila limpa")
       case .card(let index, let phase, let hints, let failed):

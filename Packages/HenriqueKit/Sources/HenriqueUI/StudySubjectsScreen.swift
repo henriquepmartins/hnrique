@@ -257,7 +257,9 @@ public struct StudySubjectScreen: View {
   @ViewBuilder
   private func assignments(_ assignments: [StudyAssignment], now: Date) -> some View {
     if assignments.isEmpty {
-      StudyEmptyState(icon: "checkmark.circle", title: "sem entregas")
+      StudyEmptyState(
+        icon: "checkmark.circle", title: "sem entregas",
+        detail: "as do moodle entram sozinhas na próxima sincronização.")
     } else {
       StudyDbList {
         ForEach(Array(assignments.enumerated()), id: \.element.id) { index, assignment in
