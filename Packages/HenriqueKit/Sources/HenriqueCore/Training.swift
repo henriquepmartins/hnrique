@@ -83,10 +83,58 @@ public struct DashboardExercise: Codable, Hashable, Sendable, Identifiable {
   /// Nulos no servidor antigo. `restSeconds` nulo é o descanso padrão.
   public var prepWeightKg: Double? = nil
   public var restSeconds: Int? = nil
-  public var previousPrep: PreviousWorkSets? = nil
+  public var previousPrep: PreviousPrepSets? = nil
 
   public var isComplete: Bool { sets.completedWorkCount >= prescription.workSets }
   public var isFromSession: Bool { origin == .sessao }
+}
+
+extension DashboardExercise {
+  /// Os campos antigos seguem estritos. Os três novos são aditivos: um formato
+  /// inesperado em `previousPrep` vira nulo em vez de derrubar o painel inteiro.
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    name = try container.decode(String.self, forKey: .name)
+    muscleGroup = try container.decode(String.self, forKey: .muscleGroup)
+    equipment = try container.decode(String.self, forKey: .equipment)
+    imageUrl = try container.decodeIfPresent(String.self, forKey: .imageUrl)
+    order = try container.decode(Int.self, forKey: .order)
+    prescription = try container.decode(ExercisePrescription.self, forKey: .prescription)
+    previous = try container.decodeIfPresent(PreviousWorkSets.self, forKey: .previous)
+    sets = try container.decode(ExerciseSets.self, forKey: .sets)
+    note = try container.decodeIfPresent(String.self, forKey: .note)
+    origin = try container.decodeIfPresent(ExerciseOrigin.self, forKey: .origin)
+    prepWeightKg = (try? container.decodeIfPresent(Double.self, forKey: .prepWeightKg)) ?? nil
+    restSeconds = (try? container.decodeIfPresent(Int.self, forKey: .restSeconds)) ?? nil
+    previousPrep = (try? container.decodeIfPresent(PreviousPrepSets.self, forKey: .previousPrep)) ?? nil
+  }
+}
+
+/// O aquecimento da última sessão, série a série: as cargas sobem dentro do
+/// aquecimento, então um peso só para todas não diria nada.
+public struct PreviousPrepSets: Codable, Hashable, Sendable {
+  public struct Set: Codable, Hashable, Sendable {
+    public var index: Int
+    public var weightKg: Double
+    public var reps: Int
+
+    public init(index: Int, weightKg: Double, reps: Int) {
+      self.index = index
+      self.weightKg = weightKg
+      self.reps = reps
+    }
+  }
+
+  public var date: CalendarDate
+  public var sets: [Set]
+
+  public init(date: CalendarDate, sets: [Set]) {
+    self.date = date
+    self.sets = sets
+  }
+
+  public func set(_ index: Int) -> Set? { sets.first { $0.index == index } }
 }
 
 /// O descanso quando nem o plano nem o aparelho escolheram outro.

@@ -75,8 +75,10 @@ struct ExerciseCard: View {
     return "última: \(previous.reps.map(String.init).joined(separator: ", ")) × \(weightLabel(previous.weightKg))"
   }
   private var previousPrep: String? {
-    guard let previous = exercise.previousPrep else { return nil }
-    return "aquecimento da última: \(previous.reps.map(String.init).joined(separator: ", ")) × \(weightLabel(previous.weightKg))"
+    guard let previous = exercise.previousPrep, !previous.sets.isEmpty else { return nil }
+    let sets = previous.sets.sorted { $0.index < $1.index }
+      .map { "\(Formatting.trim($0.weightKg)) × \($0.reps)" }
+    return "aquecimento da última: \(sets.joined(separator: ", "))"
   }
   private func group(_ title: String, color: Color) -> some View {
     HStack(spacing: 6) {

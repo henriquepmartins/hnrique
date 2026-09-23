@@ -26,17 +26,20 @@ struct WorkoutAdditionsTests {
     #expect(exercise.previous?.weightKg == 42.5)
   }
 
-  @Test("servidor novo: os três campos chegam")
+  @Test("servidor novo: os três campos chegam, o aquecimento série a série")
   func decodesNewFields() throws {
     let extra = #"""
     , "prepWeightKg": 22.5, "restSeconds": 120,
-      "previousPrep": {"date": "2026-09-01", "weightKg": 20, "reps": [10], "volumeKg": 200}
+      "previousPrep": {"date": "2026-09-01", "sets": [{"index": 1, "weightKg": 20, "reps": 10}, {"index": 2, "weightKg": 30, "reps": 6}]}
     """#
     let exercise = try JSONDecoder.henrique().decode(DashboardExercise.self, from: Self.exerciseJSON(extra: extra))
     #expect(exercise.prepWeightKg == 22.5)
     #expect(exercise.restSeconds == 120)
-    #expect(exercise.previousPrep == PreviousWorkSets(
-      date: CalendarDate(year: 2026, month: 9, day: 1)!, weightKg: 20, reps: [10], volumeKg: 200))
+    #expect(exercise.previousPrep == PreviousPrepSets(
+      date: CalendarDate(year: 2026, month: 9, day: 1)!,
+      sets: [.init(index: 1, weightKg: 20, reps: 10), .init(index: 2, weightKg: 30, reps: 6)]))
+    #expect(exercise.previousPrep?.set(2)?.weightKg == 30)
+    #expect(exercise.previousPrep?.set(3) == nil)
   }
 
   @Test("nulos explícitos decodificam como ausentes")
@@ -45,6 +48,29 @@ struct WorkoutAdditionsTests {
     let exercise = try JSONDecoder.henrique().decode(DashboardExercise.self, from: Self.exerciseJSON(extra: extra))
     #expect(exercise.prepWeightKg == nil)
     #expect(exercise.restSeconds == nil)
+    #expect(exercise.previousPrep == nil)
+  }
+
+  @Test("formato inesperado nos campos novos não derruba o exercício")
+  func toleratesShapeSurprises() throws {
+    let extra = #"""
+    , "prepWeightKg": "vinte", "restSeconds": 90,
+      "previousPrep": {"date": "2026-09-01", "weightKg": 20, "reps": [10], "volumeKg": 200}
+    """#
+    let exercise = try JSONDecoder.henrique().decode(DashboardExercise.self, from: Self.exerciseJSON(extra: extra))
+    #expect(exercise.previousPrep == nil)
+    #expect(exercise.prepWeightKg == nil)
+    #expect(exercise.restSeconds == 90)
+    #expect(exercise.previous?.weightKg == 42.5)
+  }
+
+  @Test("o exercício codificado volta igual, com o aquecimento anterior")
+  func roundTripsPreviousPrep() throws {
+    let extra = #", "previousPrep": {"date": "2026-09-01", "sets": [{"index": 1, "weightKg": 20, "reps": 10}]}"#
+    let exercise = try JSONDecoder.henrique().decode(DashboardExercise.self, from: Self.exerciseJSON(extra: extra))
+    let again = try JSONDecoder.henrique().decode(
+      DashboardExercise.self, from: JSONEncoder.henrique().encode(exercise))
+    #expect(again == exercise)
   }
 
   @Test("o plano decodifica com e sem os campos novos")

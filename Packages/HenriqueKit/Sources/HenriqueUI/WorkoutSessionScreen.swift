@@ -34,6 +34,12 @@ func previousLabel(_ previous: PreviousWorkSets?, index: Int) -> String? {
   return "\(Formatting.trim(previous.weightKg)) × \(reps)"
 }
 
+/// O mesmo para o aquecimento, que guarda carga por série.
+func previousLabel(_ previous: PreviousPrepSets?, index: Int) -> String? {
+  guard let set = previous?.set(index) else { return nil }
+  return "\(Formatting.trim(set.weightKg)) × \(set.reps)"
+}
+
 /// Modo treino: o treino inteiro numa lista, com um exercício aberto por vez. Pular
 /// o aparelho ocupado e voltar depois é o caso normal na academia, e a lista deixa
 /// fazer isso sem sair da tela.
@@ -366,8 +372,10 @@ struct WorkoutSessionScreen: View {
       key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: kind, index: index),
       weight: weight, repetitions: reps, done: done, failure: failure, scale: .session,
       isNext: isNext,
-      previous: previousLabel(kind == .prep ? exercise.previousPrep : exercise.previous, index: index),
-      reference: referenceWeight(exercise, kind: kind))
+      previous: kind == .prep
+        ? previousLabel(exercise.previousPrep, index: index)
+        : previousLabel(exercise.previous, index: index),
+      reference: referenceWeight(exercise, kind: kind, index: index))
   }
 
   /// Mais ou menos uma série valendo. Tirar só aparece enquanto a última ainda
@@ -500,9 +508,9 @@ struct WorkoutSessionScreen: View {
 
   /// A carga com que o campo compara um número digitado: a da última vez,
   /// senão a do plano.
-  private func referenceWeight(_ exercise: DashboardExercise, kind: SetKey.Kind) -> Double? {
+  private func referenceWeight(_ exercise: DashboardExercise, kind: SetKey.Kind, index: Int) -> Double? {
     switch kind {
-    case .prep: exercise.previousPrep?.weightKg ?? exercise.prepWeightKg
+    case .prep: exercise.previousPrep?.set(index)?.weightKg ?? exercise.prepWeightKg
     case .work: exercise.previous?.weightKg ?? exercise.prescription.startingWeightKg
     }
   }
