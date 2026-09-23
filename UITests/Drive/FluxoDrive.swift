@@ -205,13 +205,24 @@ final class FluxoDrive: XCTestCase {
     launch()
     ensureWorkoutToday()
     app.tabBars.buttons["progresso"].tap()
+    let ano = app.buttons["frequencia.ano"]
+    XCTAssert(ano.waitForExistence(timeout: 10), "mapa de frequência apareceu")
+    sleep(2)
+    shot("20-progresso-ano")
+    // A última casa com treino é a mais perto de hoje, que é a que a fita do ano
+    // mostra ao abrir.
+    let dias = app.otherElements.matching(NSPredicate(format: "label CONTAINS 'série'"))
+    if dias.firstMatch.waitForExistence(timeout: 3), let dia = dias.allElementsBoundByIndex.last {
+      dia.tap()
+      sleep(1)
+      shot("21-progresso-balao")
+    }
     let mes = app.buttons["frequencia.mes"]
-    XCTAssert(mes.waitForExistence(timeout: 10), "mapa de frequência apareceu")
-    shot("20-progresso-mes")
-    app.buttons["frequencia.ano"].tap()
-    XCTAssert(app.buttons["frequencia.ano"].waitForExistence(timeout: 3), "mapa trocou para o ano")
-    shot("21-progresso-ano")
     mes.tap()
+    XCTAssert(mes.waitForExistence(timeout: 3), "mapa trocou para o mês")
+    sleep(2)
+    shot("22-progresso-mes")
+    ano.tap()
     app.tabBars.buttons["treino"].tap()
     XCTAssert(app.buttons["Voltar uma semana"].waitForExistence(timeout: 10), "fita do calendário apareceu")
     shot("22-calendario-bolinha")
