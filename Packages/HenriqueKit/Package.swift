@@ -10,7 +10,9 @@ let package = Package(
   ],
   targets: [
     .target(name: "HenriqueCore"),
-    .target(name: "HenriqueUI", dependencies: ["HenriqueCore"]),
+    .target(
+      name: "HenriqueUI", dependencies: ["HenriqueCore"],
+      resources: [.copy("Resources/AnthropicSerif.ttf")]),
     .testTarget(
       name: "HenriqueCoreTests", dependencies: ["HenriqueCore"],
       resources: [.copy("Fixtures")]),

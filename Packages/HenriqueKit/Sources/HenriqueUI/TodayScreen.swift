@@ -24,7 +24,10 @@ public struct TodayScreen: View {
         VStack(spacing: Space.m) {
           DayStrip(selected: store.selectedDate, notch: $notch)
             .staggeredEntrance(index: 0, isReady: hasData)
-          WorkoutHero(workout: store.dashboard?.workout, notch: notch, sessionSource: sessionSource) {
+          WorkoutHero(
+            workout: store.dashboard?.workout, date: store.selectedDate, notch: notch,
+            sessionSource: sessionSource
+          ) {
             showingSession = true
           }
           .opacity(fresh ? 1 : 0.5)
@@ -148,7 +151,7 @@ struct TodaySkeleton: View {
   var body: some View {
     // Os mesmos raios do hero e do ExerciseCard que vão ocupar o lugar.
     VStack(spacing: Space.m) {
-      RoundedRectangle(cornerRadius: 40).fill(Color.surfaceMuted).frame(height: 250)
+      RoundedRectangle(cornerRadius: 32).fill(Color.surfaceMuted).frame(height: 408)
       ForEach(0..<3) { _ in
         RoundedRectangle(cornerRadius: 30).fill(Color.surfaceMuted).frame(height: 92)
       }
@@ -156,69 +159,6 @@ struct TodaySkeleton: View {
     .padding(.horizontal, 16).padding(.top, 12)
     .redacted(reason: .placeholder)
     .accessibilityHidden(true)
-  }
-}
-
-struct WorkoutHero: View {
-  @Environment(\.accent) private var accent
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 46.0
-  let workout: WorkoutSummary?
-  let notch: CGFloat
-  let sessionSource: Namespace.ID
-  let onStart: () -> Void
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      if let workout {
-        Label("\(workout.estimatedMinutes) min", systemImage: "clock")
-          .font(.caption).monospacedDigit().foregroundStyle(accent.deep)
-          .frame(maxWidth: .infinity, alignment: .trailing)
-      }
-      Text(workout?.name.lowercased() ?? "descanso")
-        .font(.system(size: titleSize, weight: .medium)).tracking(-titleSize * 0.055)
-        .fixedSize(horizontal: false, vertical: true)
-      if let workout {
-        Text(workout.focus).font(.subheadline).foregroundStyle(accent.deep)
-        VStack(alignment: .leading, spacing: 12) {
-          Text("\(workout.exerciseCount) exercícios · \(workout.workSetCount) séries")
-            .font(.subheadline).monospacedDigit()
-          if workout.completionPercent > 0 {
-            VStack(alignment: .leading, spacing: 6) {
-              Text("\(workout.completionPercent)% feito")
-                .font(.caption).monospacedDigit().foregroundStyle(Color.mutedInk)
-                .contentTransition(.numericText())
-              // Largura presa ao número, não ao cartão. Atravessando o hero
-              // inteiro a barra lia como um filete separando seções.
-              ProgressTrack(fraction: Double(workout.completionPercent) / 100, color: accent.deep)
-                .frame(maxWidth: 160)
-            }
-            .animation(reduceMotion ? nil : Motion.crossfade, value: workout.completionPercent)
-            .transition(.blurReplace)
-          }
-          Button(workout.completionPercent > 0 ? "continuar" : "começar", systemImage: "play.fill", action: onStart)
-            .buttonStyle(.glassProminent).tint(accent.deep).foregroundStyle(.white).controlSize(.large)
-            .matchedTransitionSource(id: "sessao", in: sessionSource)
-        }.padding(.top, 10)
-      }
-    }
-    .frame(maxWidth: .infinity, minHeight: 250, alignment: .leading)
-    .padding(.horizontal, 24).padding(.top, 34).padding(.bottom, 24)
-    .background(alignment: .topTrailing) {
-      ZStack {
-        ForEach([280.0, 188.0, 96.0], id: \.self) { size in
-          Circle().stroke(accent.deep.opacity(0.20), lineWidth: 1).frame(width: size, height: size)
-        }
-      }.frame(width: 280, height: 280).offset(x: 92, y: -20).accessibilityHidden(true)
-    }
-    .background(accent.acid)
-    .clipShape(.rect(cornerRadius: 32))
-    .overlay(RoundedRectangle(cornerRadius: 32).strokeBorder(accent.deep.opacity(0.13)))
-    .padding(8)
-    .background(accent.acid.mix(with: accent.signal, by: 0.18))
-    .overlay(alignment: .top) { HeroNotch(center: notch).fill(Color.canvas).frame(height: 24) }
-    .clipShape(.rect(cornerRadius: 40))
-    .shadow(color: accent.deep.opacity(0.1), radius: 24, y: 14)
   }
 }
 

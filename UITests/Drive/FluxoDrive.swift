@@ -311,6 +311,7 @@ final class FluxoDrive: XCTestCase {
     let start = app.buttons.matching(
       NSPredicate(format: "label IN {'começar', 'continuar'}")).firstMatch
     XCTAssert(start.waitForExistence(timeout: 8), "hero mostra o botão de começar o treino")
+    shot("49-hoje-hero")
     start.tap()
 
     let close = app.buttons["sessao.fechar"]

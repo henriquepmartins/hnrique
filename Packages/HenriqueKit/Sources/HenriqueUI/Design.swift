@@ -296,29 +296,6 @@ enum Motion {
   static func delay(index: Int) -> Double { 0.05 * Double(min(index, 6)) }
 }
 
-/// Uma barra fina que diz quanto falta. O número sozinho conta o que já foi;
-/// a barra mostra o que sobra, e é o que tira o número de trivia. Cresce a
-/// partir da esquerda, no mesmo tempo em que o número troca.
-struct ProgressTrack: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  let fraction: Double
-  let color: Color
-  var height: CGFloat = 4
-
-  var body: some View {
-    Capsule().fill(color.opacity(0.18))
-      .frame(height: height)
-      .overlay(alignment: .leading) {
-        // Escalar no eixo x evita um GeometryReader só para medir a largura.
-        // Numa barra de 4pt a deformação das pontas não dá para ver.
-        Capsule().fill(color)
-          .scaleEffect(x: min(max(fraction, 0), 1), y: 1, anchor: .leading)
-      }
-      .animation(reduceMotion ? nil : Motion.crossfade, value: fraction)
-      .accessibilityHidden(true)
-  }
-}
-
 /// Um ícone que entra. Opacidade, escala e desfoque ao mesmo tempo. Sem o
 /// desfoque, um glifo crescendo de 0.25 lê como estalo; com ele, lê como uma
 /// coisa entrando em foco, que é o que o iOS faz quando um ícone troca.
