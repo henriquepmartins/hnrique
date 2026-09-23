@@ -30,7 +30,7 @@ struct EstudosTabs: View {
     _tab = tab
     _accent = accent
     _showingApps = showingApps
-    showingSession = openSession
+    showingSession = openSession || FocusSessionScreen.hasActiveBlock
     showingWrite = openWrite
   }
 
