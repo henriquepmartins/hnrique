@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "35",
+          "date": "2026-09-23T09:07:09-03:00",
+          "localizedDescription": "• feat: redraw the attendance map as the unlumen GitHub graph",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-35/Henrique.ipa",
+          "size": 4698385,
+          "sha256": "5d8aea4e11613f8944dd40ff46fcc1b3e7d675fa7f6fba2623684ce45208451e",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "34",
           "date": "2026-09-22T10:38:11-03:00",
           "localizedDescription": "• fix: alinha ícones, números e margens pelo olho nos três apps\n• fix: redesenha o calendário do plano toda vez que a tela volta\n• feat: anima o calendário do plano com traços de marcador",
