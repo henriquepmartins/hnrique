@@ -58,6 +58,7 @@ struct WorkoutEditor: View {
   /// Para onde o fluxo andou por último. O passo novo entra por esse lado.
   @State private var enteringEdge: Edge = .trailing
   @State private var isSaving = false
+  @State private var appliedRestOverrides = false
   /// O catálogo por id, montado uma vez. Cada tecla no nome roda o body de novo
   /// e cada linha de exercício lê daqui, então a busca não pode varrer a lista.
   @State private var exerciseInfo: [String: ExerciseCatalogItem]
@@ -101,12 +102,27 @@ struct WorkoutEditor: View {
     }
     .disabled(isSaving)
     .interactiveDismissDisabled(isSaving)
+    .onAppear(perform: applyRestOverrides)
+  }
+
+  /// O descanso ajustado na sessão mora no aparelho até o próximo salvar. O
+  /// editor mostra esse valor e manda ele junto.
+  private func applyRestOverrides() {
+    guard !appliedRestOverrides else { return }
+    appliedRestOverrides = true
+    for index in draft.exercises.indices {
+      if let chosen = store.restOverride(for: draft.exercises[index].exerciseId) {
+        draft.exercises[index].restSeconds = chosen
+      }
+    }
   }
 
   private var flow: some View {
     VStack(spacing: 0) {
       HStack {
-        RoundButton(systemImage: "chevron.left", fill: Color.surfaceMuted, ink: Color.ink, label: "fechar", nudge: 1) {
+        // Um x, e não uma seta: a seta de voltar o passo fica logo abaixo, e as
+        // duas setas liam como dois botões de voltar.
+        RoundButton(systemImage: "xmark", fill: Color.surfaceMuted, ink: Color.ink, label: "fechar") {
           dismiss()
         }
         .disabled(isSaving)
@@ -185,6 +201,11 @@ struct WorkoutEditor: View {
   }
 
   private func save() {
+    // O valor salvo passa a ser o do aparelho também. Com o servidor antigo,
+    // que não guarda descanso, é ele que continua valendo.
+    for exercise in draft.exercises {
+      if let seconds = exercise.restSeconds { store.setRestSeconds(seconds, for: exercise.exerciseId) }
+    }
     let input = SaveWorkoutInput(
       date: store.selectedDate, workoutTemplateId: workoutId, weekdays: draft.weekdays.sorted(),
       name: draft.trimmedName, focus: draft.trimmedFocus, estimatedMinutes: draft.estimatedMinutes,

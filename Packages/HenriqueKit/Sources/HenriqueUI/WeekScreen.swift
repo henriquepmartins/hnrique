@@ -14,6 +14,7 @@ struct WeekScreen: View {
         PlanCalendarCard(
           attendance: store.attendance,
           weekPlan: store.weekPlan,
+          swaps: store.dashboard?.daySwaps ?? [],
           load: { from, to in await store.loadAttendance(from: from, to: to) })
         Button("novo treino", systemImage: "plus") {
           editorStep = .identidade
@@ -328,12 +329,65 @@ struct PlanExerciseRow: View {
         Divider()
         WeightStepper(weightKg: $exercise.startingWeightKg)
         Divider()
+        PrepWeightRow(weightKg: $exercise.prepWeightKg)
+        Divider()
+        RestStepperRow(seconds: $exercise.restSeconds)
+        Divider()
         Toggle("até a falha", isOn: $exercise.workToFailure)
           .font(.body)
           .frame(minHeight: 48)
       }
     }
     .padding(.vertical, 10)
+  }
+}
+
+/// A carga do aquecimento. Vazio deixa o servidor calcular a partir do último
+/// aquecimento, que é o normal; o campo existe para quem quer fixar.
+private struct PrepWeightRow: View {
+  @Binding var weightKg: Double?
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text("carga do aquecimento").font(.body)
+      Spacer(minLength: 8)
+      TextField("auto", value: $weightKg, format: .number.precision(.fractionLength(0...2)))
+        .submitLabel(.done)
+        .decimalInput()
+        .multilineTextAlignment(.trailing)
+        .font(.body.weight(.semibold)).monospacedDigit()
+        .frame(minWidth: 64)
+        .accessibilityLabel("Carga do aquecimento em kg, vazio calcula sozinho")
+      Text("kg").font(.callout).foregroundStyle(Color.mutedInk)
+    }
+    .frame(minHeight: 48)
+    .onChange(of: weightKg) { _, new in
+      guard let new else { return }
+      let clamped = new.isFinite ? new.clamped(to: Limits.startingWeightKg) : nil
+      if clamped != new { weightKg = clamped }
+    }
+  }
+}
+
+/// O descanso entre séries desse exercício, de 15 em 15 segundos.
+private struct RestStepperRow: View {
+  @Binding var seconds: Int?
+
+  var body: some View {
+    let value = seconds ?? defaultRestSeconds
+    HStack(spacing: 12) {
+      Text("descanso").font(.body)
+      Spacer(minLength: 8)
+      Text(restClock(TimeInterval(value))).font(.body.weight(.semibold)).monospacedDigit()
+        .frame(minWidth: 44, alignment: .trailing)
+      Stepper(
+        "", value: Binding(get: { value }, set: { seconds = $0 }), in: Limits.restSeconds, step: 15
+      )
+      .labelsHidden()
+      .accessibilityLabel("descanso")
+      .accessibilityValue(restClock(TimeInterval(value)))
+    }
+    .frame(minHeight: 48)
   }
 }
 
