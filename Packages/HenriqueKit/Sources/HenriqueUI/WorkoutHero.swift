@@ -330,20 +330,21 @@ enum HeroSerif {
 
 /// O título com cara de impresso: um desfoque de 0,4 ponto e furos esparsos na
 /// tinta. A máscara só muda o desenho; o VoiceOver lê o texto normal.
-private struct FilmTitle: View {
+struct FilmTitle: View {
   let text: String
   let size: CGFloat
 
   var body: some View {
-    // Em 76 pontos "Superiores" não cabe num iPhone e o texto quebraria no
-    // meio da palavra. O tamanho desce até a palavra mais longa caber inteira;
-    // nomes de várias palavras continuam quebrando nos espaços.
-    ViewThatFits(in: .horizontal) {
-      ForEach([1, 0.85, 0.72, 0.6], id: \.self) { scale in
-        fitted(size: size * scale)
-      }
-    }
-    .blur(radius: 0.4)
+    // A altura de linha exata deixa o quadro menor que a letra, e desfoque e
+    // máscara só desenham dentro do quadro: a perna do "p" e o acento do "Á"
+    // eram cortados. A folga cresce o quadro só para os dois, e a folga
+    // negativa devolve o tamanho que o layout mede.
+    let vertical = size * 0.4
+    let horizontal = size * 0.1
+    lettering
+      .padding(.vertical, vertical)
+      .padding(.horizontal, horizontal)
+      .blur(radius: 0.4)
       .mask {
         if let specks = FilmNoise.specks {
           Image(decorative: specks, scale: FilmNoise.specksScale).resizable(resizingMode: .tile)
@@ -351,6 +352,19 @@ private struct FilmTitle: View {
           Rectangle()
         }
       }
+      .padding(.vertical, -vertical)
+      .padding(.horizontal, -horizontal)
+  }
+
+  /// Em 76 pontos "Superiores" não cabe num iPhone e o texto quebraria no
+  /// meio da palavra. O tamanho desce até a palavra mais longa caber inteira;
+  /// nomes de várias palavras continuam quebrando nos espaços.
+  var lettering: some View {
+    ViewThatFits(in: .horizontal) {
+      ForEach([1, 0.85, 0.72, 0.6], id: \.self) { scale in
+        fitted(size: size * scale)
+      }
+    }
   }
 
   /// A largura ideal é a da palavra mais longa, que o `ViewThatFits` compara
