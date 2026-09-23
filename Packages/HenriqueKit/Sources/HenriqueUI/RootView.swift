@@ -37,6 +37,7 @@ public enum AppSection: String, CaseIterable, Sendable {
 
 public struct RootView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.scenePhase) private var scenePhase
   @AppStorage("henrique.accent") private var accent: Accent = .verde
   @AppStorage("henrique.app") private var section: AppSection = .academia
   @State private var tab: AcademiaTab
@@ -106,6 +107,18 @@ public struct RootView: View {
     // O painel mora aqui, e não dentro de cada app, para a troca não levar embora
     // a árvore em que ele vive antes de ele tocar a própria saída.
     .appSwitcher(current: section, isPresented: $showingApps) { section = $0 }
+    .overlay(alignment: .top) {
+      if isOffline {
+        OfflineBanner().transition(.move(edge: .top).combined(with: .opacity))
+      }
+    }
+    .animation(reduceMotion ? nil : Motion.crossfade, value: isOffline)
+    #if os(iOS)
+      .fullScreenCover(isPresented: .init(get: { foco.isShowingRun }, set: { foco.isShowingRun = $0 })) {
+        FocoRunningScreen()
+      }
+    #endif
+    .focoPresenceCheck(inCover: false)
     .environment(store)
     .environment(estudos)
     .environment(idiomas)
@@ -132,14 +145,53 @@ public struct RootView: View {
         idiomas.reset()
       }
     }
-    .alert(store.banner ?? "", isPresented: .init(get: { store.banner != nil }, set: { if !$0 { store.banner = nil } })) {
+    .onChange(of: scenePhase, initial: true) {
+      switch scenePhase {
+      case .active: foco.appBecameActive()
+      case .background: foco.appWentBackground()
+      default: break
+      }
+    }
+    .task(id: isOffline) {
+      // A faixa promete tentar de novo. O painel da academia é a leitura mais
+      // barata; quando ela passa, a faixa some e o app atual recarrega.
+      while isOffline, !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(15))
+        guard !Task.isCancelled else { return }
+        await store.load()
+      }
+    }
+    .onChange(of: isOffline) { wasOffline, offline in
+      guard wasOffline, !offline else { return }
+      Task { await reloadAfterReconnect() }
+    }
+    .alert(visible(store.banner) ?? "", isPresented: .init(get: { visible(store.banner) != nil }, set: { if !$0 { store.banner = nil } })) {
       Button("ok") { store.banner = nil }
     }
-    .alert(estudos.banner ?? "", isPresented: .init(get: { estudos.banner != nil }, set: { if !$0 { estudos.banner = nil } })) {
+    .alert(visible(estudos.banner) ?? "", isPresented: .init(get: { visible(estudos.banner) != nil }, set: { if !$0 { estudos.banner = nil } })) {
       Button("ok") { estudos.banner = nil }
     }
-    .alert(idiomas.banner ?? "", isPresented: .init(get: { idiomas.banner != nil }, set: { if !$0 { idiomas.banner = nil } })) {
+    .alert(visible(idiomas.banner) ?? "", isPresented: .init(get: { visible(idiomas.banner) != nil }, set: { if !$0 { idiomas.banner = nil } })) {
       Button("ok") { idiomas.banner = nil }
+    }
+  }
+
+  private var isOffline: Bool {
+    store.isSignedIn && estudos.client.connectivity.isOffline
+  }
+
+  /// A falta de rede já está na faixa do topo. Como alerta ela voltava a cada
+  /// abertura do app e a cada tela que tentava carregar.
+  private func visible(_ banner: String?) -> String? {
+    banner == APIError.offlineMessage ? nil : banner
+  }
+
+  private func reloadAfterReconnect() async {
+    await foco.sync()
+    switch section {
+    case .academia: await store.load()
+    case .estudos: await estudos.refresh()
+    case .idiomas: await idiomas.refresh()
     }
   }
 }
@@ -205,6 +257,7 @@ struct AcademiaTabs: View {
         Color.clear
       }
     }
+    .focoAccessory()
     .sheet(isPresented: $showingSetup) { SetupScreen() }
     .sheet(isPresented: $showingStreak) {
       if let data = store.dashboard {

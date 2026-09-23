@@ -51,7 +51,7 @@ struct EstudosTabs: View {
         shell { StudyAssignmentsScreen() }
       }
       Tab("revisar", systemImage: "rectangle.on.rectangle", value: EstudosTab.revisar) {
-        shell { StudyReviewScreen() }
+        shell { StudyReviewScreen(onWrite: { showingWrite = true }) }
       }
       // A bolha é o botão do painel, então ela mostra o x enquanto o painel
       // está aberto.
@@ -62,6 +62,7 @@ struct EstudosTabs: View {
         Color.clear
       }
     }
+    .focoAccessory()
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
     #if os(iOS)
       .fullScreenCover(isPresented: $showingSession) {

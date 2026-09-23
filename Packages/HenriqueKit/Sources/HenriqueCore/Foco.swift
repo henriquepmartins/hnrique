@@ -48,18 +48,110 @@ public struct FocoEntry: Codable, Hashable, Sendable, Identifiable {
   public var seconds: TimeInterval { endedAt.timeIntervalSince(startedAt) }
 }
 
+/// Um trecho de foco sem pausa no meio. A corrida guarda os trechos fechados,
+/// e cada um vira uma sessão com a hora real de começo e fim.
+public struct FocoStretch: Codable, Hashable, Sendable {
+  public var start: Date
+  public var end: Date
+
+  public init(start: Date, end: Date) {
+    self.start = start
+    self.end = end
+  }
+
+  public var seconds: TimeInterval { max(0, end.timeIntervalSince(start)) }
+}
+
+/// A corrida em andamento. Pausada é `runningSince == nil`; o tempo que já
+/// passou mora nos trechos fechados, então pausar e voltar não perde nada.
 public struct FocoRun: Codable, Hashable, Sendable {
   public var track: FocoTrack
   public var startedAt: Date
   public var serverSessionId: String?
+  public var stretches: [FocoStretch]
+  public var runningSince: Date?
+  /// Quando o app esteve aberto pela última vez com esta corrida rodando.
+  public var lastSeenAt: Date?
+  /// Quando alguém respondeu que ainda está ali.
+  public var confirmedAt: Date?
 
-  public init(track: FocoTrack, startedAt: Date, serverSessionId: String? = nil) {
+  public init(
+    track: FocoTrack, startedAt: Date, serverSessionId: String? = nil,
+    stretches: [FocoStretch] = [], runningSince: Date? = nil, lastSeenAt: Date? = nil,
+    confirmedAt: Date? = nil
+  ) {
     self.track = track
     self.startedAt = startedAt
     self.serverSessionId = serverSessionId
+    self.stretches = stretches
+    self.runningSince = runningSince
+    self.lastSeenAt = lastSeenAt
+    self.confirmedAt = confirmedAt
   }
 
-  public func seconds(at now: Date) -> TimeInterval { max(0, now.timeIntervalSince(startedAt)) }
+  /// A corrida gravada antes da pausa existir tem só `startedAt`, e rodava
+  /// desde ele.
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    track = try container.decode(FocoTrack.self, forKey: .track)
+    startedAt = try container.decode(Date.self, forKey: .startedAt)
+    serverSessionId = try container.decodeIfPresent(String.self, forKey: .serverSessionId)
+    lastSeenAt = try container.decodeIfPresent(Date.self, forKey: .lastSeenAt)
+    confirmedAt = try container.decodeIfPresent(Date.self, forKey: .confirmedAt)
+    if let stretches = try container.decodeIfPresent([FocoStretch].self, forKey: .stretches) {
+      self.stretches = stretches
+      runningSince = try container.decodeIfPresent(Date.self, forKey: .runningSince)
+    } else {
+      stretches = []
+      runningSince = startedAt
+    }
+  }
+
+  public var isPaused: Bool { runningSince == nil }
+
+  public func seconds(at now: Date) -> TimeInterval {
+    stretches.reduce(0) { $0 + $1.seconds } + (runningSince.map { max(0, now.timeIntervalSince($0)) } ?? 0)
+  }
+
+  /// Os trechos até `now`, com o aberto fechado ali, cortados em cada
+  /// meia-noite. Cada pedaço pertence a um dia só.
+  public func pieces(until now: Date, calendar: Calendar) -> [FocoStretch] {
+    var all = stretches
+    if let runningSince, now > runningSince {
+      all.append(FocoStretch(start: runningSince, end: now))
+    }
+    return all.flatMap { $0.splitAtMidnight(calendar: calendar) }.filter { $0.seconds > 0 }
+  }
+
+  /// Com o app fechado por muito tempo a corrida pode ter ficado esquecida.
+  /// Conta a partir da última resposta de quem estuda, ou do começo do trecho.
+  public func needsPresenceCheck(at now: Date) -> Bool {
+    guard let runningSince else { return false }
+    let since = max(runningSince, confirmedAt ?? runningSince)
+    return now.timeIntervalSince(since) > FocoLedger.presenceCheckSeconds
+  }
+
+  /// Onde cortar quando ninguém estava ali: a última vez que o app esteve
+  /// aberto, nunca antes do trecho atual começar.
+  public func lastPresence(fallback now: Date) -> Date {
+    guard let runningSince else { return now }
+    return min(now, max(runningSince, lastSeenAt ?? runningSince))
+  }
+}
+
+extension FocoStretch {
+  func splitAtMidnight(calendar: Calendar) -> [FocoStretch] {
+    var pieces: [FocoStretch] = []
+    var cursor = start
+    while let midnight = calendar.date(
+      byAdding: .day, value: 1, to: calendar.startOfDay(for: cursor)), midnight < end
+    {
+      pieces.append(FocoStretch(start: cursor, end: midnight))
+      cursor = midnight
+    }
+    pieces.append(FocoStretch(start: cursor, end: end))
+    return pieces
+  }
 }
 
 public struct FocoStreak: Hashable, Sendable {
@@ -90,8 +182,8 @@ public struct FocoDay: Hashable, Sendable, Identifiable {
 // MARK: - Registro
 
 /// O registro inteiro de foco, no aparelho. Uma sessão pertence ao dia em que
-/// começou, inclusive a que atravessa a meia-noite, e a corrida em andamento
-/// entra em toda soma.
+/// começou. As novas são cortadas na meia-noite ao parar, então só as antigas
+/// atravessam o dia. A corrida em andamento entra em toda soma.
 public struct FocoLedger: Codable, Hashable, Sendable {
   public var entries: [FocoEntry] = []
   public var running: FocoRun?
@@ -104,6 +196,7 @@ public struct FocoLedger: Codable, Hashable, Sendable {
 
   public static let minimumSeconds: TimeInterval = 10
   public static let dayCountsMinutes = 25
+  public static let presenceCheckSeconds: TimeInterval = 4 * 3600
 
   public init(
     entries: [FocoEntry] = [], running: FocoRun? = nil, dailyGoalMinutes: Int = 120,
@@ -132,26 +225,63 @@ public struct FocoLedger: Codable, Hashable, Sendable {
     goalDirty = try container.decodeIfPresent(Bool.self, forKey: .goalDirty) ?? false
   }
 
-  public mutating func start(_ track: FocoTrack, at now: Date) {
-    if running != nil { _ = stop(at: now) }
-    running = FocoRun(track: track, startedAt: now)
+  public mutating func start(_ track: FocoTrack, at now: Date, calendar: Calendar) {
+    if running != nil { stop(at: now, calendar: calendar) }
+    running = FocoRun(track: track, startedAt: now, runningSince: now, lastSeenAt: now)
   }
 
+  public mutating func pause(at now: Date) {
+    guard let since = running?.runningSince else { return }
+    if now > since { running?.stretches.append(FocoStretch(start: since, end: now)) }
+    running?.runningSince = nil
+  }
+
+  public mutating func resume(at now: Date) {
+    guard let run = running, run.isPaused else { return }
+    running?.runningSince = now
+    running?.lastSeenAt = now
+  }
+
+  public mutating func markSeen(at now: Date) {
+    guard running?.runningSince != nil else { return }
+    running?.lastSeenAt = now
+  }
+
+  public mutating func confirmPresence(at now: Date) {
+    running?.confirmedAt = now
+    running?.lastSeenAt = now
+  }
+
+  /// Fecha a corrida em sessões, uma por trecho e por dia. Abaixo do mínimo a
+  /// corrida inteira some, porque foi toque sem querer.
   @discardableResult
-  public mutating func stop(at now: Date) -> FocoEntry? {
-    guard let run = running else { return nil }
+  public mutating func stop(at now: Date, calendar: Calendar) -> [FocoEntry] {
+    guard let run = running else { return [] }
     running = nil
-    guard run.seconds(at: now) >= Self.minimumSeconds else { return nil }
-    let entry = FocoEntry(track: run.track, startedAt: run.startedAt, endedAt: now)
-    entries.append(entry)
-    pendingUploads.insert(entry.id)
-    return entry
+    guard run.seconds(at: now) >= Self.minimumSeconds else { return [] }
+    let closed = run.pieces(until: now, calendar: calendar).map {
+      FocoEntry(track: run.track, startedAt: $0.start, endedAt: $0.end)
+    }
+    entries += closed
+    pendingUploads.formUnion(closed.map(\.id))
+    return closed
   }
 
   public mutating func remove(id: UUID) {
     entries.removeAll { $0.id == id }
     if pendingUploads.remove(id) == nil {
       pendingRemovals.insert(id)
+    }
+  }
+
+  /// Desfaz um `remove`. A que já tinha subido sai da fila de remoção; se a
+  /// remoção já chegou ao servidor, ela volta como pendente e sobe de novo.
+  public mutating func restore(_ entry: FocoEntry) {
+    guard !entries.contains(where: { $0.id == entry.id }) else { return }
+    entries.append(entry)
+    entries.sort { $0.startedAt < $1.startedAt }
+    if pendingRemovals.remove(entry.id) == nil {
+      pendingUploads.insert(entry.id)
     }
   }
 
@@ -256,10 +386,10 @@ public struct FocoLedger: Codable, Hashable, Sendable {
     var total = entries
       .filter { CalendarDate($0.startedAt, in: calendar) == day && (id == nil || $0.track.id == id) }
       .reduce(0) { $0 + $1.seconds }
-    if let running, id == nil || running.track.id == id,
-      CalendarDate(running.startedAt, in: calendar) == day
-    {
-      total += running.seconds(at: now)
+    if let running, id == nil || running.track.id == id {
+      total += running.pieces(until: now, calendar: calendar)
+        .filter { CalendarDate($0.start, in: calendar) == day }
+        .reduce(0) { $0 + $1.seconds }
     }
     return total
   }
@@ -269,8 +399,8 @@ public struct FocoLedger: Codable, Hashable, Sendable {
     for entry in entries {
       totals[CalendarDate(entry.startedAt, in: calendar), default: 0] += entry.seconds
     }
-    if let running {
-      totals[CalendarDate(running.startedAt, in: calendar), default: 0] += running.seconds(at: now)
+    for piece in running?.pieces(until: now, calendar: calendar) ?? [] {
+      totals[CalendarDate(piece.start, in: calendar), default: 0] += piece.seconds
     }
     return totals
   }
