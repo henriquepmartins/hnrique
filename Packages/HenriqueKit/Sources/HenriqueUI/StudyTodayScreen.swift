@@ -19,6 +19,12 @@ public struct StudyTodayScreen: View {
   public var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
+        // O cabeçalho e o foco ficam fora do estado do resumo: o cronômetro é
+        // local e precisa abrir mesmo quando o servidor não responde.
+        StudyHeading(title: StudyFormat.weekdayLong(headingDate))
+          .staggeredEntrance(index: 0, isReady: true)
+        FocoTodayCard()
+          .staggeredEntrance(index: 1, isReady: true)
         switch store.overview {
         case .idle, .loading:
           StudyLoadingState().transition(.blurReplace)
@@ -26,15 +32,10 @@ public struct StudyTodayScreen: View {
           StudyFailedState(message: message) { Task { await store.loadOverview(force: true) } }
             .transition(.blurReplace)
         case .ready(let overview):
-          // A tela chegava inteira num quadro só. Numerar os blocos faz a
-          // abertura descer de cima para baixo, na ordem em que o olho lê, e o
-          // índice de cada um é o que os cards de pendência continuam a partir.
+          // Numerar os blocos faz a abertura descer de cima para baixo, na
+          // ordem em que o olho lê, e o índice de cada um é o que os cards de
+          // pendência continuam a partir.
           VStack(alignment: .leading, spacing: 20) {
-            StudyHeading(
-              title: StudyFormat.weekdayLong(overview.date.date(in: StudyFormat.calendar)))
-              .staggeredEntrance(index: 0, isReady: true)
-            FocoTodayCard()
-              .staggeredEntrance(index: 1, isReady: true)
             StudyTodayMetrics(overview: overview)
               .staggeredEntrance(index: 2, isReady: true)
             StudyTodayPending(overview: overview, onAssignments: onAssignments, base: 3)
@@ -53,6 +54,10 @@ public struct StudyTodayScreen: View {
     .studyPage()
     .task { await store.loadOverview() }
     .refreshable { await store.loadOverview(force: true) }
+  }
+
+  private var headingDate: Date {
+    (store.overview.value?.date ?? .today).date(in: StudyFormat.calendar)
   }
 }
 
@@ -99,7 +104,9 @@ struct StudyTodayPending: View {
             .staggeredEntrance(index: base + 1, isReady: true)
         }
         if overview.dueSoon.isEmpty {
-          StudyEmptyState(icon: "calendar", title: "sem entregas")
+          StudyEmptyState(
+            icon: "calendar", title: "sem entregas",
+            detail: "as do moodle entram sozinhas na próxima sincronização.")
             .staggeredEntrance(index: base + 1, isReady: true)
         } else {
           ForEach(Array(overview.dueSoon.enumerated()), id: \.element.id) { index, item in

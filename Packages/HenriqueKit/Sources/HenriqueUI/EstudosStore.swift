@@ -63,8 +63,24 @@ public final class EstudosStore {
   /// estado depois, nem derrubar a sessão uma segunda vez.
   @ObservationIgnored private var sessionID = UUID()
 
-  public init(client: APIClient) {
+  /// Quando cada aba chegou do servidor. A aba que veio do disco não tem
+  /// entrada aqui, então a primeira tela que a pede ainda vai à rede.
+  @ObservationIgnored private var fetchedAt: [PartialKeyPath<EstudosStore>: Date] = [:]
+  static let staleAfter: TimeInterval = 5 * 60
+
+  private let snapshotURL: URL?
+
+  public init(client: APIClient, snapshotURL: URL? = EstudosStore.defaultSnapshotURL) {
     self.client = client
+    self.snapshotURL = snapshotURL
+    restoreSnapshot()
+  }
+
+  /// Em `caches`, como o retrato do painel da academia: se o sistema apagar,
+  /// o app só volta a precisar da rede para a primeira tela.
+  public static var defaultSnapshotURL: URL? {
+    FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+      .appending(path: "henrique-estudos.json")
   }
 
   #if DEBUG
@@ -72,7 +88,14 @@ public final class EstudosStore {
     /// lugar para `--casca` capturar a casca sem servidor.
     @ObservationIgnored private var isCaptureShell = false
 
-    public func openCaptureShell() { isCaptureShell = true }
+    public func openCaptureShell() {
+      isCaptureShell = true
+      overview = .idle
+      subjects = .idle
+      assignments = .idle
+      notebooks = .idle
+      queue = .idle
+    }
   #endif
 
   /// Um resumo das abas para a casca do app. Fica derivado das abas para não
@@ -297,6 +320,31 @@ public final class EstudosStore {
     subjectCache.removeAll()
     pageCache.removeAll()
     loadedNotesSubject = nil
+    fetchedAt.removeAll()
+    if let snapshotURL {
+      Task.detached(priority: .background) { try? FileManager.default.removeItem(at: snapshotURL) }
+    }
+  }
+
+  // MARK: Retrato no disco
+
+  /// O resumo do dia só volta se for de hoje. Os pendentes de ontem com o dia
+  /// da semana de ontem no título enganam mais do que ajudam.
+  private func restoreSnapshot() {
+    guard let snapshotURL, let saved = EstudosSnapshot.read(from: snapshotURL) else { return }
+    if let value = saved.overview, value.date == .today { overview = .ready(value) }
+    if let value = saved.subjects { subjects = .ready(value) }
+    if let value = saved.assignments { assignments = .ready(value) }
+    if let value = saved.notebooks { notebooks = .ready(value) }
+    if let value = saved.queue { queue = .ready(value) }
+  }
+
+  private func persistSnapshot() {
+    guard let snapshotURL else { return }
+    let snapshot = EstudosSnapshot(
+      overview: overview.value, subjects: subjects.value, assignments: assignments.value,
+      notebooks: notebooks.value, queue: queue.value)
+    Task.detached(priority: .background) { try? snapshot.write(to: snapshotURL) }
   }
 
   // MARK: Mecânica
@@ -311,7 +359,11 @@ public final class EstudosStore {
     #endif
     let current = self[keyPath: keyPath]
     if current.isLoading { return }
-    if current.value != nil, !force { return }
+    if current.value != nil, !force, let at = fetchedAt[keyPath],
+      Date.now.timeIntervalSince(at) < Self.staleAfter
+    {
+      return
+    }
     // Um refresh com dados na tela mantém o que já está lá. Quem vê o giro é o
     // `.refreshable`, não a aba inteira piscando.
     if current.value == nil { self[keyPath: keyPath] = .loading }
@@ -324,6 +376,8 @@ public final class EstudosStore {
       // O sucesso não limpa o aviso. As cinco abas carregam em paralelo, e uma
       // que desse certo apagaria o erro da que falhou.
       self[keyPath: keyPath] = .ready(value)
+      fetchedAt[keyPath] = .now
+      persistSnapshot()
     } catch {
       guard generation == sessionID else { return }
       guard !(error is CancellationError) else {
