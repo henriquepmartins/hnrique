@@ -259,20 +259,24 @@ public struct LanguageCompleteInput: Hashable, Sendable, Encodable {
   /// Só a revisão manda nota; a rotina manda texto e microfone. Ausente sai do
   /// corpo em vez de ir nulo, como o resto das entradas do app.
   public var rating: FlashcardRating?
+  /// O dia do aparelho. O servidor contava pelo dia em UTC, e o treino feito
+  /// às 22 h de Fortaleza caía no dia seguinte.
+  public var date: CalendarDate
 
   public init(
     attemptId: UUID = UUID(), drillId: String, text: String, micUsed: Bool,
-    rating: FlashcardRating? = nil
+    rating: FlashcardRating? = nil, date: CalendarDate = .today
   ) {
     self.attemptId = attemptId
     self.drillId = drillId
     self.text = text
     self.micUsed = micUsed
     self.rating = rating
+    self.date = date
   }
 
   private enum CodingKeys: String, CodingKey {
-    case attemptId, drillId, text, micUsed, rating
+    case attemptId, drillId, text, micUsed, rating, date
   }
 
   public func encode(to encoder: any Encoder) throws {
@@ -282,6 +286,7 @@ public struct LanguageCompleteInput: Hashable, Sendable, Encodable {
     try container.encode(text, forKey: .text)
     try container.encode(micUsed, forKey: .micUsed)
     try container.encodeIfPresent(rating, forKey: .rating)
+    try container.encode(date, forKey: .date)
   }
 }
 
@@ -310,9 +315,12 @@ public struct LanguageCorrectionInput: Hashable, Sendable, Encodable {
 
 public struct LanguageFinishInput: Hashable, Sendable, Encodable {
   public var drillIds: [String]
+  /// O dia do aparelho, pelo mesmo motivo do treino concluído.
+  public var date: CalendarDate
 
-  public init(drillIds: [String]) {
+  public init(drillIds: [String], date: CalendarDate = .today) {
     self.drillIds = drillIds
+    self.date = date
   }
 }
 
