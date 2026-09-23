@@ -1,5 +1,8 @@
 import HenriqueCore
 import SwiftUI
+#if canImport(UIKit)
+  import UIKit
+#endif
 
 struct ExerciseCard: View {
   @Environment(AcademiaStore.self) private var store
@@ -51,8 +54,8 @@ struct ExerciseCard: View {
             TrainingSetRow(key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: .work, index: set.index),
               weight: set.weightKg, repetitions: set.reps, done: set.isDone, failure: set.toFailure)
           }
-          if let previous {
-            Text(previous).font(.caption).foregroundStyle(Color.mutedInk)
+          ForEach([previousPrep, previous].compactMap { $0 }, id: \.self) { line in
+            Text(line).font(.caption).foregroundStyle(Color.mutedInk)
               .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
           }
         }.padding(Space.s).background(.white, in: .rect(cornerRadius: Radius.concentric(SetRowScale.list.radius, padding: Space.s))).padding(6)
@@ -70,6 +73,10 @@ struct ExerciseCard: View {
   private var previous: String? {
     guard let previous = exercise.previous else { return nil }
     return "última: \(previous.reps.map(String.init).joined(separator: ", ")) × \(weightLabel(previous.weightKg))"
+  }
+  private var previousPrep: String? {
+    guard let previous = exercise.previousPrep else { return nil }
+    return "aquecimento da última: \(previous.reps.map(String.init).joined(separator: ", ")) × \(weightLabel(previous.weightKg))"
   }
   private func group(_ title: String, color: Color) -> some View {
     HStack(spacing: 6) {
@@ -119,8 +126,13 @@ struct TrainingSetRow: View {
   var isNext: Bool = false
   /// O que a série tem a bater, na coluna "anterior" da sessão.
   var previous: String? = nil
+  /// A carga com que o campo compara o número digitado, para estranhar um 250
+  /// onde a última vez foi 25.
+  var reference: Double? = nil
 
   private var fieldID: String { "set.\(key.exerciseId).\(kind == .prep ? "prep" : "work").\(index)" }
+  /// "aquecimento 1" ou "série 1". O leitor de tela lia as duas linhas iguais.
+  private var spokenName: String { kind == .prep ? "aquecimento \(index)" : "série \(index)" }
   private var waiting: Bool { store.isWaiting(key) }
   private var currentDone: Bool {
     guard store.dashboard?.date == key.date, store.dashboard?.workout?.id == key.templateId,
@@ -130,6 +142,31 @@ struct TrainingSetRow: View {
   }
 
   var body: some View {
+    // O aviso vai em cima da linha: embaixo, o teclado cobre ele enquanto se digita.
+    VStack(spacing: 4) {
+      if let warning = weightWarning(weightDraft, reference: reference ?? weight) {
+        Label(warning, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption).foregroundStyle(Color.orange)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 6)
+          .accessibilityIdentifier(fieldID + ".aviso")
+      }
+      fields
+    }
+    .font(.subheadline).monospacedDigit().multilineTextAlignment(.center)
+    .modifier(RowChrome(scale: scale, kind: kind, done: done, isNext: isNext, accent: accent))
+    .animation(reduceMotion ? nil : Motion.crossfade, value: isNext)
+    .onChange(of: weight, initial: true) { if focused == nil { weightDraft = weight } }
+    .onChange(of: repetitions, initial: true) { if focused == nil { repsDraft = repetitions } }
+    .onChange(of: focused) { old, new in
+      if old != nil { commit(completed: currentDone) }
+      if new == nil { submitted = nil }
+      if new != nil { selectAllInFocusedField() }
+    }
+    .onSubmit { commit(completed: currentDone); focused = nil }
+  }
+
+  private var fields: some View {
     HStack(spacing: 8) {
       switch scale {
       case .list:
@@ -139,7 +176,7 @@ struct TrainingSetRow: View {
           .font(.system(size: indexSize, weight: isNext ? .medium : .regular, design: .monospaced))
           .foregroundStyle(kind == .prep ? Color.orange : Color.ink)
           .frame(width: 30)
-        Text(kind == .prep ? "aquecimento" : previous ?? "estreia")
+        Text(previous ?? (kind == .prep ? "aquecimento" : "estreia"))
           .font(.system(size: indexSize)).monospacedDigit()
           .foregroundStyle(done ? accent.deep.opacity(0.6) : Color.mutedInk)
           .lineLimit(1).minimumScaleFactor(0.8)
@@ -154,10 +191,7 @@ struct TrainingSetRow: View {
           .submitLabel(.done)
           .font(scale.value)
           .accessibilityIdentifier(fieldID + ".weight")
-          .accessibilityLabel("Peso da série \(index)")
-          .onChange(of: weightDraft) { _, new in
-            if let new, new.isFinite, !Limits.setWeightKg.contains(new) { weightDraft = new.clamped(to: Limits.setWeightKg) }
-          }
+          .accessibilityLabel("Peso \(kind == .prep ? "do" : "da") \(spokenName)")
       }
       cell(unit: repsUnit) {
         TextField("0", value: $repsDraft, format: .number)
@@ -168,7 +202,7 @@ struct TrainingSetRow: View {
           .submitLabel(.done)
           .font(scale.value)
           .accessibilityIdentifier(fieldID + ".reps")
-          .accessibilityLabel("Repetições da série \(index)")
+          .accessibilityLabel("Repetições \(kind == .prep ? "do" : "da") \(spokenName)")
           .onChange(of: repsDraft) { _, new in
             if let new, new > Limits.reps.upperBound { repsDraft = Limits.reps.upperBound }
           }
@@ -180,20 +214,28 @@ struct TrainingSetRow: View {
       } label: {
         // O visto está sempre desenhado e só muda de cor. É o cinza dele que
         // diz "ainda não", e o verde na próxima série que convida ao toque.
+        // Enquanto a marcação não chegou ao servidor o visto fica vazado, com
+        // borda tracejada e um relógio no canto. A borda escura sobre o verde
+        // cheio não aparecia no aparelho.
         Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
-          .foregroundStyle(done ? Color.white : isNext ? accent.base : Color.ink.opacity(0.28))
+          .foregroundStyle(done && !waiting ? Color.white : done || isNext ? accent.base : Color.ink.opacity(0.28))
           .offset(y: -0.5)
           .frame(width: scale.check, height: scale.check)
-          .background(done ? accent.base : .white, in: .circle)
-          .overlay(Circle().strokeBorder(
-            done ? .clear : isNext ? accent.base : Color.ink.opacity(0.16), lineWidth: 1.5))
-          // Borda tracejada enquanto a marcação não chegou ao servidor. O visto
-          // cheio sozinho prometia coisa que às vezes não tinha acontecido.
+          .background(done && !waiting ? accent.base : .white, in: .circle)
           .overlay {
             if waiting {
+              Circle().strokeBorder(accent.base, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+            } else {
               Circle().strokeBorder(
-                accent.deep.opacity(0.55),
-                style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                done ? .clear : isNext ? accent.base : Color.ink.opacity(0.16), lineWidth: 1.5)
+            }
+          }
+          .overlay(alignment: .topTrailing) {
+            if waiting {
+              Image(systemName: "clock.fill")
+                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.orange)
+                .background(Circle().fill(.white).padding(-1))
+                .offset(x: 3, y: -3)
             }
           }
       }
@@ -202,20 +244,21 @@ struct TrainingSetRow: View {
       .disabled(!Limits.setWeightKg.contains(weightDraft ?? -1) || !Limits.reps.contains(repsDraft ?? 0))
         .accessibilityIdentifier(fieldID + ".completion")
         .animation(reduceMotion ? nil : Motion.confirm, value: done)
-        .accessibilityLabel(done ? "Desmarcar série \(index)" : "Concluir série \(index)")
+        .accessibilityLabel(done ? "Desmarcar \(spokenName)" : "Concluir \(spokenName)")
         .accessibilityValue(waiting ? "esperando enviar" : "")
         .sensoryFeedback(currentDone ? .success : .impact(weight: .light), trigger: tapCount)
     }
-    .font(.subheadline).monospacedDigit().multilineTextAlignment(.center)
-    .modifier(RowChrome(scale: scale, kind: kind, done: done, isNext: isNext, accent: accent))
-    .animation(reduceMotion ? nil : Motion.crossfade, value: isNext)
-    .onChange(of: weight, initial: true) { if focused == nil { weightDraft = weight } }
-    .onChange(of: repetitions, initial: true) { if focused == nil { repsDraft = repetitions } }
-    .onChange(of: focused) { old, new in
-      if old != nil { commit(completed: currentDone) }
-      if new == nil { submitted = nil }
-    }
-    .onSubmit { commit(completed: currentDone); focused = nil }
+  }
+
+  /// O número inteiro selecionado ao entrar no campo, para digitar "10" trocar o
+  /// valor em vez de virar "4010". O campo de valor do SwiftUI não expõe a
+  /// seleção, então o pedido vai pela cadeia de respostas do UIKit.
+  private func selectAllInFocusedField() {
+    #if canImport(UIKit)
+      DispatchQueue.main.async {
+        UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil)
+      }
+    #endif
   }
 
   /// A unidade de reps. A lista de hoje tem cabeçalho e só escreve "falha"; a
@@ -290,6 +333,20 @@ private struct RowChrome: ViewModifier {
         .background(done ? accent.base.opacity(0.06) : isNext ? Color.surfaceMuted : .clear, in: .rect(cornerRadius: 18))
     }
   }
+}
+
+/// O aviso de carga estranha, ou nulo quando o número parece certo. Acima do
+/// limite do servidor o visto fica desligado; abaixo dele o aviso só pergunta,
+/// porque um recorde de verdade também sai do padrão.
+func weightWarning(_ kilograms: Double?, reference: Double?) -> String? {
+  guard let kilograms, kilograms.isFinite else { return nil }
+  let ceiling = Limits.setWeightKg.upperBound
+  if kilograms > ceiling { return "o limite é \(Formatting.trim(ceiling)) kg" }
+  if let reference, reference > 0, kilograms > reference * 2.5 {
+    return "\(Formatting.trim(kilograms)) kg? da última vez foi \(Formatting.trim(reference))"
+  }
+  if kilograms > 400 { return "\(Formatting.trim(kilograms)) kg? confere o número" }
+  return nil
 }
 
 func weightLabel(_ kilograms: Double) -> String {

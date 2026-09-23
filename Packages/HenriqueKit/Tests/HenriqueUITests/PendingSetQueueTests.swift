@@ -6,9 +6,22 @@ import Testing
 
 /// A rede do teste. Ela recusa tudo enquanto `offline` estiver ligado, que é o
 /// que acontece na academia, e conta quantas vezes o app tentou gravar a série.
+/// `recordStatus` faz o servidor responder um status por exercício.
 final class FakeNetwork: URLProtocol, @unchecked Sendable {
   nonisolated(unsafe) static var offline = true
   nonisolated(unsafe) static var recordedSets = 0
+  nonisolated(unsafe) static var recordStatus: [String: Int] = [:]
+  /// Gravações que chegaram ao servidor, por exercício, com o corpo da última.
+  nonisolated(unsafe) static var answered: [String: Int] = [:]
+  nonisolated(unsafe) static var lastBody: [String: [String: Any]] = [:]
+
+  static func reset() {
+    offline = true
+    recordedSets = 0
+    recordStatus = [:]
+    answered = [:]
+    lastBody = [:]
+  }
 
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -21,12 +34,52 @@ final class FakeNetwork: URLProtocol, @unchecked Sendable {
       client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
       return
     }
+    var status = 200
+    var body = dashboardDeHoje()
+    if path == Route.recordSet.rawValue, let json = Self.body(of: request),
+      let exercise = json["exerciseId"] as? String {
+      Self.answered[exercise, default: 0] += 1
+      Self.lastBody[exercise] = json
+      if let forced = Self.recordStatus[exercise] {
+        status = forced
+        body = #"{"message":"recusada no teste"}"#
+      }
+    }
     let response = HTTPURLResponse(
-      url: request.url!, statusCode: 200, httpVersion: nil,
+      url: request.url!, statusCode: status, httpVersion: nil,
       headerFields: ["Content-Type": "application/json"])!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-    client?.urlProtocol(self, didLoad: Data(dashboardDeHoje().utf8))
+    client?.urlProtocol(self, didLoad: Data(body.utf8))
     client?.urlProtocolDidFinishLoading(self)
+  }
+
+  /// O URLSession entrega o corpo como stream ao protocolo, não em `httpBody`.
+  private static func body(of request: URLRequest) -> [String: Any]? {
+    var data = request.httpBody ?? Data()
+    if data.isEmpty, let stream = request.httpBodyStream {
+      stream.open()
+      defer { stream.close() }
+      var buffer = [UInt8](repeating: 0, count: 4096)
+      while stream.hasBytesAvailable {
+        let read = stream.read(&buffer, maxLength: buffer.count)
+        guard read > 0 else { break }
+        data.append(buffer, count: read)
+      }
+    }
+    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+  }
+}
+
+/// O alarme do descanso sem a central de notificações: guarda o que foi pedido.
+@MainActor
+final class FakeRestAlarm: RestAlarm {
+  var scheduled: Date?
+  var cancels = 0
+
+  func schedule(at date: Date) { scheduled = date }
+  func cancel() {
+    scheduled = nil
+    cancels += 1
   }
 }
 
@@ -36,15 +89,28 @@ struct MemoryTokenStore: TokenStore {
   func write(_ token: String?) { Self.token = token }
 }
 
+/// Um `UserDefaults` só da suíte, limpo a cada teste, para o descanso e o
+/// "encerrar" de um teste não vazarem para o outro.
+let testDefaultsSuite = "henrique.testes.academia"
+
 @MainActor
-private func makeStore() -> AcademiaStore {
+func makeStore(alarm: FakeRestAlarm = FakeRestAlarm()) -> AcademiaStore {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [FakeNetwork.self]
   let client = APIClient(
     baseURL: URL(string: "https://exemplo.invalido")!,
     tokenStore: MemoryTokenStore(),
     session: URLSession(configuration: configuration))
-  return AcademiaStore(client: client)
+  let store = AcademiaStore(
+    client: client, restAlarm: alarm, defaults: UserDefaults(suiteName: testDefaultsSuite)!)
+  store.resendsAutomatically = false
+  return store
+}
+
+@MainActor
+func resetLocalState() {
+  UserDefaults(suiteName: testDefaultsSuite)!.removePersistentDomain(forName: testDefaultsSuite)
+  limparFila()
 }
 
 /// O painel só é aceito quando a data que volta é a data pedida, então a
@@ -59,9 +125,9 @@ private let chave = SetKey(
 /// A academia começa com sinal: você abre o app em casa, o painel carrega, e o
 /// sinal some lá dentro. Marcar série antes do painel existir é outro caso.
 @MainActor
-private func lojaComPainel() async -> AcademiaStore {
+func lojaComPainel(alarm: FakeRestAlarm = FakeRestAlarm()) async -> AcademiaStore {
   FakeNetwork.offline = false
-  let store = makeStore()
+  let store = makeStore(alarm: alarm)
   await store.start()
   FakeNetwork.offline = true
   return store
@@ -71,9 +137,8 @@ private func lojaComPainel() async -> AcademiaStore {
 @MainActor
 struct PendingSetQueueTests {
   init() {
-    FakeNetwork.offline = true
-    FakeNetwork.recordedSets = 0
-    limparFila()
+    FakeNetwork.reset()
+    resetLocalState()
   }
 
   @Test("sem rede a série continua marcada na tela")
@@ -83,7 +148,9 @@ struct PendingSetQueueTests {
       .value
 
     #expect(store.isWaiting(chave))
-    #expect(store.banner?.contains("guardada") == true)
+    // Sem alerta: o alerta por cima da sessão de treino fechava a sessão.
+    #expect(store.banner == nil)
+    #expect(store.waitingCount == 1)
     let série = store.dashboard?.workout?.exercises
       .first { $0.id == chave.exerciseId }?.sets.work.first { $0.index == chave.index }
     #expect(série?.isDone == true)
@@ -98,6 +165,7 @@ struct PendingSetQueueTests {
     #expect(store.isWaiting(chave))
     let tentativasOffline = FakeNetwork.recordedSets
 
+    store.resendsAutomatically = true
     FakeNetwork.offline = false
     await store.load()
     await esperar { !store.isWaiting(chave) }
@@ -162,6 +230,87 @@ struct PendingSetQueueTests {
     #expect(restored.completedAt == Date(timeIntervalSince1970: 100))
   }
 
+  @Test("a série manda a hora do toque, não a da chegada")
+  func sendsCompletionDate() async throws {
+    let store = await lojaComPainel()
+    FakeNetwork.offline = false
+    let key = SetKey(
+      date: .today, templateId: chave.templateId, exerciseId: "desenvolvimento", kind: .work, index: 1)
+    let outcome = await store.record(key: key, weightKg: 14, reps: 12, completed: true, toFailure: false)?
+      .value
+    #expect(outcome == .applied)
+    let sent = try #require(FakeNetwork.lastBody["desenvolvimento"]?["completedAt"] as? String)
+    #expect(parseTimestamp(sent) != nil)
+  }
+
+  @Test("recusa 4xx sai da fila na hora e vira aviso sem alerta")
+  func dropsRefusedSet() async {
+    let store = await lojaComPainel()
+    FakeNetwork.offline = false
+    FakeNetwork.recordStatus["supino-reto"] = 400
+    let key = SetKey(
+      date: .today, templateId: chave.templateId, exerciseId: "supino-reto", kind: .work, index: 2)
+
+    let outcome = await store.record(key: key, weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
+      .value
+
+    #expect(outcome == .refused)
+    #expect(!store.isWaiting(key))
+    #expect(store.waitingCount == 0)
+    #expect(store.banner == nil)
+    #expect(store.notice == "série não salva: recusada no teste")
+    #expect(completionDate(in: store, key: key) == nil)
+    #expect(FakeNetwork.answered["supino-reto"] == 1)
+  }
+
+  @Test("5xx repetido sai da fila na quinta vez e não segura as outras")
+  func skipsPoisonedSet() async {
+    let store = await lojaComPainel()
+    let poisoned = SetKey(
+      date: .today, templateId: chave.templateId, exerciseId: "supino-reto", kind: .work, index: 2)
+    let healthy = SetKey(
+      date: .today, templateId: chave.templateId, exerciseId: "desenvolvimento", kind: .work, index: 1)
+    _ = await store.record(key: poisoned, weightKg: 42.5, reps: 8, completed: true, toFailure: true)?.value
+    _ = await store.record(key: healthy, weightKg: 14, reps: 12, completed: true, toFailure: false)?.value
+    #expect(store.waitingCount == 2)
+
+    FakeNetwork.offline = false
+    FakeNetwork.recordStatus["supino-reto"] = 500
+    #expect(await store.resend() == false)
+    #expect(!store.isWaiting(healthy))
+    #expect(store.isWaiting(poisoned))
+
+    for _ in 0..<3 { _ = await store.resend() }
+    #expect(store.isWaiting(poisoned))
+    #expect(FakeNetwork.answered["supino-reto"] == 4)
+    #expect(store.notice == nil)
+
+    _ = await store.resend()
+    #expect(!store.isWaiting(poisoned))
+    #expect(store.waitingCount == 0)
+    #expect(FakeNetwork.answered["supino-reto"] == 5)
+    #expect(store.notice == "série não salva: recusada no teste")
+  }
+
+  @Test("uma série que o servidor recusou uma vez volta do disco com a conta")
+  func keepsServerFailuresAcrossRelaunch() async {
+    let first = await lojaComPainel()
+    FakeNetwork.offline = false
+    FakeNetwork.recordStatus["supino-reto"] = 503
+    let key = SetKey(
+      date: .today, templateId: chave.templateId, exerciseId: "supino-reto", kind: .work, index: 2)
+    _ = await first.record(key: key, weightKg: 42.5, reps: 8, completed: true, toFailure: true)?.value
+    for _ in 0..<3 { _ = await first.resend() }
+    #expect(FakeNetwork.answered["supino-reto"] == 4)
+
+    let second = makeStore()
+    #expect(second.isWaiting(key))
+    await second.start()
+    _ = await second.resend()
+    #expect(!second.isWaiting(key))
+    #expect(FakeNetwork.answered["supino-reto"] == 5)
+  }
+
   @Test("a série guardada sobrevive ao app fechar")
   func survivesRelaunch() async throws {
     let primeiro = await lojaComPainel()
@@ -177,7 +326,7 @@ struct PendingSetQueueTests {
 }
 
 @MainActor
-private func completionDate(in store: AcademiaStore, key: SetKey) -> Date? {
+func completionDate(in store: AcademiaStore, key: SetKey) -> Date? {
   let sets = store.dashboard?.workout?.exercises.first { $0.id == key.exerciseId }?.sets
   return key.kind == .prep
     ? sets?.prep.first { $0.index == key.index }?.completedAt
@@ -186,14 +335,14 @@ private func completionDate(in store: AcademiaStore, key: SetKey) -> Date? {
 
 /// O disco é o mesmo para toda a suíte, então cada teste começa com ele limpo.
 @MainActor
-private func limparFila() {
+func limparFila() {
   guard let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
     .first?.appending(path: "henrique-series-pendentes.json")
   else { return }
   try? FileManager.default.removeItem(at: url)
 }
 
-private func esperar(_ condicao: @MainActor () -> Bool) async {
+func esperar(_ condicao: @MainActor () -> Bool) async {
   for _ in 0..<200 {
     if await MainActor.run(body: condicao) { return }
     try? await Task.sleep(for: .milliseconds(25))

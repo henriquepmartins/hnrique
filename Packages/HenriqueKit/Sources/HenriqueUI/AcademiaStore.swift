@@ -1,6 +1,9 @@
 import Foundation
 import HenriqueCore
 import Observation
+#if canImport(UIKit)
+  import UIKit
+#endif
 
 public struct SetKey: Hashable, Sendable, Codable {
   public enum Kind: String, Hashable, Sendable, Codable { case prep, work }
@@ -42,27 +45,71 @@ public final class AcademiaStore {
   /// Falso até a primeira leitura do chaveiro responder. Sem isto, todo arranque
   /// a frio mostra a entrada por uma fração de segundo mesmo com sessão válida.
   public private(set) var sessionChecked = false
-  private var acceptedDashboard: Dashboard?
+  @ObservationIgnored private var acceptedDashboard: Dashboard? {
+    didSet { dashboard = projected() }
+  }
   /// Uma marcação que ainda não chegou ao servidor. Marcar série é o único
   /// gesto do app que acontece longe do wi-fi, então ela vive em disco até o
   /// servidor aceitar. `failed` liga quando já houve uma tentativa perdida, que
   /// é quando a tela precisa dizer que aquilo ainda está a caminho.
-  private struct PendingSet: Codable {
+  struct PendingSet: Codable {
     let key: SetKey
     let draft: SetDraft
     let revision: Int
     var failed: Bool
+    /// Respostas 5xx seguidas. No limite a série sai da fila, senão um corpo
+    /// que derruba o servidor segura todas as outras atrás dele.
+    var serverFailures = 0
+
+    init(key: SetKey, draft: SetDraft, revision: Int, failed: Bool) {
+      self.key = key
+      self.draft = draft
+      self.revision = revision
+      self.failed = failed
+    }
+
+    init(from decoder: any Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      key = try container.decode(SetKey.self, forKey: .key)
+      draft = try container.decode(SetDraft.self, forKey: .draft)
+      revision = try container.decode(Int.self, forKey: .revision)
+      failed = try container.decode(Bool.self, forKey: .failed)
+      serverFailures = try container.decodeIfPresent(Int.self, forKey: .serverFailures) ?? 0
+    }
   }
-  private var pendingSets: [SetKey: PendingSet] = [:]
-  @ObservationIgnored private var mutationTail: Task<Bool, Never>?
+  static let serverFailureLimit = 5
+  private var pendingSets: [SetKey: PendingSet] = [:] {
+    didSet { dashboard = projected() }
+  }
+  @ObservationIgnored private var mutationTail: Task<MutationOutcome, Never>?
   @ObservationIgnored private var resendTask: Task<Void, Never>?
   @ObservationIgnored private var revision = 0
+
+  /// Como terminou uma escrita. A fila de séries precisa separar a rede fora,
+  /// que para o reenvio, do servidor recusando uma série só, que não para.
+  public enum MutationOutcome: Equatable, Sendable {
+    case applied
+    case offline
+    case refused
+  }
 
   /// A série está marcada na tela mas ainda não no servidor. A tela mostra isso
   /// para o visto não prometer o que não aconteceu.
   public func isWaiting(_ key: SetKey) -> Bool { pendingSets[key]?.failed == true }
 
-  public var dashboard: Dashboard? {
+  /// Quantas séries esperam a rede. A tela diz isso numa linha, sem alerta:
+  /// um alerta por cima da sessão de treino fechava a sessão.
+  public var waitingCount: Int { pendingSets.values.count(where: \.failed) }
+
+  /// Um aviso que não pede toque: a série que o servidor recusou e saiu da fila.
+  public var notice: String?
+
+  /// O painel aceito com as marcações pendentes por cima. Guardado, e não
+  /// calculado a cada leitura: cada linha de série lê o painel várias vezes
+  /// por pintura.
+  public private(set) var dashboard: Dashboard?
+
+  private func projected() -> Dashboard? {
     guard var value = acceptedDashboard else { return nil }
     for pending in pendingSets.values.sorted(by: { $0.revision < $1.revision }) {
       let key = pending.key
@@ -96,7 +143,23 @@ public final class AcademiaStore {
   private var deletingWorkoutIds: Set<String> = []
   public private(set) var isSignedIn: Bool = false
   public var selectedDate: CalendarDate = .today
+  /// O dia que era hoje na última olhada. Quem estava em hoje quando a
+  /// meia-noite passou vai junto para o dia novo; quem escolheu outro dia fica.
+  @ObservationIgnored private var knownToday: CalendarDate = .today
   public var banner: String?
+
+  /// O descanso em curso. Mora aqui, e não na tela da sessão, porque minimizar
+  /// a sessão ou fechar o app não para o relógio da academia.
+  public private(set) var rest: RestState?
+  @ObservationIgnored private var restExpiry: Task<Void, Never>?
+  @ObservationIgnored private let restAlarm: any RestAlarm
+  /// Descanso escolhido no aparelho por exercício. Vale por cima do plano e vai
+  /// junto no próximo salvar do plano; some quando o servidor devolve o mesmo valor.
+  private var restOverrides: [String: Int] = [:]
+  /// Quando cada treino foi encerrado, por dia e treino. O servidor não guarda
+  /// isso; é o que diz ao card "ver o treino" em vez de "continuar".
+  private var finishedAt: [String: Date] = [:]
+  @ObservationIgnored private let defaults: UserDefaults
 
   private let client: APIClient
   private struct CachedDay {
@@ -119,6 +182,20 @@ public final class AcademiaStore {
   private func invalidateDays() {
     dayCache.removeAll()
     cancelRead()
+  }
+
+  /// Uma série gravada muda o próprio dia e o "anterior" dos dias seguintes. Os
+  /// dias de antes e os meses de frequência sem a data continuam valendo.
+  private func invalidate(from date: CalendarDate) {
+    dayCache = dayCache.filter { $0.key < date }
+    attendanceRanges.removeAll { $0.contains(date) }
+  }
+
+  private func invalidateAll() {
+    dayCache.removeAll()
+    // a escrita muda a frequência; o mapa fica na tela e o próximo mês
+    // visitado busca de novo.
+    attendanceRanges.removeAll()
   }
 
   private func remember(_ value: Dashboard) {
@@ -170,19 +247,19 @@ public final class AcademiaStore {
       .appending(path: "henrique-series-pendentes.json")
   }
 
+  /// Escrita síncrona. São poucos bytes, e a escrita em segundo plano podia
+  /// não terminar antes do sistema matar o app logo depois da marcação.
   private func saveQueue() {
     guard let url = Self.queueURL else { return }
     let queued = pendingSets.values.sorted { $0.revision < $1.revision }
-    Task.detached(priority: .background) {
-      guard !queued.isEmpty else {
-        try? FileManager.default.removeItem(at: url)
-        return
-      }
-      guard let data = try? JSONEncoder.henrique().encode(queued) else { return }
-      try? FileManager.default.createDirectory(
-        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try? data.write(to: url, options: .atomic)
+    guard !queued.isEmpty else {
+      try? FileManager.default.removeItem(at: url)
+      return
     }
+    guard let data = try? JSONEncoder.henrique().encode(queued) else { return }
+    try? FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? data.write(to: url, options: .atomic)
   }
 
   /// Tudo o que voltou do disco já falhou uma vez, por definição: só chega ali
@@ -202,16 +279,66 @@ public final class AcademiaStore {
     pendingSets.removeAll()
     resendTask?.cancel()
     resendTask = nil
-    guard let url = Self.queueURL else { return }
-    Task.detached(priority: .background) {
-      try? FileManager.default.removeItem(at: url)
+    saveQueue()
+  }
+
+  public convenience init(client: APIClient) {
+    self.init(client: client, restAlarm: AcademiaRestAlarm(), defaults: .standard)
+  }
+
+  init(client: APIClient, restAlarm: any RestAlarm, defaults: UserDefaults) {
+    self.client = client
+    self.restAlarm = restAlarm
+    self.defaults = defaults
+    loadSnapshot()
+    loadQueue()
+    loadLocalState()
+    observeDayChanges()
+  }
+
+  enum DefaultsKey {
+    static let rest = "academia.descanso"
+    static let restOverrides = "academia.descanso.por-exercicio"
+    static let finished = "academia.treinos-encerrados"
+  }
+
+  private func loadLocalState() {
+    if let data = defaults.data(forKey: DefaultsKey.rest),
+      let saved = try? JSONDecoder().decode(RestState.self, from: data),
+      !saved.isExpired(at: .now) {
+      rest = saved
+      scheduleRestExpiry()
+    }
+    restOverrides = defaults.dictionary(forKey: DefaultsKey.restOverrides) as? [String: Int] ?? [:]
+    if let data = defaults.data(forKey: DefaultsKey.finished),
+      let saved = try? JSONDecoder().decode([String: Date].self, from: data) {
+      let cutoff = CalendarDate.today.adding(days: -14).iso
+      finishedAt = saved.filter { $0.key >= cutoff }
     }
   }
 
-  public init(client: APIClient) {
-    self.client = client
-    loadSnapshot()
-    loadQueue()
+  private func observeDayChanges() {
+    #if canImport(UIKit)
+      NotificationCenter.default.addObserver(
+        forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+      ) { [weak self] _ in
+        MainActor.assumeIsolated { self?.followToday() }
+      }
+    #endif
+    NotificationCenter.default.addObserver(
+      forName: .NSCalendarDayChanged, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.followToday() }
+    }
+  }
+
+  /// Chamada quando o app volta ou o dia vira. Só anda se quem usa estava
+  /// olhando o dia que era hoje.
+  func followToday(now today: CalendarDate = .today) {
+    let previous = knownToday
+    knownToday = today
+    guard previous != today, selectedDate == previous, isSignedIn else { return }
+    Task { await select(date: today) }
   }
 
   #if DEBUG
@@ -255,6 +382,7 @@ public final class AcademiaStore {
 
   public func signOut() async {
     sessionID = UUID()
+    endRest()
     invalidateDays()
     isSignedIn = false
     acceptedDashboard = nil
@@ -316,25 +444,28 @@ public final class AcademiaStore {
   /// Frequência não é dado crítico: falhou, o mapa fica como está, sem banner.
   /// Um intervalo já carregado não volta ao servidor; os dias antigos ficam e
   /// os novos entram por cima.
-  public func loadAttendance(from: CalendarDate, to: CalendarDate) async {
+  /// Verdadeiro quando o intervalo inteiro está em `attendance`.
+  @discardableResult
+  public func loadAttendance(from: CalendarDate, to: CalendarDate) async -> Bool {
     #if DEBUG
-      if isCaptureShell { return }
+      if isCaptureShell { return false }
     #endif
-    guard from <= to, isSignedIn else { return }
+    guard from <= to, isSignedIn else { return false }
     let range = from...to
-    if attendanceRanges.contains(where: { $0.lowerBound <= from && to <= $0.upperBound }) { return }
+    if attendanceRanges.contains(where: { $0.lowerBound <= from && to <= $0.upperBound }) { return true }
     let session = sessionID
     guard let days = try? await client.attendance(.init(from: from, to: to)),
-      session == sessionID else { return }
+      session == sessionID else { return false }
     for day in days { attendance[day.date] = day }
     attendanceRanges.append(range)
+    return true
   }
 
   @discardableResult
   public func record(
     key: SetKey, weightKg: Double, reps: Int,
     completed: Bool, toFailure: Bool
-  ) -> Task<Bool, Never>? {
+  ) -> Task<MutationOutcome, Never>? {
     guard key.date == selectedDate, let dashboard, dashboard.date == key.date,
       let workout = dashboard.workout, workout.id == key.templateId,
       weightKg.isFinite, weightKg >= 0, reps > 0 else { return nil }
@@ -350,18 +481,27 @@ public final class AcademiaStore {
     let pending = PendingSet(key: key, draft: draft, revision: revision, failed: false)
     pendingSets[key] = pending
     saveQueue()
+    if key.kind == .work {
+      if completed && existingDate == nil {
+        reopen(workout.id, on: key.date)
+        startRest(after: key)
+      } else if !completed && rest?.key == key {
+        endRest()
+      }
+    }
     return send(pending)
   }
 
-  private func send(_ pending: PendingSet) -> Task<Bool, Never> {
+  private func send(_ pending: PendingSet) -> Task<MutationOutcome, Never> {
     let key = pending.key
     let draft = pending.draft
     let fields = RecordSetInput.Fields(
       date: key.date, workoutTemplateId: key.templateId, exerciseId: key.exerciseId,
-      setIndex: key.index, weightKg: draft.weightKg, reps: draft.reps, completed: draft.completed)
+      setIndex: key.index, weightKg: draft.weightKg, reps: draft.reps, completed: draft.completed,
+      completedAt: draft.completedAt)
     let input: RecordSetInput = key.kind == .prep
       ? .prep(fields) : .work(fields, toFailure: draft.toFailure)
-    return enqueue(pending: pending) {
+    return enqueue(pending: pending, affecting: key.date) {
       let received = try await self.client.recordSet(input)
       guard key.kind == .work else { return received }
       return received.applyingSharedExerciseWeight(draft.weightKg, exerciseId: key.exerciseId)
@@ -370,20 +510,29 @@ public final class AcademiaStore {
 
   /// Gravar série é idempotente no servidor, que casa por sessão, exercício,
   /// tipo e índice, então reenviar a mesma marcação não duplica nada.
-  private func resend() async -> Bool {
+  func resend() async -> Bool {
+    var allApplied = true
     for pending in pendingSets.values.sorted(by: { $0.revision < $1.revision }) {
       guard let current = pendingSets[pending.key], current.revision == pending.revision else {
         continue
       }
-      // Uma falha basta para saber que a rede continua fora. Insistir no resto
-      // da fila só gasta bateria e enche a tela de banner.
-      if await send(current).value == false { return false }
+      switch await send(current).value {
+      case .applied: continue
+      // Uma falha de rede basta para saber que ela continua fora. Insistir no
+      // resto da fila só gasta bateria.
+      case .offline: return false
+      // A recusa é de uma série só; as de trás seguem.
+      case .refused: allApplied = false
+      }
     }
-    return true
+    return allApplied
   }
 
+  /// Desligado só nos testes, que chamam `resend()` na mão para contar tentativas.
+  @ObservationIgnored var resendsAutomatically = true
+
   private func scheduleResend() {
-    guard resendTask == nil, !pendingSets.isEmpty else { return }
+    guard resendsAutomatically, resendTask == nil, !pendingSets.isEmpty else { return }
     resendTask = Task { @MainActor [weak self] in
       await self?.resendLoop()
       self?.resendTask = nil
@@ -409,7 +558,19 @@ public final class AcademiaStore {
 
   @discardableResult
   public func saveWorkout(_ input: SaveWorkoutInput) async -> Bool {
-    await apply { try await self.client.saveWorkout(input) }
+    guard await apply({ try await self.client.saveWorkout(input) }) else { return false }
+    // O servidor que devolve o descanso salvo assume o lugar do aparelho. O
+    // servidor antigo devolve nulo, e aí o valor local continua valendo.
+    let saved = Dictionary(
+      (dashboard?.weekPlan ?? []).flatMap(\.exercises).compactMap { exercise in
+        exercise.restSeconds.map { (exercise.exerciseId, $0) }
+      }, uniquingKeysWith: { first, _ in first })
+    let echoed = restOverrides.filter { saved[$0.key] == $0.value }.map(\.key)
+    if !echoed.isEmpty {
+      for id in echoed { restOverrides.removeValue(forKey: id) }
+      defaults.set(restOverrides, forKey: DefaultsKey.restOverrides)
+    }
+    return true
   }
 
   @discardableResult
@@ -454,6 +615,9 @@ public final class AcademiaStore {
   /// Troca o treino do dia aberto. Nulo volta o dia para o plano.
   @discardableResult
   public func swapDay(workoutTemplateId: String?) async -> Bool {
+    // Trocar com série marcada deixaria as séries num treino que não é mais o
+    // do dia. O menu já some nesse caso; aqui é a mesma regra na borda.
+    guard dashboard?.hasMarkedSets != true else { return false }
     let input = SwapDayInput(date: selectedDate, workoutTemplateId: workoutTemplateId)
     return await apply { try await self.client.swapDay(input) }
   }
@@ -478,69 +642,99 @@ public final class AcademiaStore {
 
   @discardableResult
   private func apply(_ work: @escaping @Sendable () async throws -> Dashboard) async -> Bool {
-    await enqueue(work).value
+    await enqueue(work).value == .applied
   }
 
+  /// `date` é o dia que a escrita muda. Nulo muda o plano, e aí todo dia
+  /// guardado fica velho.
   private func enqueue(
-    pending: PendingSet? = nil, _ work: @escaping @Sendable () async throws -> Dashboard
-  ) -> Task<Bool, Never> {
-    invalidateDays()
+    pending: PendingSet? = nil, affecting date: CalendarDate? = nil,
+    _ work: @escaping @Sendable () async throws -> Dashboard
+  ) -> Task<MutationOutcome, Never> {
+    cancelRead()
+    if let date { invalidate(from: date) } else { invalidateAll() }
     let mutationSession = sessionID
     let previous = mutationTail
-    let task = Task { @MainActor in
+    let task = Task { @MainActor () -> MutationOutcome in
       _ = await previous?.value
-      guard sessionID == mutationSession, !Task.isCancelled else { return false }
+      guard sessionID == mutationSession, !Task.isCancelled else { return .offline }
       do {
         let received = try await work()
-        guard sessionID == mutationSession, !Task.isCancelled else { return false }
+        guard sessionID == mutationSession, !Task.isCancelled else { return .offline }
         forget(pending)
-        dayCache.removeAll()
-        // a série gravada muda a frequência; o mapa fica na tela e o próximo
-        // mês visitado busca de novo.
-        attendanceRanges.removeAll()
+        if let date { invalidate(from: date) } else { invalidateAll() }
         remember(received)
         if received.date == selectedDate {
           acceptedDashboard = received
           phase = .ready
         }
-        return true
+        return .applied
       } catch {
-        guard sessionID == mutationSession, !Task.isCancelled else { return false }
-        dayCache.removeAll()
-        guard !(error is CancellationError) else { return false }
-        var kept = false
-        if let pending {
-          kept = Self.keeps(error)
-          if kept { hold(pending) } else { forget(pending) }
+        guard sessionID == mutationSession, !Task.isCancelled else { return .offline }
+        if let date { invalidate(from: date) } else { invalidateAll() }
+        guard !(error is CancellationError) else { return .offline }
+        guard let pending else {
+          handle(error)
+          return Self.isOffline(error) ? .offline : .refused
         }
-        // A sessão caída tira o usuário da conta mesmo com a série guardada, e
-        // o aviso dela vale mais do que a contagem da fila.
-        if !kept || (error as? APIError) == .unauthorized { handle(error) }
-        return false
+        return settle(pending, after: error)
       }
     }
     mutationTail = task
     return task
   }
 
-  /// Rede fora e servidor doente voltam a ser tentados. Recusa do servidor não:
-  /// o mesmo corpo nunca vai passar, e insistir entope a fila atrás dele.
-  private static func keeps(_ error: any Error) -> Bool {
+  private static func isOffline(_ error: any Error) -> Bool {
     switch error {
-    case APIError.http(let status, _): status >= 500
+    case APIError.http, APIError.decoding: false
     default: true
     }
   }
 
-  /// A marcação some da rede, não da tela. O banner conta quantas esperam,
+  /// O destino da série que não passou. Rede fora e sessão caída guardam sem
+  /// limite. 4xx é recusa: o mesmo corpo nunca vai passar, então sai da fila na
+  /// hora. 5xx volta a ser tentado até o limite, e aí sai também.
+  private func settle(_ pending: PendingSet, after error: any Error) -> MutationOutcome {
+    switch error {
+    case APIError.http(let status, let message) where status < 500:
+      drop(pending, reason: message)
+      return .refused
+    case APIError.http(_, let message):
+      let failures = (pendingSets[pending.key]?.serverFailures ?? 0) + 1
+      guard failures < Self.serverFailureLimit else {
+        drop(pending, reason: message)
+        return .refused
+      }
+      if pendingSets[pending.key]?.revision == pending.revision {
+        pendingSets[pending.key]?.serverFailures = failures
+      }
+      hold(pending)
+      return .refused
+    case APIError.decoding:
+      drop(pending, reason: "resposta inválida")
+      return .refused
+    case APIError.unauthorized:
+      hold(pending)
+      handle(error)
+      return .offline
+    default:
+      hold(pending)
+      return .offline
+    }
+  }
+
+  private func drop(_ pending: PendingSet, reason: String) {
+    guard pendingSets[pending.key]?.revision == pending.revision else { return }
+    forget(pending)
+    notice = "série não salva: \(reason)"
+  }
+
+  /// A marcação some da rede, não da tela. `waitingCount` diz quantas esperam,
   /// porque "sem conexão" sozinho parece série perdida, e não é mais.
   private func hold(_ pending: PendingSet) {
     guard pendingSets[pending.key]?.revision == pending.revision else { return }
     pendingSets[pending.key]?.failed = true
     saveQueue()
-    banner = pendingSets.count == 1
-      ? "1 série guardada, envio quando a rede voltar"
-      : "\(pendingSets.count) séries guardadas, envio quando a rede voltar"
     scheduleResend()
   }
 
@@ -554,6 +748,7 @@ public final class AcademiaStore {
     switch error {
     case APIError.unauthorized:
       sessionID = UUID()
+      endRest()
       invalidateDays()
       isSignedIn = false
       acceptedDashboard = nil
@@ -572,5 +767,113 @@ public final class AcademiaStore {
     default:
       banner = "erro"
     }
+  }
+}
+
+// MARK: - Descanso e encerramento
+
+extension AcademiaStore {
+  /// O descanso do exercício: o escolhido no aparelho, senão o do plano,
+  /// senão o padrão.
+  public func restSeconds(for exerciseId: String) -> Int {
+    if let chosen = restOverrides[exerciseId] { return chosen }
+    let fromSession = dashboard?.workout?.exercises.first { $0.id == exerciseId }?.restSeconds
+    let fromPlan = dashboard?.weekPlan.lazy.flatMap(\.exercises)
+      .first { $0.exerciseId == exerciseId }?.restSeconds
+    return fromSession ?? fromPlan ?? defaultRestSeconds
+  }
+
+  /// O valor escolhido no aparelho, que o editor do plano mostra e manda salvar.
+  func restOverride(for exerciseId: String) -> Int? { restOverrides[exerciseId] }
+
+  public func setRestSeconds(_ seconds: Int, for exerciseId: String) {
+    restOverrides[exerciseId] = seconds.clamped(to: Limits.restSeconds)
+    defaults.set(restOverrides, forKey: DefaultsKey.restOverrides)
+  }
+
+  /// A última série valendo do treino não abre descanso: depois dela não há o
+  /// que esperar.
+  private func startRest(after key: SetKey) {
+    guard let workout = dashboard?.workout,
+      workout.exercises.contains(where: { !$0.sets.work.allSatisfy(\.isDone) })
+    else {
+      endRest()
+      return
+    }
+    let seconds = TimeInterval(restSeconds(for: key.exerciseId))
+    saveRest(RestState(key: key, startedAt: .now, seconds: seconds))
+  }
+
+  public func adjustRest(by delta: TimeInterval) {
+    guard let current = rest else { return }
+    let adjusted = current.adjusted(by: delta)
+    setRestSeconds(Int(adjusted.total), for: adjusted.exerciseId)
+    saveRest(adjusted)
+  }
+
+  public func endRest() {
+    guard rest != nil else { return }
+    saveRest(nil)
+  }
+
+  private func saveRest(_ value: RestState?) {
+    rest = value
+    if let value, let data = try? JSONEncoder().encode(value) {
+      defaults.set(data, forKey: DefaultsKey.rest)
+      restAlarm.schedule(at: value.endsAt)
+    } else {
+      defaults.removeObject(forKey: DefaultsKey.rest)
+      restAlarm.cancel()
+    }
+    scheduleRestExpiry()
+  }
+
+  /// Passado o fim, a barra fica uns segundos dizendo "vai" e sai sozinha.
+  private func scheduleRestExpiry() {
+    restExpiry?.cancel()
+    guard let rest else { return }
+    restExpiry = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .seconds(max(0, rest.expiresAt.timeIntervalSinceNow)))
+      guard !Task.isCancelled, let self, self.rest == rest else { return }
+      self.rest = nil
+      self.defaults.removeObject(forKey: DefaultsKey.rest)
+    }
+  }
+
+  private static func finishKey(_ workoutId: String, on date: CalendarDate) -> String {
+    "\(date.iso) \(workoutId)"
+  }
+
+  /// Quando o treino do dia foi encerrado. Nulo enquanto ele está aberto.
+  public func finishedAt(_ workoutId: String, on date: CalendarDate) -> Date? {
+    finishedAt[Self.finishKey(workoutId, on: date)]
+  }
+
+  /// Encerra o treino aberto no painel. Para o relógio e o descanso.
+  public func finishWorkout() {
+    guard let data = dashboard, let workout = data.workout else { return }
+    finishedAt[Self.finishKey(workout.id, on: data.date)] = .now
+    saveFinished()
+    endRest()
+  }
+
+  /// Uma série nova depois do "encerrar" reabre o treino: ele não tinha acabado.
+  private func reopen(_ workoutId: String, on date: CalendarDate) {
+    guard finishedAt.removeValue(forKey: Self.finishKey(workoutId, on: date)) != nil else { return }
+    saveFinished()
+  }
+
+  private func saveFinished() {
+    guard let data = try? JSONEncoder().encode(finishedAt) else { return }
+    defaults.set(data, forKey: DefaultsKey.finished)
+  }
+}
+
+extension Dashboard {
+  /// O dia já tem alguma série marcada, de aquecimento ou valendo.
+  var hasMarkedSets: Bool {
+    workout?.exercises.contains { exercise in
+      exercise.sets.prep.contains(where: \.isDone) || exercise.sets.work.contains(where: \.isDone)
+    } ?? false
   }
 }

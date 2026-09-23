@@ -34,6 +34,7 @@ func plannedDays(from today: CalendarDate, schedule: PlanSchedule, done: Set<Cal
 }
 
 struct NextDaysStrip: View {
+  @Environment(AcademiaStore.self) private var store
   let days: [PlannedDay]
   let plan: [WeekPlanItem]
   let onPlan: () -> Void
@@ -79,7 +80,7 @@ struct NextDaysStrip: View {
           .lineLimit(2).multilineTextAlignment(.leading)
           .fixedSize(horizontal: false, vertical: true)
       }
-      if day.isDone {
+      if isDone(day) {
         Label("feito", systemImage: "checkmark")
           .font(.caption2.weight(.medium)).labelStyle(.titleAndIcon)
           .foregroundStyle(day.isToday ? Color.white.opacity(0.7) : Color.mutedInk)
@@ -94,6 +95,16 @@ struct NextDaysStrip: View {
       .strokeBorder(Color.ink.opacity(day.isToday ? 0 : 0.07)))
     .accessibilityElement(children: .combine)
     .accessibilityLabel("\(day.weekdayLabel), \(day.title)")
+  }
+
+  /// `sessionDates` diz que houve treino completo na data, não qual. Com o dia
+  /// trocado, o treino de hoje pode ser outro, então hoje lê do próprio treino
+  /// do painel. Os dias seguintes nunca estão feitos.
+  private func isDone(_ day: PlannedDay) -> Bool {
+    guard day.isToday else { return false }
+    guard let data = store.dashboard, data.date == day.date, let workout = data.workout,
+      workout.id == day.workout?.id else { return false }
+    return workout.workSetCount > 0 && workout.completedWorkSetCount >= workout.workSetCount
   }
 
   /// A cor é a do treino no plano, a mesma do calendário e da aba do plano. Sem cor

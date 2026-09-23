@@ -36,6 +36,7 @@ struct GreetingHeader: View {
 /// descanso. O cartão anterior mostrava só o nome e uma seta, e dizia a mesma
 /// coisa nos quatro.
 struct DayCard: View {
+  @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let workout: WorkoutSummary?
@@ -48,6 +49,10 @@ struct DayCard: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(kicker).font(.caption.weight(.medium)).foregroundStyle(accent.deep)
+      if let rest = store.rest, rest.key.date == store.selectedDate {
+        RestChip(rest: rest, onOpen: onWorkout)
+      }
+      SyncStatusLine()
       ZStack(alignment: .topLeading) {
         DayCardTitle(workout: workout)
           .id(workout?.id)
@@ -72,7 +77,7 @@ struct DayCard: View {
     .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(accent.deep.opacity(0.12)))
     .contentShape(.contextMenuPreview, .rect(cornerRadius: Radius.card))
     .contextMenu {
-      if let choices {
+      if let choices, !choices.all.isEmpty {
         DaySwapMenu(choices: choices, choose: choose)
       }
     }
@@ -90,12 +95,20 @@ struct DayCard: View {
 
   private var percent: Int { workout?.completionPercent ?? 0 }
 
+  /// Encerrado no "encerrar" da sessão, mesmo com série em aberto.
+  private var isClosed: Bool {
+    guard let workout else { return false }
+    return percent >= 100 || store.finishedAt(workout.id, on: store.selectedDate) != nil
+  }
+
   private var kicker: String {
     let state: String
     if workout == nil {
       state = "hoje é descanso"
     } else if percent >= 100 {
       state = "treino de hoje, concluído"
+    } else if isClosed {
+      state = "treino de hoje, encerrado"
     } else {
       state = percent > 0 ? "treino em andamento" : "treino de hoje"
     }
@@ -105,7 +118,7 @@ struct DayCard: View {
 
   private var action: String {
     guard workout != nil else { return "ver o plano" }
-    if percent >= 100 { return "ver o treino" }
+    if isClosed { return "ver o treino" }
     return percent > 0 ? "continuar" : "começar"
   }
 }
@@ -151,23 +164,26 @@ struct DaySwapChoices: Equatable {
 
   var all: [Option] { missed + others + (revert.map { [$0] } ?? []) }
 
+  /// Com série marcada no dia não há opção nenhuma: trocar ali deixaria as
+  /// séries feitas num treino que não é mais o do dia. O "no lugar de" continua.
   init?(_ dashboard: Dashboard) {
     guard dashboard.daySwaps != nil else { return nil }
     let schedule = dashboard.schedule
+    let locked = dashboard.hasMarkedSets
     let current = dashboard.workout?.id
     let late = schedule
       .missedWorkouts(today: dashboard.date, sessions: dashboard.weeklyWorkoutSessions ?? [])
       .filter { $0.id != current }
-    missed = late.map {
+    missed = locked ? [] : late.map {
       Option(
         title: "\($0.workout.name.lowercased()) · faltou \(planWeekdays[$0.lastMissed.weekday()])",
         workoutId: $0.id)
     }
     let listed = Set(late.map(\.id) + [current].compactMap { $0 })
-    others = dashboard.weekPlan.filter { !listed.contains($0.id) }
+    others = locked ? [] : dashboard.weekPlan.filter { !listed.contains($0.id) }
       .map { Option(title: $0.name.lowercased(), workoutId: $0.id) }
     if schedule.isSwapped(dashboard.date) {
-      revert = Option(title: "voltar ao plano", workoutId: nil)
+      revert = locked ? nil : Option(title: "voltar ao plano", workoutId: nil)
       replaced = schedule.weekdayWorkout(on: dashboard.date)
         .map { "no lugar de \($0.name.lowercased())" } ?? "no lugar do descanso"
     } else {

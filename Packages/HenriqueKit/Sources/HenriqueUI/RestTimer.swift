@@ -25,17 +25,46 @@ struct NextSet: Equatable {
 }
 
 /// O descanso em curso. O fim é uma data, não um contador que decrementa: a tela
-/// apaga entre uma série e outra e um contador por quadro pararia junto.
-struct RestState: Equatable {
-  var total: TimeInterval
-  var endsAt: Date
-  var next: NextSet?
+/// apaga entre uma série e outra, o app vai para o fundo, e um contador por
+/// quadro pararia junto. A série que abriu o descanso fica junto porque só
+/// desmarcar ela encerra a pausa.
+public struct RestState: Codable, Equatable, Sendable {
+  public let key: SetKey
+  public let startedAt: Date
+  public private(set) var endsAt: Date
 
-  func remaining(at now: Date) -> TimeInterval { max(0, endsAt.timeIntervalSince(now)) }
-  func fraction(at now: Date) -> Double { total <= 0 ? 0 : remaining(at: now) / total }
+  /// Quanto a barra fica dizendo "vai" depois do fim antes de sair sozinha.
+  static let linger: TimeInterval = 6
+
+  public init(key: SetKey, startedAt: Date, seconds: TimeInterval) {
+    self.key = key
+    self.startedAt = startedAt
+    endsAt = startedAt + seconds
+  }
+
+  public var exerciseId: String { key.exerciseId }
+  public var total: TimeInterval { endsAt.timeIntervalSince(startedAt) }
+  var expiresAt: Date { endsAt + Self.linger }
+
+  public func remaining(at now: Date) -> TimeInterval { max(0, endsAt.timeIntervalSince(now)) }
+  public func fraction(at now: Date) -> Double { total <= 0 ? 0 : remaining(at: now) / total }
+  public func isExpired(at now: Date) -> Bool { now >= expiresAt }
+
+  /// O ±15 s mexe na duração inteira, contada do começo, dentro da faixa do plano.
+  public func adjusted(by delta: TimeInterval) -> RestState {
+    let seconds = (total + delta).clamped(
+      to: TimeInterval(Limits.restSeconds.lowerBound)...TimeInterval(Limits.restSeconds.upperBound))
+    return RestState(key: key, startedAt: startedAt, seconds: seconds)
+  }
 }
 
-let defaultRestSeconds: TimeInterval = 90
+/// "1:05". Montado à mão porque roda a cada quadro da barra, e `String(format:)`
+/// passa pelo parser de formato toda vez.
+func restClock(_ seconds: TimeInterval) -> String {
+  let whole = max(0, Int(seconds.rounded()))
+  let rest = whole % 60
+  return "\(whole / 60):\(rest < 10 ? "0" : "")\(rest)"
+}
 
 struct RestTimerBar: View {
   @Environment(\.accent) private var accent
@@ -45,6 +74,7 @@ struct RestTimerBar: View {
   @ScaledMetric(relativeTo: .footnote) private var nextSize = 12.5
   @ScaledMetric(relativeTo: .body) private var buttonSize = 15.0
   let rest: RestState
+  let next: NextSet?
   let onAdjust: (TimeInterval) -> Void
   let onDismiss: () -> Void
 
@@ -71,7 +101,7 @@ struct RestTimerBar: View {
               if over {
                 Text("vai").foregroundStyle(accent.acid)
               } else {
-                Text(clock(remaining)).foregroundStyle(.white)
+                Text(restClock(remaining)).foregroundStyle(.white)
                   .contentTransition(.numericText(countsDown: true))
               }
             }
@@ -79,7 +109,7 @@ struct RestTimerBar: View {
             .tracking(timeSize * -0.055)
             .animation(reduceMotion ? nil : Motion.roll, value: whole)
             Group {
-              if let next = rest.next {
+              if let next {
                 Text("a seguir · \(next.exerciseName) · série \(next.index) · \(weightLabel(next.weightKg))")
               } else {
                 Text("última série do treino")
@@ -111,7 +141,7 @@ struct RestTimerBar: View {
       .sensoryFeedback(.success, trigger: over) { _, fired in fired }
       .accessibilityElement(children: .contain)
       .accessibilityLabel("descanso")
-      .accessibilityValue(clock(remaining))
+      .accessibilityValue(restClock(remaining))
     }
   }
 
@@ -124,11 +154,6 @@ struct RestTimerBar: View {
         .background(Color.white.opacity(0.12), in: .capsule)
     }
     .buttonStyle(PressScaleStyle())
-  }
-
-  private func clock(_ seconds: TimeInterval) -> String {
-    let whole = Int(seconds.rounded())
-    return "\(whole / 60):\(String(format: "%02d", whole % 60))"
   }
 }
 

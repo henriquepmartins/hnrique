@@ -9,6 +9,7 @@ public struct TodayScreen: View {
   @State private var notch: CGFloat = 0.5
   @State private var enteredDates: Set<String> = []
   @State private var showingSession = false
+  @State private var editing: WeekPlanItem?
   @Namespace private var sessionSource
   let onPlan: () -> Void
   let onProgress: () -> Void
@@ -24,6 +25,12 @@ public struct TodayScreen: View {
         VStack(spacing: Space.m) {
           DayStrip(selected: store.selectedDate, notch: $notch)
             .staggeredEntrance(index: 0, isReady: hasData)
+          if let rest = store.rest, rest.key.date == store.selectedDate, !showingSession {
+            RestChip(rest: rest) { showingSession = true }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .transition(.opacity)
+          }
+          SyncStatusLine()
           WorkoutHero(
             workout: store.dashboard?.workout, date: store.selectedDate, notch: notch,
             sessionSource: sessionSource
@@ -63,7 +70,9 @@ public struct TodayScreen: View {
             HStack {
               IconButton(title: "progresso", systemImage: "chart.xyaxis.line", glass: true, nudge: CGSize(width: 0.5, height: -0.5), action: onProgress)
               Spacer()
-              IconButton(title: "editar plano", systemImage: "square.and.pencil", glass: true, nudge: CGSize(width: -0.5, height: -0.75), action: onPlan)
+              IconButton(title: "editar plano", systemImage: "square.and.pencil", glass: true, nudge: CGSize(width: -0.5, height: -0.75)) {
+                editPlan(workoutId: workout.id)
+              }
             }
             .firstEntrance(index: 2, settled: enteredDates.contains(data.date.iso))
             ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
@@ -101,6 +110,22 @@ public struct TodayScreen: View {
         WorkoutSessionScreen().navigationTransition(.zoom(sourceID: "sessao", in: sessionSource))
       }
     #endif
+    .sheet(item: $editing) { item in
+      WorkoutEditor(
+        item: item, weekdays: Set(item.weekdays), tone: item.tone,
+        catalog: store.dashboard?.exerciseCatalog ?? [], startingAt: .exercicios)
+    }
+    .animation(Motion.tap, value: store.rest == nil)
+  }
+
+  /// O treino do dia abre direto no editor, nos exercícios. Um treino que só
+  /// existe na sessão, fora do plano, cai na aba do plano.
+  private func editPlan(workoutId: String) {
+    if let item = store.weekPlan.first(where: { $0.id == workoutId }) {
+      editing = item
+    } else {
+      onPlan()
+    }
   }
 
   /// O painel na tela é do dia escolhido, e não de um anterior ainda na troca.

@@ -6,17 +6,14 @@ import SwiftUI
 struct SessionProgress: Equatable {
   let done: Int
   let total: Int
-  /// O peso levantado nas séries já marcadas, aquecimento incluído: o que saiu do
-  /// chão saiu do chão.
+  /// O peso das séries valendo já marcadas. O aquecimento fica fora, como no
+  /// volume do servidor, senão o número da sessão nunca bate com o do progresso.
   let volumeKg: Double
 
   init(_ workout: WorkoutSummary) {
     done = workout.completedWorkSetCount
     total = workout.workSetCount
-    volumeKg = workout.exercises.reduce(into: 0.0) { sum, exercise in
-      sum += exercise.sets.prep.filter(\.isDone).reduce(0) { $0 + $1.weightKg * Double($1.reps) }
-      sum += exercise.sets.work.filter(\.isDone).reduce(0) { $0 + $1.weightKg * Double($1.reps) }
-    }
+    volumeKg = workout.exercises.reduce(0) { $0 + workVolumeKg($1.sets.work) }
   }
 
   var fraction: Double { total == 0 ? 0 : Double(done) / Double(total) }
@@ -49,9 +46,12 @@ struct WorkoutSessionScreen: View {
   @ScaledMetric(relativeTo: .body) private var collapsedNameSize = 17.0
   @State private var open: String?
   @State private var entered = false
-  @State private var rest: RestState?
-  @State private var restSeconds: [String: TimeInterval] = [:]
   @State private var adding = false
+  @State private var confirmingFinish = false
+  @State private var recap: RecapPresentation?
+  /// O resumo veio do "encerrar": fechar ele fecha a sessão junto, porque o
+  /// treino acabou. O resumo reaberto depois só fecha a si mesmo.
+  @State private var closesAfterRecap = false
   /// O texto em edição por exercício. Só existe enquanto o campo está sendo
   /// digitado; salvo, a fonte volta a ser o painel.
   @State private var noteDrafts: [String: String] = [:]
@@ -92,37 +92,42 @@ struct WorkoutSessionScreen: View {
             addExerciseButton
           }
           .padding(.horizontal, Space.l).padding(.top, Space.l)
-          // A barra de descanso flutua sobre a lista, então o fim dela ganha o
-          // respiro que a barra cobre, e a linha seguinte continua alcançável.
-          .padding(.bottom, rest == nil ? Space.page : 230)
+          .padding(.bottom, Space.page)
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .top, spacing: 0) {
-          top(workout: workout, progress: progress).revealEntrance(index: 0, shown: entered)
+          top(workout: workout, progress: progress, date: data.date)
+            .revealEntrance(index: 0, shown: entered)
         }
-        .overlay(alignment: .bottom) {
-          if let rest {
-            RestTimerBar(rest: rest, onAdjust: adjustRest) { self.rest = nil }
-              .padding(.horizontal, 12).padding(.bottom, 12)
-              .transition(.move(edge: .bottom).combined(with: .opacity))
+        // Inset, e não overlay: a lista encolhe junto com a barra e a última
+        // série continua alcançável com o descanso aberto.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          if let rest = store.rest, rest.key.date == data.date {
+            RestTimerBar(
+              rest: rest, next: nextSet(after: rest, in: workout),
+              onAdjust: { store.adjustRest(by: $0) }, onDismiss: { store.endRest() }
+            )
+            .padding(.horizontal, 12).padding(.bottom, 12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
           }
         }
         .revealEntrance(index: 1, shown: entered)
-        .animation(glide, value: rest == nil)
+        .animation(glide, value: store.rest == nil)
         .animation(reduceMotion ? nil : Motion.subtleEntrance, value: openId)
-        .onChange(of: progress.done) { old, new in
-          rest = new > old ? startRest(workout: workout) : nil
-        }
-        .task(id: rest?.endsAt) {
-          guard let endsAt = rest?.endsAt else { return }
-          try? await Task.sleep(for: .seconds(max(0, endsAt.timeIntervalSinceNow) + 6))
-          guard !Task.isCancelled else { return }
-          rest = nil
-        }
         .onAppear { entered = true }
         .onChange(of: noteFocus) { old, _ in
           guard let old, let exercise = workout.exercises.first(where: { $0.id == old }) else { return }
           saveNote(exercise: exercise, date: data.date, templateId: workout.id)
+        }
+        .confirmationDialog(
+          "encerrar com \(progress.total - progress.done) séries em aberto?",
+          isPresented: $confirmingFinish, titleVisibility: .visible
+        ) {
+          Button("encerrar treino", role: .destructive) { finish() }
+          Button("continuar treinando", role: .cancel) {}
+        }
+        .sheet(item: $recap, onDismiss: { if closesAfterRecap { dismiss() } }) { presentation in
+          WorkoutRecapSheet(recap: presentation.recap)
         }
         .sheet(isPresented: $adding) {
           SessionExercisePicker(
@@ -140,8 +145,9 @@ struct WorkoutSessionScreen: View {
     .task { if store.dashboard?.workout == nil { dismiss() } }
   }
 
-  private func top(workout: WorkoutSummary, progress: SessionProgress) -> some View {
-    VStack(spacing: 14) {
+  private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
+    let closedAt = store.finishedAt(workout.id, on: date)
+    return VStack(spacing: 14) {
       HStack(spacing: Space.m) {
         Button { dismiss() } label: {
           Image(systemName: "chevron.down")
@@ -153,10 +159,16 @@ struct WorkoutSessionScreen: View {
         .buttonStyle(PressScaleStyle())
         .accessibilityLabel("fechar")
         .accessibilityIdentifier("sessao.fechar")
-        SessionClock(timing: WorkoutSessionTiming(workout), name: workout.name)
+        SessionClock(timing: WorkoutSessionTiming(workout, finishedAt: closedAt), name: workout.name)
           .frame(maxWidth: .infinity, alignment: .leading)
-        Button { dismiss() } label: {
-          Text("encerrar")
+        Button {
+          if closedAt != nil || progress.done >= progress.total {
+            finish()
+          } else {
+            confirmingFinish = true
+          }
+        } label: {
+          Text(closedAt == nil ? "encerrar" : "resumo")
             .font(.system(size: 14, weight: .medium)).foregroundStyle(Color.ink)
             .padding(.top, 10).padding(.bottom, 12).padding(.horizontal, 16)
             .background(.white, in: .capsule)
@@ -179,6 +191,7 @@ struct WorkoutSessionScreen: View {
           Text(" kg até agora")
         }
         .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Color.mutedInk)
+        SyncStatusLine()
         GeometryReader { geo in
           Capsule().fill(Color.surfaceMuted)
             .overlay(alignment: .leading) {
@@ -313,13 +326,13 @@ struct WorkoutSessionScreen: View {
     Menu {
       Picker("descanso", selection: restBinding(exercise.id)) {
         ForEach(restOptions, id: \.self) { seconds in
-          Text(clock(seconds)).tag(seconds)
+          Text(restClock(TimeInterval(seconds))).tag(seconds)
         }
       }
     } label: {
       HStack(spacing: 5) {
         Image(systemName: "clock").font(.system(size: 12))
-        Text("descanso \(clock(restSeconds[exercise.id] ?? defaultRestSeconds))")
+        Text("descanso \(restClock(TimeInterval(store.restSeconds(for: exercise.id))))")
       }
       .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Color.ink)
       .padding(.horizontal, 11).padding(.vertical, 5)
@@ -352,7 +365,9 @@ struct WorkoutSessionScreen: View {
     return TrainingSetRow(
       key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: kind, index: index),
       weight: weight, repetitions: reps, done: done, failure: failure, scale: .session,
-      isNext: isNext, previous: previousLabel(exercise.previous, index: index))
+      isNext: isNext,
+      previous: previousLabel(kind == .prep ? exercise.previousPrep : exercise.previous, index: index),
+      reference: referenceWeight(exercise, kind: kind))
   }
 
   /// Mais ou menos uma série valendo. Tirar só aparece enquanto a última ainda
@@ -461,17 +476,12 @@ struct WorkoutSessionScreen: View {
     .accessibilityIdentifier("sessao.adicionar-exercicio")
   }
 
-  private var restOptions: [TimeInterval] { [30, 45, 60, 75, 90, 120, 150, 180, 240, 300] }
+  private var restOptions: [Int] { [30, 45, 60, 75, 90, 120, 150, 180, 240, 300] }
 
-  private func restBinding(_ exerciseId: String) -> Binding<TimeInterval> {
+  private func restBinding(_ exerciseId: String) -> Binding<Int> {
     Binding(
-      get: { restSeconds[exerciseId] ?? defaultRestSeconds },
-      set: { restSeconds[exerciseId] = $0 })
-  }
-
-  private func clock(_ seconds: TimeInterval) -> String {
-    let total = Int(seconds)
-    return String(format: "%d:%02d", total / 60, total % 60)
+      get: { store.restSeconds(for: exerciseId) },
+      set: { store.setRestSeconds($0, for: exerciseId) })
   }
 
   /// Qual exercício está aberto. `open` guarda só a escolha explícita, e o resto sai do
@@ -482,23 +492,36 @@ struct WorkoutSessionScreen: View {
     return workout.exercises[safe: firstOpenExercise(in: workout)]?.id
   }
 
-  /// O descanso nasce da série marcada, e a duração é a do exercício, porque um
-  /// agachamento pesado não pede a mesma pausa que uma rosca.
-  private func startRest(workout: WorkoutSummary) -> RestState {
-    let id = openExercise(in: workout)
-    let index = workout.exercises.firstIndex { $0.id == id } ?? 0
-    let seconds = restSeconds[id ?? ""] ?? defaultRestSeconds
-    return RestState(total: seconds, endsAt: .now + seconds, next: NextSet(from: index, in: workout))
+  /// A série que vem depois, procurada a partir do exercício que abriu o descanso.
+  private func nextSet(after rest: RestState, in workout: WorkoutSummary) -> NextSet? {
+    let index = workout.exercises.firstIndex { $0.id == rest.exerciseId } ?? 0
+    return NextSet(from: index, in: workout)
   }
 
-  private func adjustRest(by delta: TimeInterval) {
-    guard let current = rest else { return }
-    let total = min(600, max(15, current.total + delta))
-    if let id = store.dashboard?.workout.flatMap({ openExercise(in: $0) }) {
-      restSeconds[id] = total
+  /// A carga com que o campo compara um número digitado: a da última vez,
+  /// senão a do plano.
+  private func referenceWeight(_ exercise: DashboardExercise, kind: SetKey.Kind) -> Double? {
+    switch kind {
+    case .prep: exercise.previousPrep?.weightKg ?? exercise.prepWeightKg
+    case .work: exercise.previous?.weightKg ?? exercise.prescription.startingWeightKg
     }
-    rest = RestState(total: total, endsAt: max(.now, current.endsAt + delta), next: current.next)
   }
+
+  /// Encerrar para o relógio e o descanso e mostra o resumo. Já encerrado, o
+  /// mesmo botão só reabre o resumo.
+  private func finish() {
+    guard let data = store.dashboard, let workout = data.workout else { return }
+    let wasClosed = store.finishedAt(workout.id, on: data.date) != nil
+    if !wasClosed { store.finishWorkout() }
+    closesAfterRecap = !wasClosed
+    let timing = WorkoutSessionTiming(workout, finishedAt: store.finishedAt(workout.id, on: data.date))
+    recap = RecapPresentation(recap: WorkoutRecap(workout, timing: timing))
+  }
+}
+
+private struct RecapPresentation: Identifiable {
+  let id = UUID()
+  let recap: WorkoutRecap
 }
 
 extension Array {
