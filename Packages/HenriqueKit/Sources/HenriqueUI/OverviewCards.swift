@@ -186,7 +186,6 @@ private struct DaySwapMenu: View {
       Section("ficou para trás") {
         ForEach(choices.missed) { option in
           Button(option.title, systemImage: "clock.arrow.circlepath") { choose(option) }
-            .accessibilityIdentifier("hoje.trocar")
         }
       }
     }
@@ -194,14 +193,12 @@ private struct DaySwapMenu: View {
       Section("treinar outro hoje") {
         ForEach(choices.others) { option in
           Button(option.title) { choose(option) }
-            .accessibilityIdentifier("hoje.trocar")
         }
       }
     }
     if let revert = choices.revert {
       Section {
         Button(revert.title, systemImage: "arrow.uturn.backward") { choose(revert) }
-          .accessibilityIdentifier("hoje.voltar-ao-plano")
       }
     }
   }

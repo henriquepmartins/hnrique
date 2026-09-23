@@ -288,7 +288,11 @@ final class FluxoDrive: XCTestCase {
     shot("44-troca-antes")
 
     card.press(forDuration: 1.2)
-    let option = app.buttons.matching(identifier: "hoje.trocar").firstMatch
+    // O iOS não passa o identificador para os itens do menu de contexto, então
+    // o item sai pelo nome dos treinos do plano de teste.
+    let option = app.buttons.matching(NSPredicate(
+      format: "(label BEGINSWITH 'pernas' OR label BEGINSWITH 'costas' OR label BEGINSWITH 'superiores') AND NOT (%@ BEGINSWITH label)",
+      original)).firstMatch
     XCTAssert(option.waitForExistence(timeout: 5), "o menu oferece outro treino")
     let name = String(option.label.split(separator: " · ").first ?? "")
     shot("45-troca-menu")
@@ -303,7 +307,7 @@ final class FluxoDrive: XCTestCase {
     shot("46-troca-feita")
 
     card.press(forDuration: 1.2)
-    let back = app.buttons["hoje.voltar-ao-plano"]
+    let back = app.buttons["voltar ao plano"]
     XCTAssert(back.waitForExistence(timeout: 5), "o dia trocado oferece voltar ao plano")
     back.tap()
     expectation(for: NSPredicate(format: "label == %@", original), evaluatedWith: card)
