@@ -276,6 +276,44 @@ final class FluxoDrive: XCTestCase {
       "o atalho da fita leva para a aba do plano")
   }
 
+  /// Segurar o card de hoje troca o treino só nesta data, e "voltar ao plano"
+  /// devolve o que o plano marcava.
+  func testHomeTrocaDoDia() {
+    launch()
+    ensureWorkoutToday()
+    app.tabBars.buttons["hoje"].tap()
+    let card = app.descendants(matching: .any)["hoje.treino"]
+    XCTAssert(card.waitForExistence(timeout: 10), "cartão do dia apareceu")
+    let original = card.label
+    shot("44-troca-antes")
+
+    card.press(forDuration: 1.2)
+    let option = app.buttons.matching(identifier: "hoje.trocar").firstMatch
+    XCTAssert(option.waitForExistence(timeout: 5), "o menu oferece outro treino")
+    let name = String(option.label.split(separator: " · ").first ?? "")
+    shot("45-troca-menu")
+    option.tap()
+    expectation(
+      for: NSPredicate(format: "label BEGINSWITH %@ AND label != %@", name, original),
+      evaluatedWith: card)
+    waitForExpectations(timeout: 10)
+    XCTAssert(
+      app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'no lugar d'")).firstMatch.exists,
+      "o card diz qual treino o dia trocado substituiu")
+    shot("46-troca-feita")
+
+    card.press(forDuration: 1.2)
+    let back = app.buttons["hoje.voltar-ao-plano"]
+    XCTAssert(back.waitForExistence(timeout: 5), "o dia trocado oferece voltar ao plano")
+    back.tap()
+    expectation(for: NSPredicate(format: "label == %@", original), evaluatedWith: card)
+    waitForExpectations(timeout: 10)
+    XCTAssertFalse(
+      app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'no lugar d'")).firstMatch.exists,
+      "de volta ao plano, o card não fala mais em troca")
+    shot("47-troca-desfeita")
+  }
+
   func testPastaAtiva() {
     launch()
     ensureWorkoutToday()
