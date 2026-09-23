@@ -109,7 +109,10 @@ public struct RootView: View {
     .appSwitcher(current: section, isPresented: $showingApps) { section = $0 }
     .overlay(alignment: .top) {
       if isOffline {
-        OfflineBanner().transition(.move(edge: .top).combined(with: .opacity))
+        // Abaixo da barra de navegação, para não tampar os botões dela.
+        OfflineBanner()
+          .padding(.top, 52)
+          .transition(.move(edge: .top).combined(with: .opacity))
       }
     }
     .animation(reduceMotion ? nil : Motion.crossfade, value: isOffline)
