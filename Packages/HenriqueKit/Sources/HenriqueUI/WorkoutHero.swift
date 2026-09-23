@@ -194,11 +194,12 @@ enum FilmNoise {
   /// vazio e vira composição normal: um véu claro que levanta a noite do topo.
   /// É esse o cartão aprovado, e overlay de verdade não clareia o escuro.
   static let grain = tile(pixels: 384, seed: 0x9e37_79b9) { noise, x, y in
-    let v = 0.5 * noise(x, y, 1) + 0.3 * noise(x, y, 2) + 0.2 * noise(x, y, 4)
-    let a = 0.5 * noise(x + 97, y + 211, 1) + 0.3 * noise(x + 97, y + 211, 2)
-      + 0.2 * noise(x + 97, y + 211, 4)
+    // O peso fica no ruído de um pixel. As camadas de 2 e 4 pixels formavam
+    // manchas que liam como grão grosso na tela do iPhone.
+    let v = 0.75 * noise(x, y, 1) + 0.25 * noise(x, y, 2)
+    let a = 0.75 * noise(x + 97, y + 211, 1) + 0.25 * noise(x + 97, y + 211, 2)
     let gray = UInt8(clamping: Int((0.86 + 0.4 * (v - 0.5)) * 255))
-    let alpha = UInt8(clamping: Int((0.5 + 1.1 * (a - 0.5)) * 255))
+    let alpha = UInt8(clamping: Int((0.5 + 0.9 * (a - 0.5)) * 255))
     return (gray, alpha)
   }
 
@@ -274,8 +275,8 @@ enum FilmNoise {
   }
 }
 
-/// O grão de filme por cima do degradê, embaixo do texto. Seis saltos por
-/// segundo, como o `steps(6)` do web; com movimento reduzido fica parado.
+/// O grão de filme por cima do degradê, embaixo do texto. Quatro saltos por
+/// segundo: seis cansavam a vista no cartão parado. Com movimento reduzido fica parado.
 private struct FilmGrain: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -284,8 +285,8 @@ private struct FilmGrain: View {
       if reduceMotion {
         layer(tile, frame: 0)
       } else {
-        TimelineView(.periodic(from: .now, by: 1.0 / 6)) { context in
-          layer(tile, frame: Int(context.date.timeIntervalSinceReferenceDate * 6))
+        TimelineView(.periodic(from: .now, by: 1.0 / 4)) { context in
+          layer(tile, frame: Int(context.date.timeIntervalSinceReferenceDate * 4))
         }
       }
     }
@@ -297,7 +298,7 @@ private struct FilmGrain: View {
       // Um ladrilho a mais de cada lado, para o salto nunca mostrar a borda.
       .padding(-FilmNoise.grainPoints)
       .offset(FilmNoise.jitter(frame: frame))
-      .opacity(0.5)
+      .opacity(0.4)
       .allowsHitTesting(false)
   }
 }
