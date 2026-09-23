@@ -176,6 +176,18 @@ public struct DeleteWorkoutInput: Hashable, Sendable, Encodable {
   }
 }
 
+public struct SwapDayInput: Hashable, Sendable, Encodable {
+  public var date: CalendarDate
+  /// Nulo volta a data para o plano. O encoder omite a chave, e o servidor lê a
+  /// ausência como nulo.
+  public var workoutTemplateId: String?
+
+  public init(date: CalendarDate, workoutTemplateId: String?) {
+    self.date = date
+    self.workoutTemplateId = workoutTemplateId
+  }
+}
+
 /// O tipo de série na sobreposição da sessão. O nome do caso é o que vai no
 /// corpo, igual ao `kind` do record-set.
 public enum SetKind: String, Hashable, Sendable, Codable {

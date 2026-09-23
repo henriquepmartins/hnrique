@@ -28,6 +28,7 @@ public enum Route: String, Sendable {
   case setNote = "/api/v1/workout/set-note"
   case saveWorkout = "/api/v1/plan/save-workout"
   case deleteWorkout = "/api/v1/plan/delete-workout"
+  case swapDay = "/api/v1/plan/swap-day"
   case setStrengthGoal = "/api/v1/goal/set-strength"
   case setStreakGoal = "/api/v1/goal/set-streak"
   case addMeasurement = "/api/v1/measurement/add"
@@ -136,6 +137,10 @@ public actor APIClient {
 
   public func deleteWorkout(_ input: DeleteWorkoutInput) async throws -> Dashboard {
     try await call(.deleteWorkout, body: input)
+  }
+
+  public func swapDay(_ input: SwapDayInput) async throws -> Dashboard {
+    try await call(.swapDay, body: input)
   }
 
   public func setStrengthGoal(_ input: SetStrengthGoalInput) async throws -> Dashboard {

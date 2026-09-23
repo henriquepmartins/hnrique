@@ -188,6 +188,32 @@ struct ContractTests {
     #expect(json["workoutTemplateId"] as? String == "tpl-terca")
   }
 
+  @Test("o painel traz as trocas de dia")
+  func decodesDaySwaps() throws {
+    #expect(
+      try Self.dashboard().daySwaps
+        == [DaySwap(date: try #require(CalendarDate(iso: "2026-09-08")), workoutTemplateId: "tpl-terca")])
+  }
+
+  @Test("trocar o dia manda data e treino; voltar ao plano omite o treino")
+  func swapDayEncodesKeys() throws {
+    let date = try #require(CalendarDate(iso: "2026-09-09"))
+    let swap = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(SwapDayInput(date: date, workoutTemplateId: "tpl-costas")))
+        as? [String: Any])
+    #expect(Route.swapDay.rawValue == "/api/v1/plan/swap-day")
+    #expect(Set(swap.keys) == ["date", "workoutTemplateId"])
+    #expect(swap["date"] as? String == "2026-09-09")
+    #expect(swap["workoutTemplateId"] as? String == "tpl-costas")
+
+    let back = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(SwapDayInput(date: date, workoutTemplateId: nil)))
+        as? [String: Any])
+    #expect(Set(back.keys) == ["date"])
+  }
+
   @Test("a meta de sequência manda data, tipo e alvo")
   func streakGoalEncodesKeys() throws {
     let input = SetStreakGoalInput(
@@ -372,6 +398,11 @@ struct CapturedResponseTests {
     #expect(dashboard.currentStreak == 0)
     #expect(dashboard.streak(.attendance) == 0)
     #expect(dashboard.goal(.attendance) == nil)
+  }
+
+  @Test("servidor sem troca de dia decodifica com daySwaps nulo")
+  func oldServerHasNoDaySwaps() throws {
+    #expect(try Self.dashboard().daySwaps == nil)
   }
 
   @Test("o painel do servidor traz os dias de cada treino")

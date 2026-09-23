@@ -364,6 +364,9 @@ public struct Dashboard: Codable, Hashable, Sendable {
   public var attendanceStreak: Int?
   public var streakGoals: [StreakGoal]?
   public var weeklyWorkoutSessions: [WeeklyWorkoutSessions]? = nil
+  /// As trocas de segunda até seis dias depois de `date`. Nulo no servidor que
+  /// ainda não troca dia, e aí o menu de troca não aparece.
+  public var daySwaps: [DaySwap]? = nil
   public var weeklyCompleted: Int
   public var weeklyPlanned: Int
   public var weekPlan: [WeekPlanItem]
