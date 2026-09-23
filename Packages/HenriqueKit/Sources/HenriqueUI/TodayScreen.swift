@@ -32,7 +32,9 @@ public struct TodayScreen: View {
           }
           SyncStatusLine()
           WorkoutHero(
-            workout: store.dashboard?.workout, date: store.selectedDate, notch: notch,
+            workout: store.dashboard?.workout, date: store.selectedDate,
+            finished: store.dashboard?.workout.map { store.finishedAt($0.id, on: store.selectedDate) != nil } ?? false,
+            notch: notch,
             sessionSource: sessionSource
           ) {
             showingSession = true

@@ -16,14 +16,18 @@ enum HeroModel {
     let actionLabel: String
   }
 
-  init(workout: WorkoutSummary?, date: CalendarDate) {
+  init(workout: WorkoutSummary?, date: CalendarDate, finished: Bool = false) {
     let dateLabel = Self.dateLabel(date)
     guard let workout else {
       self = .rest(dateLabel: dateLabel)
       return
     }
     let meta = "\(workout.exerciseCount) exercícios · \(workout.estimatedMinutes) min"
-    if workout.completionPercent > 0 {
+    if finished {
+      self = .inProgress(Session(
+        dateLabel: dateLabel, workout: workout,
+        meta: meta + " · encerrado", actionLabel: "ver o treino"))
+    } else if workout.completionPercent > 0 {
       self = .inProgress(Session(
         dateLabel: dateLabel, workout: workout,
         meta: meta + " · \(workout.completionPercent)% concluído", actionLabel: "continuar"))
@@ -55,12 +59,13 @@ struct WorkoutHero: View {
   @ScaledMetric(relativeTo: .largeTitle) private var restTitleSize = 52.0
   let workout: WorkoutSummary?
   let date: CalendarDate
+  var finished = false
   let notch: CGFloat
   let sessionSource: Namespace.ID
   let onStart: () -> Void
 
   var body: some View {
-    let model = HeroModel(workout: workout, date: date)
+    let model = HeroModel(workout: workout, date: date, finished: finished)
     SpreadColumn(minHeight: 408 - 44 - 24, minGap: 24) {
       Text(model.dateLabel)
         .font(.system(size: 11, weight: .semibold)).tracking(2.2).textCase(.uppercase)
