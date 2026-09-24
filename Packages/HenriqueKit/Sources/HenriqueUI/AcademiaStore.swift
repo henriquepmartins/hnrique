@@ -107,7 +107,9 @@ public final class AcademiaStore {
   /// O painel aceito com as marcações pendentes por cima. Guardado, e não
   /// calculado a cada leitura: cada linha de série lê o painel várias vezes
   /// por pintura.
-  public private(set) var dashboard: Dashboard?
+  public private(set) var dashboard: Dashboard? {
+    didSet { noteStart() }
+  }
 
   private func projected() -> Dashboard? {
     guard var value = acceptedDashboard else { return nil }
@@ -159,6 +161,10 @@ public final class AcademiaStore {
   /// Quando cada treino foi encerrado, por dia e treino. O servidor não guarda
   /// isso; é o que diz ao card "ver o treino" em vez de "continuar".
   private var finishedAt: [String: Date] = [:]
+  /// O começo de cada treino, por dia e treino. Só anda para trás: desmarcar a
+  /// primeira série apaga a data dela no servidor, e o relógio não pode
+  /// recomeçar por isso.
+  @ObservationIgnored private var startedAt: [String: Date] = [:]
   @ObservationIgnored private let defaults: UserDefaults
 
   private let client: APIClient
@@ -290,9 +296,9 @@ public final class AcademiaStore {
     self.client = client
     self.restAlarm = restAlarm
     self.defaults = defaults
+    loadLocalState()
     loadSnapshot()
     loadQueue()
-    loadLocalState()
     observeDayChanges()
   }
 
@@ -300,6 +306,7 @@ public final class AcademiaStore {
     static let rest = "academia.descanso"
     static let restOverrides = "academia.descanso.por-exercicio"
     static let finished = "academia.treinos-encerrados"
+    static let started = "academia.treinos-comecados"
   }
 
   private func loadLocalState() {
@@ -314,6 +321,11 @@ public final class AcademiaStore {
       let saved = try? JSONDecoder().decode([String: Date].self, from: data) {
       let cutoff = CalendarDate.today.adding(days: -14).iso
       finishedAt = saved.filter { $0.key >= cutoff }
+    }
+    if let data = defaults.data(forKey: DefaultsKey.started),
+      let saved = try? JSONDecoder().decode([String: Date].self, from: data) {
+      let cutoff = CalendarDate.today.adding(days: -14).iso
+      startedAt = saved.filter { $0.key >= cutoff }
     }
   }
 
@@ -847,6 +859,22 @@ extension AcademiaStore {
   /// Quando o treino do dia foi encerrado. Nulo enquanto ele está aberto.
   public func finishedAt(_ workoutId: String, on date: CalendarDate) -> Date? {
     finishedAt[Self.finishKey(workoutId, on: date)]
+  }
+
+  /// Quando o treino do dia começou, ou nulo se nenhuma série foi marcada.
+  public func startedAt(_ workoutId: String, on date: CalendarDate) -> Date? {
+    startedAt[Self.finishKey(workoutId, on: date)]
+  }
+
+  private func noteStart() {
+    guard let data = dashboard, let workout = data.workout else { return }
+    let key = Self.finishKey(workout.id, on: data.date)
+    let known = startedAt[key]
+    guard let anchor = WorkoutSessionTiming.anchor(workout, known: known), anchor != known
+    else { return }
+    startedAt[key] = anchor
+    guard let encoded = try? JSONEncoder().encode(startedAt) else { return }
+    defaults.set(encoded, forKey: DefaultsKey.started)
   }
 
   /// Encerra o treino aberto no painel. Para o relógio e o descanso.

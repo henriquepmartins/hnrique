@@ -5,19 +5,48 @@ import Testing
 
 @Suite("Tempo do treino")
 struct WorkoutSessionTimingTests {
-  @Test("começa no aquecimento mesmo com série de trabalho anterior")
-  func startsAtFirstCompletedWarmup() throws {
+  @Test("começa na série mais antiga, de aquecimento ou valendo")
+  func startsAtEarliestSet() throws {
     var workout = try emptyWorkout()
     workout.exercises[0].sets.work[0].completedAt = date(10)
-    // Sem aquecimento feito, a série valendo segura o relógio sozinha.
     #expect(WorkoutSessionTiming(workout)?.startedAt == date(10))
     workout.exercises[0].sets.prep[0].completedAt = date(20)
 
     let timing = try #require(WorkoutSessionTiming(workout))
-    #expect(timing.startedAt == date(20))
+    #expect(timing.startedAt == date(10))
     #expect(timing.finishedAt == nil)
-    #expect(timing.elapsed(at: date(103)) == 83)
-    #expect(timing.elapsed(at: date(140)) == 120)
+    #expect(timing.elapsed(at: date(103)) == 93)
+  }
+
+  @Test("desmarcar a primeira série não empurra o começo para frente")
+  func anchorHoldsAfterUnmark() throws {
+    var workout = try emptyWorkout()
+    workout.exercises[0].sets.prep[0].completedAt = date(1_000)
+    workout.exercises[0].sets.prep[1].completedAt = date(1_120)
+    let anchor = try #require(WorkoutSessionTiming.anchor(workout, known: nil))
+    #expect(anchor == date(1_000))
+
+    workout.exercises[0].sets.prep[0].completedAt = nil
+    #expect(WorkoutSessionTiming.anchor(workout, known: anchor) == date(1_000))
+    #expect(WorkoutSessionTiming(workout, anchor: anchor)?.startedAt == date(1_000))
+    #expect(WorkoutSessionTiming(workout)?.startedAt == date(1_120))
+
+    workout.exercises[0].sets.prep[0].completedAt = date(1_540)
+    #expect(WorkoutSessionTiming.anchor(workout, known: anchor) == date(1_000))
+    let timing = try #require(WorkoutSessionTiming(workout, anchor: anchor, finishedAt: date(1_600)))
+    #expect(timing.elapsed(at: date(9_999)) == 600)
+  }
+
+  @Test("o começo do servidor vale quando o aparelho não conhece nenhum")
+  func serverStartFillsIn() throws {
+    var workout = try emptyWorkout()
+    workout.startedAt = date(900)
+    #expect(WorkoutSessionTiming.anchor(workout, known: nil) == nil)
+    workout.exercises[0].sets.work[0].completedAt = date(1_200)
+    #expect(WorkoutSessionTiming.anchor(workout, known: nil) == date(900))
+    #expect(WorkoutSessionTiming.anchor(workout, known: date(1_000)) == date(1_000))
+    workout.startedAt = date(1_300)
+    #expect(WorkoutSessionTiming.anchor(workout, known: nil) == date(1_200))
   }
 
   @Test("congela no instante da última série concluída")

@@ -165,7 +165,10 @@ struct WorkoutSessionScreen: View {
         .buttonStyle(PressScaleStyle())
         .accessibilityLabel("fechar")
         .accessibilityIdentifier("sessao.fechar")
-        SessionClock(timing: WorkoutSessionTiming(workout, finishedAt: closedAt), name: workout.name)
+        SessionClock(
+          timing: WorkoutSessionTiming(
+            workout, anchor: store.startedAt(workout.id, on: date), finishedAt: closedAt),
+          name: workout.name)
           .frame(maxWidth: .infinity, alignment: .leading)
         Button {
           if closedAt != nil || progress.done >= progress.total {
@@ -522,7 +525,9 @@ struct WorkoutSessionScreen: View {
     let wasClosed = store.finishedAt(workout.id, on: data.date) != nil
     if !wasClosed { store.finishWorkout() }
     closesAfterRecap = !wasClosed
-    let timing = WorkoutSessionTiming(workout, finishedAt: store.finishedAt(workout.id, on: data.date))
+    let timing = WorkoutSessionTiming(
+      workout, anchor: store.startedAt(workout.id, on: data.date),
+      finishedAt: store.finishedAt(workout.id, on: data.date))
     recap = RecapPresentation(recap: WorkoutRecap(workout, timing: timing))
   }
 }

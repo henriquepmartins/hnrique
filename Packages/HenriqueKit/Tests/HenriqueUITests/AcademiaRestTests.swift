@@ -147,6 +147,21 @@ struct StoreRestTests {
     #expect(store.finishedAt(workout.id, on: .today) == nil)
   }
 
+  @Test("desmarcar e marcar de novo a primeira série não recomeça o relógio")
+  func startSurvivesUnmark() async throws {
+    let store = await lojaComPainel()
+    let workout = try #require(store.dashboard?.workout)
+    let first = try #require(parseTimestamp("2026-09-08T13:02:11.482Z"))
+    #expect(store.startedAt(workout.id, on: .today) == first)
+
+    let prep = SetKey(date: .today, templateId: "tpl-terca", exerciseId: "supino-reto", kind: .prep, index: 1)
+    _ = await store.record(key: prep, weightKg: 20, reps: 10, completed: false, toFailure: false)?.value
+    #expect(store.startedAt(workout.id, on: .today) == first)
+    _ = await store.record(key: prep, weightKg: 20, reps: 10, completed: true, toFailure: false)?.value
+    #expect(store.startedAt(workout.id, on: .today) == first)
+    #expect(makeStore().startedAt(workout.id, on: .today) == first)
+  }
+
   @Test("quem estava em hoje vai para o dia novo; quem olhava outro dia fica")
   func followsTheNewDay() async {
     let store = await lojaComPainel()
