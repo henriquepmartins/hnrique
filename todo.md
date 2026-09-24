@@ -264,9 +264,14 @@ O simulador iOS passou com 133 testes em 17 suítes. A API passou na checagem Ty
   - Independent workstreams. A investigação de fluxo e o desenho do estado podem correr em paralelo; a implementação da tela e os testes compartilham o mesmo caminho e ficam serializados.
   - Shared mutable state. O estado do cronômetro pertence à sessão aberta, então um único writer altera `WorkoutSessionScreen` e os testes associados.
   - Smallest safe decomposition. Um worker implementa o tipo de estado e a tela, porque a regra de início e fim depende do mesmo snapshot do treino.
-- [ ] 4. Delegate code-writing to a subagent.
-- [ ] 5. Verify on the matching surface.
-- [ ] 6. Rebase into small, ordered commits; stack follow-ups.
+- [x] 4. Delegate code-writing to a subagent.
+  - Servidor: fix/audit-server e fix/audit-server-2 juntados no main do web, sem push nem deploy. Migrações 0015 a 0018 só no banco local.
+  - iOS: três rodadas juntadas no main; 249 testes passando.
+- [x] 5. Verify on the matching surface.
+  - Maestro pela CLI em output/maestro-verify/ (v* na primeira rodada, r* na segunda).
+- [x] 6. Rebase into small, ordered commits; stack follow-ups.
+  - skip: commits já pequenos em main.
+- [ ] 9. Produção: migrações 0015 a 0018 antes do deploy, deploy do web, release.sh. Espera confirmação.
   - skip: o projeto entrega mudanças locais em main e não foi solicitado abrir PR.
 - [ ] 7. If the design is contested, `interrogate` before shipping.
   - skip: só será necessário se as alternativas de estado produzirem comportamentos diferentes no fluxo real.
@@ -276,3 +281,22 @@ O simulador iOS passou com 133 testes em 17 suítes. A API passou na checagem Ty
 ## Decisão de dados
 
 `WorkoutSessionTiming` deriva `startedAt` do menor `completedAt` nas séries de aquecimento e `finishedAt` do maior timestamp quando todas as séries estão concluídas. Uma pendência offline conserva o instante capturado no toque. A tela calcula `Date.now - startedAt` enquanto a sessão corre e congela o valor final. O contador não incrementa estado a cada segundo e não cria uma segunda fonte de verdade para as séries.
+
+# Correções da auditoria (2026-09-23)
+
+- [x] 1. `how` over the affected subsystem.
+  - Feito pela auditoria: três relatórios (Maestro, código iOS, servidor), capturas em output/maestro-audit/.
+- [x] 2. `architect` for parallel design exploration.
+  - architect skipped: cada item tem forma única já apontada na auditoria; o contrato entre servidor e app está fixado abaixo.
+- [x] 3. Write the throughput checkpoint as four todo items.
+  - Blocking first steps. Contrato fixado antes do fan-out: plano ganha prepWeightKg e restSeconds opcionais; exercício do painel ganha previousPrep; recordSet aceita completedAt opcional; Idiomas aceita date.
+  - Independent workstreams. Servidor (repo web), Academia iOS, Estudos/shell iOS.
+  - Shared mutable state. Cada worker em worktree próprio; Academia e Estudos dividem por pasta de tela; notificação local duplicada é reconciliada na revisão.
+  - Smallest safe decomposition. Três workers; Academia é um só porque sessão, store e fila mexem nos mesmos arquivos.
+- [ ] 4. Delegate code-writing to a subagent.
+- [ ] 5. Verify on the matching surface.
+- [ ] 6. Rebase into small, ordered commits; stack follow-ups.
+- [ ] 7. If the design is contested, `interrogate` before shipping.
+  - skip: sem disputa de design.
+- [ ] 8. Run Opening a PR.
+  - skip: fluxo do projeto é commit em main; migração e deploy de produção e release esperam confirmação.
