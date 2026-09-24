@@ -38,10 +38,12 @@ private struct FocoAccessoryLabel: View {
 
   var body: some View {
     if let run = foco.ledger.running {
-      Button {
-        foco.isShowingRun = true
-      } label: {
-        FocoTicker(running: !run.isPaused) { now in
+      // O botão inteiro mora dentro do tick: o rótulo falado lia o tempo do
+      // último desenho completo e ficava minutos atrás do relógio.
+      FocoTicker(running: !run.isPaused) { now in
+        Button {
+          foco.isShowingRun = true
+        } label: {
           HStack(spacing: 10) {
             Circle().fill(Color(hexString: run.track.color)).frame(width: 10, height: 10)
             Text(run.track.name).lineLimit(1)
@@ -54,13 +56,12 @@ private struct FocoAccessoryLabel: View {
           .padding(.horizontal, 16)
           .contentShape(.rect)
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("foco em \(run.track.name)")
+        .accessibilityValue(run.isPaused ? "pausado" : FocoFormat.spoken(run.seconds(at: now)))
+        .accessibilityHint("abre o cronômetro")
+        .accessibilityIdentifier("foco.faixa")
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel(
-        "foco em \(run.track.name), \(run.isPaused ? "pausado" : FocoFormat.spoken(run.seconds(at: .now)))"
-      )
-      .accessibilityHint("abre o cronômetro")
-      .accessibilityIdentifier("foco.faixa")
     }
   }
 }
