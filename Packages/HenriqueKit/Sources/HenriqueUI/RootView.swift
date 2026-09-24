@@ -218,10 +218,10 @@ struct AcademiaTabs: View {
   @Environment(AcademiaStore.self) private var store
   @State private var showingSetup = false
   @State private var showingStreak = false
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// A sessão mora aqui, por cima das abas, para abrir de qualquer uma delas e
-  /// cobrir a barra de abas sem ser uma tela modal do sistema.
-  @State private var showingSession = false
+  /// cobrir a barra de abas sem ser uma tela modal do sistema. Enquanto ela
+  /// está aberta, isto guarda de qual cartão ela cresceu.
+  @State private var session: SessionOrigin?
   @Binding var accent: Accent
   @Binding var tab: AcademiaTab
   @Binding var showingApps: Bool
@@ -245,7 +245,7 @@ struct AcademiaTabs: View {
       Tab("treino", systemImage: "dumbbell", value: AcademiaTab.treino) {
         shell {
           TodayScreen(
-            sessionOpen: showingSession, onSession: openSession,
+            sessionOpen: session != nil, onSession: openSession,
             onPlan: { tab = .semana }, onProgress: { tab = .progresso })
         }
       }
@@ -263,14 +263,10 @@ struct AcademiaTabs: View {
     }
     .focoAccessory()
     .overlay {
-      if showingSession {
-        ZStack {
-          WorkoutSessionScreen(onClose: closeSession)
-          if !reduceMotion { SessionGlow() }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
-        .transition(SessionBloom(reduceMotion: reduceMotion))
+      if let session {
+        // A camada cuida da própria entrada e saída; a troca aqui é seca.
+        SessionExpansion(origin: session) { self.session = nil }
+          .transition(.identity)
       }
     }
     .sheet(isPresented: $showingSetup) { SetupScreen() }
@@ -285,13 +281,9 @@ struct AcademiaTabs: View {
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
   }
 
-  private func openSession() {
-    guard store.dashboard?.workout != nil else { return }
-    withAnimation(reduceMotion ? Motion.plain : Motion.bloom) { showingSession = true }
-  }
-
-  private func closeSession() {
-    withAnimation(reduceMotion ? Motion.plain : Motion.fold) { showingSession = false }
+  private func openSession(from origin: SessionOrigin) {
+    guard store.dashboard?.workout != nil, session == nil else { return }
+    session = origin
   }
 
   private func shell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -468,7 +460,7 @@ private struct AppSwitcherRow: View {
 /// constância moram em "progresso".
 struct OverviewScreen: View {
   @Environment(AcademiaStore.self) private var store
-  let onWorkout: () -> Void
+  let onWorkout: (SessionOrigin) -> Void
   let onPlan: () -> Void
 
   var body: some View {

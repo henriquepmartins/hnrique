@@ -86,16 +86,20 @@ struct WorkoutSessionScreen: View {
         let openId = openExercise(in: workout)
         ScrollView {
           LazyVStack(spacing: Space.m) {
-            ForEach(workout.exercises) { exercise in
-              if openId == exercise.id {
-                card(exercise: exercise, date: data.date, templateId: workout.id)
-                  .transition(.opacity)
-              } else {
-                collapsed(exercise: exercise)
-                  .transition(.opacity)
+            ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
+              Group {
+                if openId == exercise.id {
+                  card(exercise: exercise, date: data.date, templateId: workout.id)
+                    .transition(.opacity)
+                } else {
+                  collapsed(exercise: exercise)
+                    .transition(.opacity)
+                }
               }
+              .revealEntrance(index: index + 1, shown: entered)
             }
             addExerciseButton
+              .revealEntrance(index: workout.exercises.count + 1, shown: entered)
           }
           .padding(.horizontal, Space.l).padding(.top, Space.l)
           .padding(.bottom, Space.page)
@@ -117,10 +121,14 @@ struct WorkoutSessionScreen: View {
             .transition(.move(edge: .bottom).combined(with: .opacity))
           }
         }
-        .revealEntrance(index: 1, shown: entered)
         .animation(glide, value: store.rest == nil)
         .animation(reduceMotion ? nil : Motion.subtleEntrance, value: openId)
-        .onAppear { entered = true }
+        // As peças só começam a aparecer quando o cartão já cresceu o bastante
+        // para elas caberem dentro dele.
+        .task {
+          if !reduceMotion { try? await Task.sleep(for: .milliseconds(180)) }
+          entered = true
+        }
         .onChange(of: noteFocus) { old, _ in
           guard let old, let exercise = workout.exercises.first(where: { $0.id == old }) else { return }
           saveNote(exercise: exercise, date: data.date, templateId: workout.id)

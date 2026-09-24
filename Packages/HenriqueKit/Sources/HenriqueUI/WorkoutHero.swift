@@ -57,11 +57,12 @@ struct WorkoutHero: View {
   @Environment(\.accent) private var accent
   @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 76.0
   @ScaledMetric(relativeTo: .largeTitle) private var restTitleSize = 52.0
+  @State private var source = SessionSourceFrame()
   let workout: WorkoutSummary?
   let date: CalendarDate
   var finished = false
   let notch: CGFloat
-  let onStart: () -> Void
+  let onStart: (SessionOrigin) -> Void
 
   var body: some View {
     let model = HeroModel(workout: workout, date: date, finished: finished)
@@ -81,7 +82,9 @@ struct WorkoutHero: View {
             .font(.system(size: 14)).monospacedDigit().foregroundStyle(HeroInk.meta)
             .contentTransition(.numericText())
           Spacer(minLength: 0)
-          PaperButton(label: session.actionLabel, action: onStart)
+          PaperButton(label: session.actionLabel) {
+            onStart(.card(frame: source.value, fill: .hero))
+          }
         }
       }
     }
@@ -94,6 +97,7 @@ struct WorkoutHero: View {
         .frame(height: 24)
     }
     .clipShape(.rect(cornerRadius: 32))
+    .sessionSource(source)
     .shadow(color: accent.deep.opacity(0.13), radius: 30, y: 22)
   }
 
@@ -147,9 +151,11 @@ private struct SpreadColumn: Layout {
 
 /// A manhã do web: noite no topo, sol no pé. Os degraus saem dos tokens do
 /// acento, então cada cor ganha o seu amanhecer. As proporções são as do
-/// `styles.css`, acertadas para o verde cair no degradê aprovado.
-private struct HeroBackground: View {
+/// `styles.css`, acertadas para o verde cair no degradê aprovado. Sem o grão
+/// ele é o fundo que cresce do cartão até a tela da sessão.
+struct HeroBackground: View {
   let accent: Accent
+  var grain = true
 
   var body: some View {
     let night = mix(accent.deep, 0.46, .black)
@@ -176,7 +182,7 @@ private struct HeroBackground: View {
           .frame(width: proxy.size.width * 2.4, height: proxy.size.height * 1.2)
           .position(x: proxy.size.width / 2, y: proxy.size.height)
       }
-      FilmGrain()
+      if grain { FilmGrain() }
     }
     .accessibilityHidden(true)
   }

@@ -10,12 +10,12 @@ public struct TodayScreen: View {
   @State private var enteredDates: Set<String> = []
   @State private var editing: WeekPlanItem?
   let sessionOpen: Bool
-  let onSession: () -> Void
+  let onSession: (SessionOrigin) -> Void
   let onPlan: () -> Void
   let onProgress: () -> Void
 
-  public init(
-    sessionOpen: Bool = false, onSession: @escaping () -> Void = {},
+  init(
+    sessionOpen: Bool = false, onSession: @escaping (SessionOrigin) -> Void = { _ in },
     onPlan: @escaping () -> Void = {}, onProgress: @escaping () -> Void = {}
   ) {
     self.sessionOpen = sessionOpen
@@ -31,7 +31,7 @@ public struct TodayScreen: View {
           DayStrip(selected: store.selectedDate, notch: $notch)
             .staggeredEntrance(index: 0, isReady: hasData)
           if let rest = store.rest, rest.key.date == store.selectedDate, !sessionOpen {
-            RestChip(rest: rest, onOpen: onSession)
+            RestChip(rest: rest) { onSession(.nowhere) }
               .frame(maxWidth: .infinity, alignment: .leading)
               .transition(.opacity)
           }
