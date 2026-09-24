@@ -253,18 +253,54 @@ public struct FocoLedger: Codable, Hashable, Sendable {
   }
 
   /// Fecha a corrida em sessões, uma por trecho e por dia. Abaixo do mínimo a
-  /// corrida inteira some, porque foi toque sem querer.
+  /// corrida inteira some, porque foi toque sem querer. Trecho de menos de um
+  /// minuto não vira sessão sozinho: ele se junta a um trecho vizinho do mesmo dia.
   @discardableResult
   public mutating func stop(at now: Date, calendar: Calendar) -> [FocoEntry] {
     guard let run = running else { return [] }
     running = nil
     guard run.seconds(at: now) >= Self.minimumSeconds else { return [] }
-    let closed = run.pieces(until: now, calendar: calendar).map {
+    let closed = absorbingShortPieces(run.pieces(until: now, calendar: calendar), calendar: calendar).map {
       FocoEntry(track: run.track, startedAt: $0.start, endedAt: $0.end)
     }
     entries += closed
     pendingUploads.formUnion(closed.map(\.id))
     return closed
+  }
+
+  public static let shortPieceSeconds: TimeInterval = 60
+
+  /// O trecho curto entra no vizinho longo do mesmo dia, que cresce a duração
+  /// dele: o anterior avança o fim, o seguinte recua o começo. Nenhum dos dois
+  /// passa por cima do trecho curto, então o total não muda e ninguém se
+  /// sobrepõe. Sem vizinho longo no dia, o trecho curto some, a não ser que a
+  /// corrida inteira seja de trechos curtos: aí eles viram uma sessão só por dia.
+  private func absorbingShortPieces(_ pieces: [FocoStretch], calendar: Calendar) -> [FocoStretch] {
+    let isShort = { (piece: FocoStretch) in piece.seconds < Self.shortPieceSeconds }
+    guard pieces.contains(where: { !isShort($0) }) else {
+      return Dictionary(grouping: pieces) { CalendarDate($0.start, in: calendar) }
+        .values.compactMap { day -> FocoStretch? in
+          guard let first = day.first else { return nil }
+          let total = day.reduce(0) { $0 + $1.seconds }
+          return FocoStretch(start: first.start, end: first.start + total)
+        }
+        .sorted { $0.start < $1.start }
+    }
+    var kept = pieces
+    var absorbed = Set<Int>()
+    for (index, piece) in pieces.enumerated() where isShort(piece) {
+      let day = CalendarDate(piece.start, in: calendar)
+      let sameDayLong = { (other: Int) in
+        !isShort(pieces[other]) && CalendarDate(pieces[other].start, in: calendar) == day
+      }
+      if let before = pieces.indices[..<index].last(where: sameDayLong) {
+        kept[before].end += piece.seconds
+      } else if let after = pieces.indices[(index + 1)...].first(where: sameDayLong) {
+        kept[after].start -= piece.seconds
+      }
+      absorbed.insert(index)
+    }
+    return kept.enumerated().filter { !absorbed.contains($0.offset) }.map(\.element)
   }
 
   public mutating func remove(id: UUID) {

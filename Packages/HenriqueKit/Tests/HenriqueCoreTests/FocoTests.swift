@@ -283,6 +283,41 @@ struct FocoTests {
     #expect(ledger.pendingUploads == Set(entries.map(\.id)))
   }
 
+  @Test("trecho de menos de um minuto entra no vizinho do mesmo dia")
+  func shortStretchJoinsNeighbor() {
+    var ledger = FocoLedger()
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    ledger.pause(at: Self.at("2026-09-08", "10:25"))
+    ledger.resume(at: Self.at("2026-09-08", "10:40"))
+    var entries = ledger.stop(at: Self.at("2026-09-08", "10:40") + 45, calendar: Self.calendar)
+    #expect(entries.map(\.startedAt) == [Self.at("2026-09-08", "10:00")])
+    #expect(entries.map(\.endedAt) == [Self.at("2026-09-08", "10:25") + 45])
+    #expect(ledger.entries.count == 1)
+
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "14:00"), calendar: Self.calendar)
+    ledger.pause(at: Self.at("2026-09-08", "14:00") + 30)
+    ledger.resume(at: Self.at("2026-09-08", "14:10"))
+    entries = ledger.stop(at: Self.at("2026-09-08", "14:30"), calendar: Self.calendar)
+    #expect(entries.map(\.startedAt) == [Self.at("2026-09-08", "14:10") - 30])
+    #expect(entries.map(\.seconds) == [1230])
+  }
+
+  @Test("sobra curta antes da meia-noite some; corrida toda curta vira uma sessão")
+  func shortPiecesAtMidnightAndShortRuns() {
+    var ledger = FocoLedger()
+    ledger.start(Self.fisica, at: Self.at("2026-09-08", "00:00") - 30, calendar: Self.calendar)
+    var entries = ledger.stop(at: Self.at("2026-09-08", "00:20"), calendar: Self.calendar)
+    #expect(entries.map(\.startedAt) == [Self.at("2026-09-08", "00:00")])
+    #expect(entries.map(\.seconds) == [1200])
+
+    ledger.start(.alemao, at: Self.at("2026-09-08", "09:00"), calendar: Self.calendar)
+    ledger.pause(at: Self.at("2026-09-08", "09:00") + 20)
+    ledger.resume(at: Self.at("2026-09-08", "09:05"))
+    entries = ledger.stop(at: Self.at("2026-09-08", "09:05") + 25, calendar: Self.calendar)
+    #expect(entries.map(\.startedAt) == [Self.at("2026-09-08", "09:00")])
+    #expect(entries.map(\.seconds) == [45])
+  }
+
   @Test("pausar duas vezes não cria trecho vazio")
   func pauseIsIdempotent() {
     var ledger = FocoLedger()

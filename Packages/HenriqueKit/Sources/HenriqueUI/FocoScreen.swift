@@ -257,7 +257,8 @@ public struct FocoScreen: View {
   }
 
   private func entryTitle(_ entry: FocoEntry) -> String {
-    let minutes = FocoFormat.short(minutes: Int(entry.seconds / 60))
+    let minutes = entry.seconds < 60
+      ? "\(Int(entry.seconds)) s" : FocoFormat.short(minutes: Int(entry.seconds / 60))
     return "\(StudyFormat.hour(entry.startedAt)) a \(StudyFormat.hour(entry.endedAt)) · \(entry.track.name) · \(minutes)"
   }
 }
