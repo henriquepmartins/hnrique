@@ -83,7 +83,6 @@ struct WorkoutHero: View {
             .contentTransition(.numericText())
           Spacer(minLength: 0)
           PaperButton(label: session.actionLabel, action: onStart)
-            .matchedTransitionSource(id: "sessao", in: sessionSource)
         }
       }
     }
@@ -96,6 +95,11 @@ struct WorkoutHero: View {
         .frame(height: 24)
     }
     .clipShape(.rect(cornerRadius: 32))
+    // A sessão cresce do cartão inteiro, e não do botão no canto. Do botão ela
+    // atravessava a tela na diagonal e herdava o tremor do recorte de papel.
+    .matchedTransitionSource(id: "sessao", in: sessionSource) { source in
+      source.clipShape(.rect(cornerRadius: 32))
+    }
     .shadow(color: accent.deep.opacity(0.13), radius: 30, y: 22)
   }
 
