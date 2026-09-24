@@ -88,3 +88,11 @@ extension Calendar {
     return calendar
   }
 }
+
+extension CalendarDate {
+  /// A segunda da semana de treino deste dia. Domingo pertence à semana que
+  /// começou seis dias antes.
+  public func trainingWeekStart(in calendar: Calendar = .trainingWeek) -> CalendarDate {
+    adding(days: -((weekday(in: calendar) + 6) % 7), in: calendar)
+  }
+}

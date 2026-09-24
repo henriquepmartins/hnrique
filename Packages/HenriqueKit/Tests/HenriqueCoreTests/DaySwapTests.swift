@@ -5,6 +5,16 @@ import Testing
 
 @Suite("Troca de treino do dia")
 struct DaySwapTests {
+  @Test("a semana de treino começa na segunda, e o domingo fecha a anterior")
+  func trainingWeekStart() {
+    let monday = CalendarDate(year: 2026, month: 9, day: 21)!
+    #expect(CalendarDate(year: 2026, month: 9, day: 23)!.trainingWeekStart() == monday)
+    #expect(monday.trainingWeekStart() == monday)
+    #expect(CalendarDate(year: 2026, month: 9, day: 27)!.trainingWeekStart() == monday)
+    #expect(CalendarDate(year: 2026, month: 9, day: 20)!.trainingWeekStart()
+      == CalendarDate(year: 2026, month: 9, day: 14)!)
+  }
+
   private var calendar: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "America/Sao_Paulo")!
