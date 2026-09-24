@@ -89,6 +89,37 @@ private struct FocoPresenceCheck: ViewModifier {
 
 // MARK: - Sem conexão
 
+extension View {
+  /// A faixa de sem conexão dentro da pilha de navegação, entre a barra e o
+  /// conteúdo. Como inset ela empurra o título para baixo; sobreposta ao app
+  /// inteiro, tampava os botões da barra ou o título grande.
+  func offlineInset() -> some View {
+    modifier(OfflineInset())
+  }
+}
+
+private struct OfflineInset: ViewModifier {
+  @Environment(AcademiaStore.self) private var store
+  @Environment(EstudosStore.self) private var estudos
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var isOffline: Bool {
+    store.isSignedIn && estudos.client.connectivity.isOffline
+  }
+
+  func body(content: Content) -> some View {
+    content
+      .safeAreaInset(edge: .top, spacing: 0) {
+        if isOffline {
+          OfflineBanner()
+            .padding(.vertical, 6)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+      }
+      .animation(reduceMotion ? nil : Motion.crossfade, value: isOffline)
+  }
+}
+
 /// Uma faixa discreta no topo, no lugar do alerta que travava a tela a cada
 /// abertura sem rede. Some sozinha quando um pedido chega ao servidor.
 struct OfflineBanner: View {

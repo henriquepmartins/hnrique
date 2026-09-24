@@ -107,15 +107,6 @@ public struct RootView: View {
     // O painel mora aqui, e não dentro de cada app, para a troca não levar embora
     // a árvore em que ele vive antes de ele tocar a própria saída.
     .appSwitcher(current: section, isPresented: $showingApps) { section = $0 }
-    .overlay(alignment: .top) {
-      if isOffline {
-        // Abaixo da barra de navegação, para não tampar os botões dela.
-        OfflineBanner()
-          .padding(.top, 52)
-          .transition(.move(edge: .top).combined(with: .opacity))
-      }
-    }
-    .animation(reduceMotion ? nil : Motion.crossfade, value: isOffline)
     #if os(iOS)
       .fullScreenCover(isPresented: .init(get: { foco.isShowingRun }, set: { foco.isShowingRun = $0 })) {
         FocoRunningScreen()
@@ -276,6 +267,7 @@ struct AcademiaTabs: View {
   private func shell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     NavigationStack {
       content()
+        .offlineInset()
         .keyboardDone()
         .scrollEdgeEffectStyle(.soft, for: .top)
         .background(Color.canvas.ignoresSafeArea())

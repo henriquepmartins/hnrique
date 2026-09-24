@@ -49,6 +49,7 @@ struct IdiomasTabs: View {
   private func shell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     NavigationStack {
       content()
+        .offlineInset()
         .scrollEdgeEffectStyle(.soft, for: .top)
         .background(Color.studyPaper.ignoresSafeArea())
         .navigationTitle("")
