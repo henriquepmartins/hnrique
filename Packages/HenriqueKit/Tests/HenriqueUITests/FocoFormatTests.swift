@@ -15,4 +15,10 @@ struct FocoFormatTests {
   func spokenAgreesInNumber(seconds: Double, expected: String) {
     #expect(FocoFormat.spoken(seconds) == expected)
   }
+
+  @Test func countAgreesInNumber() {
+    #expect(FocoFormat.count(1, "dia", "dias") == "1 dia")
+    #expect(FocoFormat.count(0, "dia", "dias") == "0 dias")
+    #expect(FocoFormat.count(12, "dia seguido", "dias seguidos") == "12 dias seguidos")
+  }
 }

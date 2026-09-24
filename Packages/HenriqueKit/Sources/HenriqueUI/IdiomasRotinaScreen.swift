@@ -243,7 +243,7 @@ public struct IdiomasRotinaScreen: View {
         StudyCallout(
           icon: "checkmark.circle",
           title: correction.fixedDE,
-          detail: "\(correction.correctionPT) · \(correction.score) pontos")
+          detail: "\(correction.correctionPT) · \(FocoFormat.count(correction.score, "ponto", "pontos"))")
         Button("próximo") {
           Task {
             await completeAndAdvance(drill: drill, drills: drills, text: texts[drill.id] ?? "", micUsed: false)

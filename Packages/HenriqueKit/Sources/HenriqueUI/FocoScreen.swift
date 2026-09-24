@@ -27,7 +27,8 @@ enum FocoFormat {
     return "\(count(hours, "hora", "horas")) e \(count(rest, "minuto", "minutos"))"
   }
 
-  private static func count(_ value: Int, _ singular: String, _ plural: String) -> String {
+  /// "1 dia", "3 dias". Contagem falada ou escrita com número na frente.
+  static func count(_ value: Int, _ singular: String, _ plural: String) -> String {
     "\(value) \(value == 1 ? singular : plural)"
   }
 }
@@ -415,7 +416,8 @@ struct FocoGrid: View {
     }
     .onAppear { shown = true }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("\(days.count { $0.seconds > 0 }) dias com foco nas últimas 12 semanas")
+    .accessibilityLabel(
+      "\(FocoFormat.count(days.count { $0.seconds > 0 }, "dia", "dias")) com foco nas últimas 12 semanas")
   }
 
   private func cell(_ day: FocoDay) -> some View {
@@ -476,7 +478,7 @@ struct FocoTodayCard: View {
             }
             .font(.headline)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(streak.current) dias seguidos")
+            .accessibilityLabel("\(FocoFormat.count(streak.current, "dia seguido", "dias seguidos"))")
           }
           FocoGoalBar(fraction: min(1, seconds / (Double(ledger.dailyGoalMinutes) * 60)), color: .studyBlue)
           NavigationLink {
