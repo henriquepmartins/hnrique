@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "40",
+          "date": "2026-09-24T11:36:05-03:00",
+          "localizedDescription": "• feat: grow the workout session out of the tapped card",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-40/Henrique.ipa",
+          "size": 5313977,
+          "sha256": "0167696c0238723610809a7355fe52525a2ff09e11d2ff8330863fff81f82587",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "39",
           "date": "2026-09-24T11:05:05-03:00",
           "localizedDescription": "• feat: open the workout session with a fade and an edge glow",
