@@ -37,6 +37,7 @@ public final class FocoStore {
   private let estudos: EstudosStore?
   private let calendar = StudyFormat.calendar
   @ObservationIgnored private var syncing = false
+  @ObservationIgnored private var syncRequested = false
   @ObservationIgnored private var lastSyncedAt: Date?
 
   static let batchSize = 500
@@ -186,9 +187,6 @@ public final class FocoStore {
 
   // MARK: Sincronização
 
-  /// Sobe a fila e depois adota a lista do servidor. Um sync por vez; o segundo
-  /// pedido enquanto um roda é descartado, porque o que ele subiria já está na
-  /// fila do primeiro ou entra na próxima chamada.
   /// O que as telas chamam ao aparecer. O cartão de hoje e a tela de foco
   /// aparecem a cada troca de aba, e cada sync baixava a lista inteira.
   public func syncIfStale() async {
@@ -196,10 +194,25 @@ public final class FocoStore {
     await sync()
   }
 
+  /// Sobe a fila e depois adota a lista do servidor. Um sync por vez. O pedido
+  /// que chega com outro rodando marca uma segunda volta, porque a sessão
+  /// parada agora pode ter entrado na fila depois que o primeiro já leu dela.
   public func sync() async {
-    guard let client = estudos?.client, !syncing else { return }
+    guard estudos?.client != nil else { return }
+    guard !syncing else {
+      syncRequested = true
+      return
+    }
     syncing = true
     defer { syncing = false }
+    repeat {
+      syncRequested = false
+      await syncOnce()
+    } while syncRequested
+  }
+
+  private func syncOnce() async {
+    guard let client = estudos?.client else { return }
     do {
       try await pushUploads(client)
       try await pushRemovals(client)
