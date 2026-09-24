@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "39",
+          "date": "2026-09-24T11:05:05-03:00",
+          "localizedDescription": "• feat: open the workout session with a fade and an edge glow",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-39/Henrique.ipa",
+          "size": 5300893,
+          "sha256": "e1b929a8a31a08ec4aef94fd925b509c4a7c6fefb1786197226adc235bcba662",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "38",
           "date": "2026-09-24T10:54:23-03:00",
           "localizedDescription": "• fix: grow the workout session from the whole hero card",
