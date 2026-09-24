@@ -126,7 +126,7 @@ struct WorkoutSessionScreen: View {
           saveNote(exercise: exercise, date: data.date, templateId: workout.id)
         }
         .confirmationDialog(
-          "encerrar com \(progress.total - progress.done) séries em aberto?",
+          openSetsQuestion(progress.total - progress.done),
           isPresented: $confirmingFinish, titleVisibility: .visible
         ) {
           Button("encerrar treino", role: .destructive) { finish() }
@@ -507,6 +507,10 @@ struct WorkoutSessionScreen: View {
   private func nextSet(after rest: RestState, in workout: WorkoutSummary) -> NextSet? {
     let index = workout.exercises.firstIndex { $0.id == rest.exerciseId } ?? 0
     return NextSet(from: index, in: workout)
+  }
+
+  private func openSetsQuestion(_ open: Int) -> String {
+    open == 1 ? "encerrar com 1 série em aberto?" : "encerrar com \(open) séries em aberto?"
   }
 
   /// Encerrar para o relógio e o descanso e mostra o resumo. Já encerrado, o

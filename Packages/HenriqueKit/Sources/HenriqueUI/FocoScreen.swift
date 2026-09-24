@@ -507,7 +507,8 @@ struct FocoUndoToast: View {
     HStack(spacing: 12) {
       Text("sessão de \(entry.track.name) apagada")
         .font(.subheadline)
-        .lineLimit(1)
+        .lineLimit(2)
+        .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
       Button("desfazer", action: undo)
         .font(.subheadline.weight(.semibold))
@@ -515,7 +516,8 @@ struct FocoUndoToast: View {
     }
     .padding(.leading, 16)
     .padding(.trailing, 8)
+    .padding(.vertical, 6)
     .frame(minHeight: 48)
-    .glassEffect(in: .capsule)
+    .glassEffect(in: .rect(cornerRadius: 24))
   }
 }
