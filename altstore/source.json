@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "38",
+          "date": "2026-09-24T10:54:23-03:00",
+          "localizedDescription": "• fix: grow the workout session from the whole hero card",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-38/Henrique.ipa",
+          "size": 5295573,
+          "sha256": "dbb1c134038b15689dce724dfc01e86ecea4ea09bcdbe6d7237cb35e8aa1fa26",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "37",
           "date": "2026-09-24T10:46:39-03:00",
           "localizedDescription": "• fix: singular open set prompt and untruncated undo toast\n• fix: open the workout session straight from the home card\n• fix: upload a focus session stopped while another sync runs\n• docs: track the audit fixes in the todo\n• test: drive the warm-up load field and the Monday week strip\n• fix: push content below the offline banner instead of covering titles\n• feat: start the home week strip on Monday and mark trained days\n• fix: keep the warm-up load field visible and saved while typing\n• fix: read the live foco time in the bar's VoiceOver value\n• fix: agree foco and idiomas counts in number\n• fix: fold sub-minute foco stretches into their neighbor\n• fix: compare warm-up loads only with warm-up history\n• fix: keep the workout start when the first set is unmarked\n• fix: show the finished workout on the home hero\n• Merge branch 'worktree-agent-a12b92ba04c1202c0'\n• fix: keep the offline banner below the toolbar buttons\n• fix(core): decode per-set previous warm-up from the server\n• feat: keep the estudos focus block across launches\n• perf: reuse the ISO 8601 formatters when coding dates\n• feat: send the device day with idiomas progress\n• test: drive rest, load warning and finish in the session\n• feat(plan): edit warm-up load and rest per exercise\n• fix: count the same training week in the streak sheet and calendar\n• feat: keep the rest timer alive outside the workout session\n• feat(core): decode rest, warm-up load and previous warm-up\n• feat: pause foco, summarize on stop and show the run from any app\n• feat: say how to fill the empty assignment and card lists\n• feat: open estudos from disk when offline and keep foco reachable\n• fix: tell a wrong password apart from an expired session\n• fix: draw hero title descenders and accents past the line box",
