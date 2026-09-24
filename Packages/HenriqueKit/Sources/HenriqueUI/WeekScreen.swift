@@ -344,29 +344,52 @@ struct PlanExerciseRow: View {
 
 /// A carga do aquecimento. Vazio deixa o servidor calcular a partir do último
 /// aquecimento, que é o normal; o campo existe para quem quer fixar.
+///
+/// O campo edita texto e grava o número a cada tecla. Com `value:format:` o
+/// número só chegava ao rascunho quando o campo perdia o foco, e tocar em
+/// "concluir" com o teclado aberto salvava sem ele.
 private struct PrepWeightRow: View {
   @Binding var weightKg: Double?
+  @State private var text = ""
+  @FocusState private var focused: Bool
 
   var body: some View {
     HStack(spacing: 8) {
       Text("carga do aquecimento").font(.body)
       Spacer(minLength: 8)
-      TextField("auto", value: $weightKg, format: .number.precision(.fractionLength(0...2)))
+      TextField("auto", text: $text)
+        .focused($focused)
         .submitLabel(.done)
         .decimalInput()
         .multilineTextAlignment(.trailing)
         .font(.body.weight(.semibold)).monospacedDigit()
         .frame(minWidth: 64)
         .accessibilityLabel("Carga do aquecimento em kg, vazio calcula sozinho")
+        .accessibilityIdentifier("plano.carga-aquecimento")
       Text("kg").font(.callout).foregroundStyle(Color.mutedInk)
     }
     .frame(minHeight: 48)
-    .onChange(of: weightKg) { _, new in
-      guard let new else { return }
-      let clamped = new.isFinite ? new.clamped(to: Limits.startingWeightKg) : nil
-      if clamped != new { weightKg = clamped }
+    .onChange(of: weightKg, initial: true) { _, new in
+      if !focused { text = new.map(formatPrepWeight) ?? "" }
+    }
+    .onChange(of: text) { _, new in weightKg = parsePrepWeight(new) }
+    .onChange(of: focused) { _, isFocused in
+      if !isFocused { text = weightKg.map(formatPrepWeight) ?? "" }
     }
   }
+}
+
+func formatPrepWeight(_ value: Double) -> String {
+  value.formatted(
+    .number.precision(.fractionLength(0...2)).grouping(.never).locale(Locale(identifier: "pt_BR")))
+}
+
+/// Vírgula ou ponto, porque o teclado decimal em português dá vírgula. Vazio
+/// ou ilegível é "calcular sozinho".
+func parsePrepWeight(_ text: String) -> Double? {
+  let trimmed = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+  guard let value = Double(trimmed), value.isFinite else { return nil }
+  return value.clamped(to: Limits.startingWeightKg)
 }
 
 /// O descanso entre séries desse exercício, de 15 em 15 segundos.

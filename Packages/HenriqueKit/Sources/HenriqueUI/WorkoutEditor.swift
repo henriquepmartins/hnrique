@@ -1,5 +1,8 @@
 import HenriqueCore
 import SwiftUI
+#if canImport(UIKit)
+  import UIKit
+#endif
 
 /// Os passos do editor, na ordem em que aparecem. A barra de baixo, o botão de
 /// voltar e o de concluir leem daqui, então um passo novo entra só nesta lista.
@@ -59,6 +62,9 @@ struct WorkoutEditor: View {
   @State private var enteringEdge: Edge = .trailing
   @State private var isSaving = false
   @State private var appliedRestOverrides = false
+  /// A pasta ocupa metade da tela. Com o teclado aberto sobrava pouco para a
+  /// lista, e o campo focado ficava escondido atrás da pasta.
+  @State private var keyboardUp = false
   /// O catálogo por id, montado uma vez. Cada tecla no nome roda o body de novo
   /// e cada linha de exercício lê daqui, então a busca não pode varrer a lista.
   @State private var exerciseInfo: [String: ExerciseCatalogItem]
@@ -136,14 +142,17 @@ struct WorkoutEditor: View {
       .padding(.horizontal, Space.l)
       .padding(.top, Space.m)
 
-      WorkoutFolderCard(
-        name: draft.name.isEmpty ? "novo treino" : draft.name,
-        tone: draft.color.tone, hasDays: !draft.weekdays.isEmpty
-      )
-      .dynamicTypeSize(.large)
-      .containerRelativeFrame(.horizontal) { width, _ in width * 0.62 }
-      .padding(.top, 8)
-      .accessibilityHidden(true)
+      if !keyboardUp {
+        WorkoutFolderCard(
+          name: draft.name.isEmpty ? "novo treino" : draft.name,
+          tone: draft.color.tone, hasDays: !draft.weekdays.isEmpty
+        )
+        .dynamicTypeSize(.large)
+        .containerRelativeFrame(.horizontal) { width, _ in width * 0.62 }
+        .padding(.top, 8)
+        .accessibilityHidden(true)
+        .transition(.opacity)
+      }
 
       ZStack {
         RoundButton(systemImage: "arrow.left", fill: Color.ink, ink: .white, label: "voltar", nudge: 0.5) {
@@ -181,6 +190,14 @@ struct WorkoutEditor: View {
       .clipped()
     }
     .background(Color.canvas)
+    #if os(iOS)
+    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+      withAnimation(stepAnimation) { keyboardUp = true }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+      withAnimation(stepAnimation) { keyboardUp = false }
+    }
+    #endif
     .safeAreaInset(edge: .bottom) {
       if let next = step.next {
         Button("avançar") { go(to: next) }
