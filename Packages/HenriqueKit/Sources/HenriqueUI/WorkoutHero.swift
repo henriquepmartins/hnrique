@@ -61,7 +61,6 @@ struct WorkoutHero: View {
   let date: CalendarDate
   var finished = false
   let notch: CGFloat
-  let sessionSource: Namespace.ID
   let onStart: () -> Void
 
   var body: some View {
@@ -95,11 +94,6 @@ struct WorkoutHero: View {
         .frame(height: 24)
     }
     .clipShape(.rect(cornerRadius: 32))
-    // A sessão cresce do cartão inteiro, e não do botão no canto. Do botão ela
-    // atravessava a tela na diagonal e herdava o tremor do recorte de papel.
-    .matchedTransitionSource(id: "sessao", in: sessionSource) { source in
-      source.clipShape(.rect(cornerRadius: 32))
-    }
     .shadow(color: accent.deep.opacity(0.13), radius: 30, y: 22)
   }
 

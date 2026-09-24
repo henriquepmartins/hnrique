@@ -276,6 +276,10 @@ enum Motion {
   static let confirm = Animation.spring(duration: 0.3, bounce: 0)
   /// Seção que abre ou fecha crescendo em altura, empurrando o resto.
   static let expand = Animation.spring(duration: 0.38, bounce: 0.1)
+  /// A sessão de treino abrindo por cima das abas, sem repique, e fechando mais
+  /// rápido do que abriu.
+  static let bloom = Animation.spring(duration: 0.55, bounce: 0)
+  static let fold = Animation.easeOut(duration: 0.22)
   /// Com movimento reduzido só a opacidade muda, e rápido.
   static let plain = Animation.easeOut(duration: 0.15)
   /// O rolo de dígito, a mola do board convertida. Os K 280, C 18 e M 0.3 dele

@@ -46,7 +46,6 @@ func previousLabel(_ previous: PreviousPrepSets?, index: Int) -> String? {
 struct WorkoutSessionScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
-  @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .title) private var nameSize = 27.0
   @ScaledMetric(relativeTo: .body) private var collapsedNameSize = 17.0
@@ -62,6 +61,7 @@ struct WorkoutSessionScreen: View {
   /// digitado; salvo, a fonte volta a ser o painel.
   @State private var noteDrafts: [String: String] = [:]
   @FocusState private var noteFocus: String?
+  let onClose: () -> Void
 
   private var hairline: Color { Color.ink.opacity(0.08) }
   private var glide: Animation? { reduceMotion ? nil : Motion.glide }
@@ -132,7 +132,7 @@ struct WorkoutSessionScreen: View {
           Button("encerrar treino", role: .destructive) { finish() }
           Button("continuar treinando", role: .cancel) {}
         }
-        .sheet(item: $recap, onDismiss: { if closesAfterRecap { dismiss() } }) { presentation in
+        .sheet(item: $recap, onDismiss: { if closesAfterRecap { onClose() } }) { presentation in
           WorkoutRecapSheet(recap: presentation.recap)
         }
         .sheet(isPresented: $adding) {
@@ -148,14 +148,14 @@ struct WorkoutSessionScreen: View {
         }
       }
     }
-    .task { if store.dashboard?.workout == nil { dismiss() } }
+    .task { if store.dashboard?.workout == nil { onClose() } }
   }
 
   private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
     let closedAt = store.finishedAt(workout.id, on: date)
     return VStack(spacing: 14) {
       HStack(spacing: Space.m) {
-        Button { dismiss() } label: {
+        Button(action: onClose) {
           Image(systemName: "chevron.down")
             .font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.ink)
             .frame(width: 40, height: 40)

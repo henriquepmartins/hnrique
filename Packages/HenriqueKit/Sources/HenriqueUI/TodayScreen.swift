@@ -8,22 +8,18 @@ public struct TodayScreen: View {
   @State private var openIds: Set<String> = []
   @State private var notch: CGFloat = 0.5
   @State private var enteredDates: Set<String> = []
-  @State private var showingSession = false
-  /// A sessão pedida pela Hoje sobe de baixo. O cartão tocado mora na outra
-  /// aba, e crescer do cartão desta aba seria sair de um lugar que o dono não
-  /// tocou.
-  @State private var sessionFromHome = false
   @State private var editing: WeekPlanItem?
-  @Namespace private var sessionSource
-  @Binding var sessionRequested: Bool
+  let sessionOpen: Bool
+  let onSession: () -> Void
   let onPlan: () -> Void
   let onProgress: () -> Void
 
   public init(
-    sessionRequested: Binding<Bool> = .constant(false),
+    sessionOpen: Bool = false, onSession: @escaping () -> Void = {},
     onPlan: @escaping () -> Void = {}, onProgress: @escaping () -> Void = {}
   ) {
-    _sessionRequested = sessionRequested
+    self.sessionOpen = sessionOpen
+    self.onSession = onSession
     self.onPlan = onPlan
     self.onProgress = onProgress
   }
@@ -34,8 +30,8 @@ public struct TodayScreen: View {
         VStack(spacing: Space.m) {
           DayStrip(selected: store.selectedDate, notch: $notch)
             .staggeredEntrance(index: 0, isReady: hasData)
-          if let rest = store.rest, rest.key.date == store.selectedDate, !showingSession {
-            RestChip(rest: rest) { open(fromHome: false) }
+          if let rest = store.rest, rest.key.date == store.selectedDate, !sessionOpen {
+            RestChip(rest: rest, onOpen: onSession)
               .frame(maxWidth: .infinity, alignment: .leading)
               .transition(.opacity)
           }
@@ -44,10 +40,8 @@ public struct TodayScreen: View {
             workout: store.dashboard?.workout, date: store.selectedDate,
             finished: store.dashboard?.workout.map { store.finishedAt($0.id, on: store.selectedDate) != nil } ?? false,
             notch: notch,
-            sessionSource: sessionSource
-          ) {
-            open(fromHome: false)
-          }
+            onStart: onSession
+          )
           .opacity(fresh ? 1 : 0.5)
           // Enquanto o painel é de outro dia, abrir a sessão daria um treino
           // que o store recusa gravar, porque `record` compara com a data
@@ -116,31 +110,12 @@ public struct TodayScreen: View {
     .onChange(of: store.dashboard?.workout?.id, initial: true) {
       openIds = defaultOpenIds()
     }
-    .onChange(of: sessionRequested, initial: true) {
-      guard sessionRequested else { return }
-      sessionRequested = false
-      if store.dashboard?.workout != nil { open(fromHome: true) }
-    }
-    #if os(iOS)
-      .fullScreenCover(isPresented: $showingSession) {
-        if sessionFromHome {
-          WorkoutSessionScreen()
-        } else {
-          WorkoutSessionScreen().navigationTransition(.zoom(sourceID: "sessao", in: sessionSource))
-        }
-      }
-    #endif
     .sheet(item: $editing) { item in
       WorkoutEditor(
         item: item, weekdays: Set(item.weekdays), tone: item.tone,
         catalog: store.dashboard?.exerciseCatalog ?? [], startingAt: .exercicios)
     }
     .animation(Motion.tap, value: store.rest == nil)
-  }
-
-  private func open(fromHome: Bool) {
-    sessionFromHome = fromHome
-    showingSession = true
   }
 
   /// O treino do dia abre direto no editor, nos exercícios. Um treino que só

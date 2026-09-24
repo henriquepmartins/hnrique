@@ -218,8 +218,10 @@ struct AcademiaTabs: View {
   @Environment(AcademiaStore.self) private var store
   @State private var showingSetup = false
   @State private var showingStreak = false
-  /// A Hoje pede a sessão aberta. Quem abre é a aba treino, onde o treino mora.
-  @State private var sessionRequested = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// A sessão mora aqui, por cima das abas, para abrir de qualquer uma delas e
+  /// cobrir a barra de abas sem ser uma tela modal do sistema.
+  @State private var showingSession = false
   @Binding var accent: Accent
   @Binding var tab: AcademiaTab
   @Binding var showingApps: Bool
@@ -228,12 +230,7 @@ struct AcademiaTabs: View {
     TabView(selection: appSwitcherSelection($tab, isPresented: $showingApps, bubble: .apps)) {
       Tab("hoje", systemImage: "house", value: AcademiaTab.hoje) {
         shell {
-          OverviewScreen(
-            onWorkout: {
-              tab = .treino
-              sessionRequested = true
-            },
-            onPlan: { tab = .semana })
+          OverviewScreen(onWorkout: openSession, onPlan: { tab = .semana })
         }
       }
       Tab("plano", systemImage: "list.clipboard", value: AcademiaTab.semana) {
@@ -248,7 +245,7 @@ struct AcademiaTabs: View {
       Tab("treino", systemImage: "dumbbell", value: AcademiaTab.treino) {
         shell {
           TodayScreen(
-            sessionRequested: $sessionRequested,
+            sessionOpen: showingSession, onSession: openSession,
             onPlan: { tab = .semana }, onProgress: { tab = .progresso })
         }
       }
@@ -265,6 +262,17 @@ struct AcademiaTabs: View {
       }
     }
     .focoAccessory()
+    .overlay {
+      if showingSession {
+        ZStack {
+          WorkoutSessionScreen(onClose: closeSession)
+          if !reduceMotion { SessionGlow() }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .transition(SessionBloom(reduceMotion: reduceMotion))
+      }
+    }
     .sheet(isPresented: $showingSetup) { SetupScreen() }
     .sheet(isPresented: $showingStreak) {
       if let data = store.dashboard {
@@ -275,6 +283,15 @@ struct AcademiaTabs: View {
       if store.dashboard?.onboardingCompleted == false { showingSetup = true }
     }
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
+  }
+
+  private func openSession() {
+    guard store.dashboard?.workout != nil else { return }
+    withAnimation(reduceMotion ? Motion.plain : Motion.bloom) { showingSession = true }
+  }
+
+  private func closeSession() {
+    withAnimation(reduceMotion ? Motion.plain : Motion.fold) { showingSession = false }
   }
 
   private func shell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
