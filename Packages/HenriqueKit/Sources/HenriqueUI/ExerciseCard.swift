@@ -46,13 +46,15 @@ struct ExerciseCard: View {
             group("aquecimento", color: .mutedInk)
             ForEach(exercise.sets.prep) { set in
               TrainingSetRow(key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: .prep, index: set.index),
-                weight: set.weightKg, repetitions: set.reps, done: set.isDone, failure: false)
+                weight: set.weightKg, repetitions: set.reps, done: set.isDone, failure: false,
+                reference: setReference(exercise, kind: .prep, index: set.index))
             }
           }
           group(exercise.prescription.workToFailure ? "valendo · falha" : "valendo", color: accent.base)
           ForEach(exercise.sets.work) { set in
             TrainingSetRow(key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: .work, index: set.index),
-              weight: set.weightKg, repetitions: set.reps, done: set.isDone, failure: set.toFailure)
+              weight: set.weightKg, repetitions: set.reps, done: set.isDone, failure: set.toFailure,
+              reference: setReference(exercise, kind: .work, index: set.index))
           }
           ForEach([previousPrep, previous].compactMap { $0 }, id: \.self) { line in
             Text(line).font(.caption).foregroundStyle(Color.mutedInk)
@@ -130,7 +132,7 @@ struct TrainingSetRow: View {
   var previous: String? = nil
   /// A carga com que o campo compara o número digitado, para estranhar um 250
   /// onde a última vez foi 25.
-  var reference: Double? = nil
+  var reference: WeightReference? = nil
 
   private var fieldID: String { "set.\(key.exerciseId).\(kind == .prep ? "prep" : "work").\(index)" }
   /// "aquecimento 1" ou "série 1". O leitor de tela lia as duas linhas iguais.
@@ -146,7 +148,7 @@ struct TrainingSetRow: View {
   var body: some View {
     // O aviso vai em cima da linha: embaixo, o teclado cobre ele enquanto se digita.
     VStack(spacing: 4) {
-      if let warning = weightWarning(weightDraft, reference: reference ?? weight) {
+      if let warning = weightWarning(weightDraft, reference: reference) {
         Label(warning, systemImage: "exclamationmark.triangle.fill")
           .font(.caption).foregroundStyle(Color.orange)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -340,12 +342,42 @@ private struct RowChrome: ViewModifier {
 /// O aviso de carga estranha, ou nulo quando o número parece certo. Acima do
 /// limite do servidor o visto fica desligado; abaixo dele o aviso só pergunta,
 /// porque um recorde de verdade também sai do padrão.
-func weightWarning(_ kilograms: Double?, reference: Double?) -> String? {
+/// De onde vem a carga que o campo usa para estranhar um número. O aviso só
+/// fala em "última vez" quando a carga veio mesmo da última sessão.
+enum WeightReference: Equatable {
+  case lastTime(Double)
+  case plan(Double)
+
+  var kilograms: Double {
+    switch self {
+    case .lastTime(let value), .plan(let value): value
+    }
+  }
+}
+
+/// A carga da última vez, senão a do plano. O aquecimento só se compara com
+/// aquecimento: a carga de trabalho num aquecimento sem histórico dava aviso falso.
+func setReference(_ exercise: DashboardExercise, kind: SetKey.Kind, index: Int) -> WeightReference? {
+  switch kind {
+  case .prep:
+    if let last = exercise.previousPrep?.set(index)?.weightKg { return .lastTime(last) }
+    return exercise.prepWeightKg.map { .plan($0) }
+  case .work:
+    if let last = exercise.previous?.weightKg { return .lastTime(last) }
+    return .plan(exercise.prescription.startingWeightKg)
+  }
+}
+
+func weightWarning(_ kilograms: Double?, reference: WeightReference?) -> String? {
   guard let kilograms, kilograms.isFinite else { return nil }
   let ceiling = Limits.setWeightKg.upperBound
   if kilograms > ceiling { return "o limite é \(Formatting.trim(ceiling)) kg" }
-  if let reference, reference > 0, kilograms > reference * 2.5 {
-    return "\(Formatting.trim(kilograms)) kg? da última vez foi \(Formatting.trim(reference))"
+  if let reference, reference.kilograms > 0, kilograms > reference.kilograms * 2.5 {
+    let base = Formatting.trim(reference.kilograms)
+    return switch reference {
+    case .lastTime: "\(Formatting.trim(kilograms)) kg? da última vez foi \(base)"
+    case .plan: "\(Formatting.trim(kilograms)) kg? o plano é \(base)"
+    }
   }
   if kilograms > 400 { return "\(Formatting.trim(kilograms)) kg? confere o número" }
   return nil

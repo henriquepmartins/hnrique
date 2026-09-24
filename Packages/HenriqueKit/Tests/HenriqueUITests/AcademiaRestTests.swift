@@ -199,11 +199,30 @@ struct SessionFiguresTests {
 
   @Test("carga estranha avisa sem mexer no número")
   func weightWarnings() {
-    #expect(weightWarning(25, reference: 20) == nil)
-    #expect(weightWarning(250, reference: 25) == "250 kg? da última vez foi 25")
+    #expect(weightWarning(25, reference: .lastTime(20)) == nil)
+    #expect(weightWarning(250, reference: .lastTime(25)) == "250 kg? da última vez foi 25")
+    #expect(weightWarning(250, reference: .plan(25)) == "250 kg? o plano é 25")
     #expect(weightWarning(450, reference: nil) == "450 kg? confere o número")
-    #expect(weightWarning(1200, reference: 100) == "o limite é 1000 kg")
-    #expect(weightWarning(50, reference: 0) == nil)
-    #expect(weightWarning(nil, reference: 20) == nil)
+    #expect(weightWarning(1200, reference: .lastTime(100)) == "o limite é 1000 kg")
+    #expect(weightWarning(50, reference: .plan(0)) == nil)
+    #expect(weightWarning(nil, reference: .lastTime(20)) == nil)
+  }
+
+  @Test("aquecimento sem histórico nem carga no plano só avisa acima de 400 kg")
+  func warmupWithoutReference() throws {
+    var exercise = try #require(Self.workout().exercises.first)
+    exercise.previousPrep = nil
+    exercise.prepWeightKg = nil
+    #expect(setReference(exercise, kind: .prep, index: 1) == nil)
+    #expect(weightWarning(90, reference: setReference(exercise, kind: .prep, index: 1)) == nil)
+    #expect(weightWarning(410, reference: setReference(exercise, kind: .prep, index: 1)) == "410 kg? confere o número")
+
+    exercise.prepWeightKg = 20
+    #expect(setReference(exercise, kind: .prep, index: 1) == .plan(20))
+    exercise.previousPrep = PreviousPrepSets(
+      date: CalendarDate(year: 2026, month: 9, day: 16)!,
+      sets: [.init(index: 1, weightKg: 24, reps: 10)])
+    #expect(setReference(exercise, kind: .prep, index: 1) == .lastTime(24))
+    #expect(setReference(exercise, kind: .prep, index: 2) == .plan(20))
   }
 }

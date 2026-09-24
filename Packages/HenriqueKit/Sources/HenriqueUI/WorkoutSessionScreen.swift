@@ -378,7 +378,7 @@ struct WorkoutSessionScreen: View {
       previous: kind == .prep
         ? previousLabel(exercise.previousPrep, index: index)
         : previousLabel(exercise.previous, index: index),
-      reference: referenceWeight(exercise, kind: kind, index: index))
+      reference: setReference(exercise, kind: kind, index: index))
   }
 
   /// Mais ou menos uma série valendo. Tirar só aparece enquanto a última ainda
@@ -507,15 +507,6 @@ struct WorkoutSessionScreen: View {
   private func nextSet(after rest: RestState, in workout: WorkoutSummary) -> NextSet? {
     let index = workout.exercises.firstIndex { $0.id == rest.exerciseId } ?? 0
     return NextSet(from: index, in: workout)
-  }
-
-  /// A carga com que o campo compara um número digitado: a da última vez,
-  /// senão a do plano.
-  private func referenceWeight(_ exercise: DashboardExercise, kind: SetKey.Kind, index: Int) -> Double? {
-    switch kind {
-    case .prep: exercise.previousPrep?.set(index)?.weightKg ?? exercise.prepWeightKg
-    case .work: exercise.previous?.weightKg ?? exercise.prescription.startingWeightKg
-    }
   }
 
   /// Encerrar para o relógio e o descanso e mostra o resumo. Já encerrado, o
