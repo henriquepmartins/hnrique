@@ -27,7 +27,7 @@ struct HenriqueApp: App {
 struct LaunchArguments: Sendable {
   var shell = false
   var section: AppSection?
-  var academiaTab: AcademiaTab = .treino
+  var academiaTab: AcademiaTab = .hoje
   var estudosTab: EstudosTab = .hoje
   var idiomasTab: IdiomasTab = .rotina
   var openSession = false

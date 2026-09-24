@@ -56,7 +56,7 @@ public struct RootView: View {
   public init(
     store: AcademiaStore, estudos: EstudosStore, idiomas: IdiomasStore,
     initialSection: AppSection? = nil,
-    initialTab: AcademiaTab = .treino, initialEstudosTab: EstudosTab = .hoje,
+    initialTab: AcademiaTab = .hoje, initialEstudosTab: EstudosTab = .hoje,
     initialIdiomasTab: IdiomasTab = .rotina,
     openSession: Bool = false, openWrite: Bool = false
   ) {
@@ -218,6 +218,8 @@ struct AcademiaTabs: View {
   @Environment(AcademiaStore.self) private var store
   @State private var showingSetup = false
   @State private var showingStreak = false
+  /// A Hoje pede a sessão aberta. Quem abre é a aba treino, onde o treino mora.
+  @State private var sessionRequested = false
   @Binding var accent: Accent
   @Binding var tab: AcademiaTab
   @Binding var showingApps: Bool
@@ -225,7 +227,14 @@ struct AcademiaTabs: View {
   var body: some View {
     TabView(selection: appSwitcherSelection($tab, isPresented: $showingApps, bubble: .apps)) {
       Tab("hoje", systemImage: "house", value: AcademiaTab.hoje) {
-        shell { OverviewScreen(onWorkout: { tab = .treino }, onPlan: { tab = .semana }) }
+        shell {
+          OverviewScreen(
+            onWorkout: {
+              tab = .treino
+              sessionRequested = true
+            },
+            onPlan: { tab = .semana })
+        }
       }
       Tab("plano", systemImage: "list.clipboard", value: AcademiaTab.semana) {
         shell {
@@ -237,7 +246,11 @@ struct AcademiaTabs: View {
         }
       }
       Tab("treino", systemImage: "dumbbell", value: AcademiaTab.treino) {
-        shell { TodayScreen(onPlan: { tab = .semana }, onProgress: { tab = .progresso }) }
+        shell {
+          TodayScreen(
+            sessionRequested: $sessionRequested,
+            onPlan: { tab = .semana }, onProgress: { tab = .progresso })
+        }
       }
       Tab("progresso", systemImage: "chart.xyaxis.line", value: AcademiaTab.progresso) {
         shell { ProgressScreen(onWorkout: { tab = .treino }) }
@@ -448,7 +461,7 @@ struct OverviewScreen: View {
         if let data = store.dashboard {
           DayCard(
             workout: data.workout, choices: DaySwapChoices(data), onWorkout: onWorkout,
-            onSwap: { await store.swapDay(workoutTemplateId: $0) })
+            onPlan: onPlan, onSwap: { await store.swapDay(workoutTemplateId: $0) })
             .staggeredEntrance(index: 0, isReady: true)
           NextDaysStrip(
             days: plannedDays(

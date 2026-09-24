@@ -11,10 +11,15 @@ public struct TodayScreen: View {
   @State private var showingSession = false
   @State private var editing: WeekPlanItem?
   @Namespace private var sessionSource
+  @Binding var sessionRequested: Bool
   let onPlan: () -> Void
   let onProgress: () -> Void
 
-  public init(onPlan: @escaping () -> Void = {}, onProgress: @escaping () -> Void = {}) {
+  public init(
+    sessionRequested: Binding<Bool> = .constant(false),
+    onPlan: @escaping () -> Void = {}, onProgress: @escaping () -> Void = {}
+  ) {
+    _sessionRequested = sessionRequested
     self.onPlan = onPlan
     self.onProgress = onProgress
   }
@@ -106,6 +111,11 @@ public struct TodayScreen: View {
     .overlay { TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil) }
     .onChange(of: store.dashboard?.workout?.id, initial: true) {
       openIds = defaultOpenIds()
+    }
+    .onChange(of: sessionRequested, initial: true) {
+      guard sessionRequested else { return }
+      sessionRequested = false
+      if store.dashboard?.workout != nil { showingSession = true }
     }
     #if os(iOS)
       .fullScreenCover(isPresented: $showingSession) {

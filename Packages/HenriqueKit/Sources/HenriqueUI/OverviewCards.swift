@@ -43,6 +43,7 @@ struct DayCard: View {
   /// Nulo quando o servidor ainda não troca dia: sem menu, em vez de um menu que falha.
   let choices: DaySwapChoices?
   let onWorkout: () -> Void
+  let onPlan: () -> Void
   let onSwap: @MainActor (String?) async -> Bool
   @State private var swaps = 0
 
@@ -65,7 +66,7 @@ struct DayCard: View {
           Button(option.title) { choose(option) }
         }
       }
-      Button(action, systemImage: workout == nil ? "list.clipboard" : "play.fill", action: onWorkout)
+      Button(action, systemImage: actionSymbol, action: workout == nil ? onPlan : onWorkout)
         .buttonStyle(.glassProminent).tint(accent.deep).foregroundStyle(.white).controlSize(.large)
         .padding(.top, 6)
         .accessibilityIdentifier("hoje.abrir")
@@ -114,6 +115,11 @@ struct DayCard: View {
     }
     guard let replaced = choices?.replaced else { return state }
     return "\(state) · \(replaced)"
+  }
+
+  private var actionSymbol: String {
+    guard workout != nil else { return "list.clipboard" }
+    return isClosed ? "eye" : "play.fill"
   }
 
   private var action: String {
