@@ -657,6 +657,55 @@ final class FluxoDrive: XCTestCase {
     return Int(label.label) ?? -1
   }
 
+  /// O campo de carga do aquecimento fica à vista com o teclado aberto, e o
+  /// número digitado vai junto mesmo tocando em "concluir" sem fechar o teclado.
+  func testCargaDoAquecimentoNoPlano() {
+    launch(aba: "semana")
+    let menu = app.buttons["editar Superiores"]
+    XCTAssert(menu.waitForExistence(timeout: 8), "plano listou Superiores")
+    let edit = app.buttons["editar"]
+    menu.tap()
+    XCTAssert(edit.waitForExistence(timeout: 3), "menu do treino abriu")
+    edit.tap()
+    goToStep("exercícios")
+    let field = app.textFields["plano.carga-aquecimento"].firstMatch
+    XCTAssert(field.waitForExistence(timeout: 5), "editor mostra a carga do aquecimento")
+    field.tap()
+    XCTAssert(app.keyboards.firstMatch.waitForExistence(timeout: 3), "teclado abriu")
+    field.typeText("12")
+    XCTAssert(field.isHittable, "o campo focado continua à vista")
+    XCTAssertEqual(field.value as? String, "12", "o campo guardou o que foi digitado")
+    shot("70-plano-aquecimento-teclado")
+    app.buttons["concluir"].tap()
+    XCTAssert(app.buttons["concluir"].waitForNonExistence(timeout: 10), "editor salvou e fechou")
+
+    XCTAssert(menu.waitForExistence(timeout: 5))
+    menu.tap()
+    XCTAssert(edit.waitForExistence(timeout: 3))
+    edit.tap()
+    goToStep("exercícios")
+    XCTAssert(field.waitForExistence(timeout: 5))
+    XCTAssertEqual(field.value as? String, "12", "a carga do aquecimento foi salva")
+    shot("71-plano-aquecimento-salvo")
+    app.buttons["fechar"].tap()
+  }
+
+  func testFitaDaSemana() {
+    launch(aba: "treino")
+    let weekdays = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
+    let width = app.windows.firstMatch.frame.width
+    let chips = app.buttons.matching(NSPredicate(format: "label CONTAINS ', '"))
+    XCTAssert(app.buttons["Ir para hoje"].waitForExistence(timeout: 8), "a fita de dias apareceu")
+    let visible = chips.allElementsBoundByIndex
+      .filter { chip in weekdays.contains { chip.label.lowercased().hasPrefix($0 + ",") } }
+      .filter { $0.frame.minX >= 0 && $0.frame.maxX <= width }
+      .sorted { $0.frame.minX < $1.frame.minX }
+    XCTAssertEqual(visible.count, 7, "uma semana inteira à vista: \(visible.map(\.label))")
+    let names = visible.map { $0.label.lowercased() }
+    XCTAssert(zip(names, weekdays).allSatisfy { $0.hasPrefix($1) }, "a semana vai de segunda a domingo: \(names)")
+    shot("72-fita-semana")
+  }
+
   func testPastaDeTreino() {
     launch(aba: "semana")
     let menu = app.buttons["editar Superiores"]
