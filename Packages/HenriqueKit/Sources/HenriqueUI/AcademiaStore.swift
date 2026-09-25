@@ -307,6 +307,7 @@ public final class AcademiaStore {
     static let restOverrides = "academia.descanso.por-exercicio"
     static let finished = "academia.treinos-encerrados"
     static let started = "academia.treinos-comecados"
+    static let celebratedTier = "academia.insignia-comemorada"
   }
 
   private func loadLocalState() {
@@ -471,6 +472,54 @@ public final class AcademiaStore {
     for day in days { attendance[day.date] = day }
     attendanceRanges.append(range)
     return true
+  }
+
+  // MARK: - A insígnia
+
+  /// A sequência de presença atual com o começo dela, lida de até 400 dias de
+  /// frequência, que é o limite da rota.
+  public private(set) var tenure: StreakTenure?
+  /// O nível que ainda não foi comemorado. Some quando a camada abre.
+  public private(set) var pendingInsignia: CelebratedTier?
+
+  #if DEBUG
+    /// `--insignia N`: finge N meses de sequência e ignora o que já foi
+    /// comemorado, para tocar qualquer nível no simulador.
+    public var insigniaMonthsOverride: Int?
+  #endif
+
+  public func refreshInsignia() async {
+    #if DEBUG
+      if let months = insigniaMonthsOverride {
+        guard tenure == nil, dashboard != nil || isCaptureShell else { return }
+        let forced = StreakTenure(start: .today, months: months)
+        tenure = forced
+        pendingInsignia = forced.celebration(after: nil)
+        return
+      }
+    #endif
+    let today = CalendarDate.today
+    guard dashboard?.date == today,
+      await loadAttendance(from: today.adding(days: -399), to: today)
+    else { return }
+    tenure = StreakTenure(attendance: attendance, today: today)
+    pendingInsignia = tenure?.celebration(after: celebratedTier)
+  }
+
+  /// Grava quando a camada abre, e não quando fecha: fechar o app no meio da
+  /// festa não pode fazer ela tocar de novo na próxima abertura.
+  public func insigniaOpened(_ celebrated: CelebratedTier) {
+    pendingInsignia = nil
+    #if DEBUG
+      if insigniaMonthsOverride != nil { return }
+    #endif
+    guard let data = try? JSONEncoder.henrique().encode(celebrated) else { return }
+    defaults.set(data, forKey: DefaultsKey.celebratedTier)
+  }
+
+  private var celebratedTier: CelebratedTier? {
+    defaults.data(forKey: DefaultsKey.celebratedTier)
+      .flatMap { try? JSONDecoder.henrique().decode(CelebratedTier.self, from: $0) }
   }
 
   @discardableResult

@@ -21,7 +21,7 @@ struct StreakSnapshot: Equatable {
   }
 }
 
-private let streakGradient = LinearGradient(
+let streakGradient = LinearGradient(
   colors: [streakTone.top, streakTone.bottom], startPoint: .top, endPoint: .bottom)
 
 // MARK: - O contador do topo
@@ -34,6 +34,8 @@ struct StreakCounter: View {
   @State private var rises = 0
   let count: Int
   let isLit: Bool
+  /// A chama some enquanto a insígnia está aberta: a chama dela é esta, voando.
+  var stage: InsigniaStage?
   let action: () -> Void
 
   var body: some View {
@@ -47,6 +49,10 @@ struct StreakCounter: View {
               .opacity(isLit ? 1 : 0)
           }
           .symbolEffect(.bounce, value: rises)
+          .opacity(stage?.show == nil ? 1 : 0)
+          .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+            stage?.flameFrame = $0
+          }
         Text("\(count)")
           .foregroundStyle(isLit ? Color.ink : Color.mutedInk)
           .contentTransition(reduceMotion ? .identity : .numericText(value: Double(count)))
@@ -94,6 +100,9 @@ struct StreakScreen: View {
           if let week = snapshot.week {
             StreakRibbon(days: week, entered: entered)
           }
+          if let tenure = store.tenure, let tier = tenure.tier {
+            InsigniaRow(tier: tier, months: tenure.months)
+          }
           Text("\(streak.weeklyCompleted)/\(streak.weeklyPlanned) na semana")
             .font(.subheadline).monospacedDigit().foregroundStyle(Color.mutedInk)
             .opacity(weekChecked ? 1 : 0)
@@ -136,6 +145,28 @@ struct StreakScreen: View {
       try? await Task.sleep(for: .seconds(Entrance.sparkle))
       celebrating = true
     }
+  }
+}
+
+// MARK: - A insígnia
+
+private struct InsigniaRow: View {
+  let tier: StreakTier
+  let months: Int
+
+  var body: some View {
+    HStack(spacing: Space.l) {
+      InsigniaBadge(tier: tier, size: 56)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(tier.name).font(.title3.weight(.bold)).fontDesign(.rounded)
+        Text(tier.monthsLabel(months)).font(.subheadline).foregroundStyle(Color.mutedInk)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(Space.l)
+    .paperCard()
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("insígnia \(tier.name), \(tier.monthsLabel(months))")
   }
 }
 

@@ -32,6 +32,7 @@ struct LaunchArguments: Sendable {
   var idiomasTab: IdiomasTab = .rotina
   var openSession = false
   var openWrite = false
+  var insigniaMonths: Int?
 }
 
 extension LaunchArguments {
@@ -45,6 +46,9 @@ extension LaunchArguments {
   ///
   /// `--casca` abre o app já dentro, sem servidor e sem conta, com as abas
   /// vazias. Serve só para capturar a casca do app quando não há sessão à mão.
+  ///
+  /// `--insignia N` finge N meses de sequência de presença e toca a insígnia
+  /// daquele nível, mesmo que ela já tenha sido comemorada.
   static func parse(_ arguments: [String]) -> LaunchArguments {
     var launch = LaunchArguments()
     #if DEBUG
@@ -56,6 +60,7 @@ extension LaunchArguments {
         return arguments[index + 1]
       }
       launch.section = value("--app").flatMap(AppSection.init(rawValue:))
+      launch.insigniaMonths = value("--insignia").flatMap(Int.init)
       let tab = value("--aba")
       if launch.section == .estudos {
         switch tab {
@@ -88,6 +93,7 @@ enum AppConfiguration {
       idiomas: IdiomasStore(client: client)
     )
     #if DEBUG
+      stores.academia.insigniaMonthsOverride = launch.insigniaMonths
       if launch.shell {
         stores.academia.openCaptureShell()
         stores.estudos.openCaptureShell()

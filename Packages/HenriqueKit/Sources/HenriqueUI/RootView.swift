@@ -219,6 +219,8 @@ struct AcademiaTabs: View {
   @State private var showingSetup = false
   @State private var showingStreak = false
   @State private var sessionRequested = false
+  @State private var stage = InsigniaStage()
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var accent: Accent
   @Binding var tab: AcademiaTab
   @Binding var showingApps: Bool
@@ -262,6 +264,19 @@ struct AcademiaTabs: View {
       }
     }
     .focoAccessory()
+    .overlay { InsigniaOverlay(stage: stage, onClose: closeInsignia) }
+    .task(id: store.dashboard?.date) { await store.refreshInsignia() }
+    .task(id: store.pendingInsignia) {
+      guard let pending = store.pendingInsignia, stage.show == nil else { return }
+      // A chama do topo precisa estar na tela antes de sair voando dela.
+      try? await Task.sleep(for: .seconds(0.6))
+      guard !Task.isCancelled else { return }
+      stage.show = InsigniaShow(
+        tier: pending.tier, months: store.tenure?.months ?? pending.tier.rawValue,
+        origin: stage.flameFrame, wasLit: store.dashboard?.hasAttended(on: .today) ?? false,
+        opened: .now)
+      store.insigniaOpened(pending)
+    }
     .sheet(isPresented: $showingSetup) { SetupScreen() }
     .sheet(isPresented: $showingStreak) {
       if let data = store.dashboard {
@@ -272,6 +287,16 @@ struct AcademiaTabs: View {
       if store.dashboard?.onboardingCompleted == false { showingSetup = true }
     }
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
+  }
+
+  private func closeInsignia() {
+    guard var show = stage.show, show.closed == nil else { return }
+    show.closed = .now
+    stage.show = show
+    Task {
+      try? await Task.sleep(for: .seconds(InsigniaBeat.closing(reduceMotion: reduceMotion)))
+      stage.show = nil
+    }
   }
 
   private func shell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -287,7 +312,8 @@ struct AcademiaTabs: View {
           ToolbarItem(placement: .navigationLeading) {
             if let data = store.dashboard {
               StreakCounter(
-                count: data.streak(.attendance), isLit: data.hasAttended(on: .today)
+                count: data.streak(.attendance), isLit: data.hasAttended(on: .today),
+                stage: stage
               ) { showingStreak = true }
             }
           }.sharedBackgroundVisibility(.hidden)

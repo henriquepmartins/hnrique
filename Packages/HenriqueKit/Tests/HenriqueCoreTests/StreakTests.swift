@@ -145,3 +145,113 @@ struct StreakTests {
     #expect(streak.complete == StreakFigure(count: 0, target: nil))
   }
 }
+
+@Suite("A insígnia dos meses de presença")
+struct InsigniaTests {
+  static let calendar: Calendar = {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "America/Sao_Paulo")!
+    return calendar
+  }()
+  static let today = CalendarDate(iso: "2026-09-25")!
+
+  static func date(_ iso: String) -> CalendarDate { CalendarDate(iso: iso)! }
+
+  /// Um dia de presença a cada `step` dias, de `from` até `to`.
+  static func attendance(
+    from: String, to: String, every step: Int, workSets: Int = 3
+  ) -> [CalendarDate: AttendanceDay] {
+    var days: [CalendarDate: AttendanceDay] = [:]
+    var cursor = date(from)
+    while cursor <= date(to) {
+      days[cursor] = AttendanceDay(date: cursor, workSets: workSets, completed: true)
+      cursor = cursor.adding(days: step, in: calendar)
+    }
+    return days
+  }
+
+  static func tenure(_ attendance: [CalendarDate: AttendanceDay]) -> StreakTenure? {
+    StreakTenure(attendance: attendance, today: today, calendar: calendar)
+  }
+
+  @Test("os meses viram nível, e do décimo em diante é radiante")
+  func tierFromMonths() {
+    #expect(StreakTier(months: 0) == nil)
+    #expect(StreakTier(months: -2) == nil)
+    #expect(StreakTier(months: 1) == .ferro)
+    #expect(StreakTier(months: 9) == .surreal)
+    #expect(StreakTier(months: 10) == .radiante)
+    #expect(StreakTier(months: 11) == .radiante)
+    #expect(StreakTier(months: 12) == .radiante)
+    #expect(StreakTier(months: 15) == .radiante)
+    #expect(
+      StreakTier.allCases.map(\.name) == [
+        "ferro", "bronze", "prata", "ouro", "platina", "diamante", "épico", "imortal",
+        "surreal", "radiante",
+      ])
+  }
+
+  @Test("sem presença não há sequência")
+  func emptyAttendance() {
+    #expect(Self.tenure([:]) == nil)
+  }
+
+  @Test("presença a cada 3 dias desde 20 de junho dá 3 meses, prata")
+  func steadyAttendance() {
+    let tenure = Self.tenure(Self.attendance(from: "2026-06-20", to: "2026-09-24", every: 3))
+    #expect(tenure?.start == Self.date("2026-06-20"))
+    #expect(tenure?.months == 3)
+    #expect(tenure?.tier == .prata)
+  }
+
+  @Test("um buraco de 6 dias corta o começo para depois dele")
+  func gapCutsTheStart() {
+    var days = Self.attendance(from: "2026-06-20", to: "2026-07-20", every: 3)
+    days.merge(Self.attendance(from: "2026-07-26", to: "2026-09-24", every: 2)) { $1 }
+    let tenure = Self.tenure(days)
+    #expect(tenure?.start == Self.date("2026-07-26"))
+    #expect(tenure?.months == 1)
+    #expect(tenure?.tier == .ferro)
+  }
+
+  @Test("o último treino a 6 dias de hoje já quebrou a sequência")
+  func staleNewestDay() {
+    #expect(Self.tenure(Self.attendance(from: "2026-06-20", to: "2026-09-19", every: 1)) == nil)
+    #expect(
+      Self.tenure(Self.attendance(from: "2026-09-20", to: "2026-09-20", every: 1))?.start
+        == Self.date("2026-09-20"))
+  }
+
+  @Test("dia sem série valendo não conta")
+  func zeroWorkSetsAreIgnored() {
+    var days = Self.attendance(from: "2026-06-20", to: "2026-09-24", every: 3)
+    for day in Self.attendance(from: "2026-08-01", to: "2026-08-10", every: 1, workSets: 0).values {
+      days[day.date] = day
+    }
+    let tenure = Self.tenure(days)
+    #expect(tenure?.start == Self.date("2026-08-13"))
+    #expect(tenure?.months == 1)
+    #expect(Self.tenure(Self.attendance(from: "2026-09-20", to: "2026-09-24", every: 1, workSets: 0)) == nil)
+  }
+
+  @Test("sequência de menos de um mês não tem nível nem comemoração")
+  func noTierBeforeAMonth() {
+    let tenure = StreakTenure(start: Self.date("2026-09-01"), months: 0)
+    #expect(tenure.tier == nil)
+    #expect(tenure.celebration(after: nil) == nil)
+  }
+
+  @Test("comemora sem registro, quando o nível sobe e quando a sequência recomeça")
+  func whatToCelebrate() {
+    let start = Self.date("2026-06-20")
+    let tenure = StreakTenure(start: start, months: 3)
+    let prata = CelebratedTier(start: start, tier: .prata)
+    #expect(tenure.celebration(after: nil) == prata)
+    #expect(tenure.celebration(after: prata) == nil)
+    #expect(
+      tenure.celebration(after: CelebratedTier(start: start, tier: .bronze)) == prata)
+    #expect(
+      tenure.celebration(after: CelebratedTier(start: Self.date("2026-01-10"), tier: .surreal))
+        == prata)
+  }
+}

@@ -300,3 +300,53 @@ O simulador iOS passou com 133 testes em 17 suítes. A API passou na checagem Ty
   - skip: sem disputa de design.
 - [ ] 8. Run Opening a PR.
   - skip: fluxo do projeto é commit em main; migração e deploy de produção e release esperam confirmação.
+
+# Correção das animações de treino, 24 de setembro
+
+- [ ] 1. Reproduce it yourself on the matching surface via the driver skill.
+- [x] 2. Binary-search the cause.
+  - Histórico confirma fade original de 300 ms e atraso de 50 ms. Transações de entrada abrangem subárvores e a expansão recalcula seu conteúdo a cada quadro. Travamentos ainda precisam de medição.
+- [x] 3. Plan the fix.
+  - Ground. SessionOrigin contém o quadro e o preenchimento do card; a sessão mora acima das abas.
+  - Sketch. Comparar máscara Shape com conteúdo fixo e zoom nativo.
+  - Agree. Usuário confirmou expansão contínua, cantos em morph e conteúdo em fade.
+  - Implement. Um worker altera os fades compartilhados; o coordenador cuida da apresentação.
+  - Scrap. Remover a implementação anterior ao integrar a escolhida.
+- [x] 4. Verify on the same surface.
+- [ ] 5. Stage the commits so the failing repro lands before the fix in git history.
+  - skip: ajuste visual sem teste unitário que comprove fluidez; entrega local sem commit solicitado.
+- [ ] 6. Run Opening a PR.
+  - skip: pedido de ajuste local, sem publicação solicitada.
+
+O primeiro bloqueio é a reprodução no simulador. A investigação de histórico e a revisão da expansão podem ocorrer enquanto o teste de UI compila. Design.swift e telas de entrada pertencem a um worker; SessionPresentation.swift e WorkoutSessionScreen.swift pertencem ao coordenador. A menor divisão útil separa fade e morph, seguida de um único build integrado.
+
+Model the Domain manteve SessionOrigin como origem congelada no toque. Subtract Before You Add orientou remover SessionGrowth, o atraso independente da sessão e o estado de direção do editor. O novo SessionMorph interpola o recorte, enquanto o fundo usa transform e opacidade e os exercícios mantêm seu layout.
+
+Build iOS passou. O teste testTransicaoSessaoTreino passou com três ciclos de abertura e fechamento e zero falhas em 27,186 segundos. Capturas em output/verify/20260924-120239. A revisão independente aprovou o diff estático; o comentário deslocado no teste foi corrigido. O teste antigo testSessaoDeTreino falhou antes da abertura por não encontrar editar Superiores. O primeiro teste novo selecionou uma segunda-feira fora da tela; o seletor agora exige isHittable.
+
+A fluidez no iPhone físico ainda não foi medida. A gravação inicial perdeu seu processo durante a interrupção da sessão; reiniciei apenas o simulador de teste para gravar novamente.
+
+Verificação final passou novamente com zero falhas em 29,059 segundos. O teste agora aguarda a segunda-feira ficar visível. A gravação em output/motion-review/treino-expand.mp4 mostra abertura e retorno; os quadros intermediários confirmam recorte crescente e texto na posição final, sem escala dos exercícios. Não houve medição de FPS ou de hitches no iPhone físico. Nenhum release, commit ou instalação no iPhone foi feito.
+
+Entrega no iPhone solicitada pelo usuário. Compilei o working tree em Release, com API https://hnrq.vercel.app e assinatura H2474S94U5. devicectl confirmou instalação no iPhone 13, UDID 00008110-000A5DC23C02401E. Instalação direta, sem publicar release no GitHub.
+
+# Insígnia de meses de presença, 25 de setembro
+
+- [x] 1. `how` over the affected subsystem.
+  - Contador da chama no topo (StreakScreen), presença por intervalo no AcademiaStore (limite 400 dias no servidor), regra de sequência do repo web lida.
+- [x] 2. `architect` for parallel design exploration.
+  - architect skipped: a referência fixa o visual e a memória do dono fixa o mecanismo (camada acima das abas, um relógio só, texto em fade). Único fork de dado (data de início no servidor ou no cliente) decidido pela evidência: a rota de presença já cobre 400 dias.
+- [x] 3. Write the throughput checkpoint as four todo items.
+  - Blocking first steps. Tipos puros (nível, tempo de sequência, já comemorado) com testes antes da camada visual.
+  - Independent workstreams. n/a: núcleo e camada visual se tocam no mesmo fluxo; um só worker.
+  - Shared mutable state. O working tree tem mudanças não commitadas de 24/09 que estão no iPhone. O worker trabalha no próprio tree, sem worktree, porque um worktree sairia do HEAD sem elas; o coordenador não escreve no tree enquanto ele roda.
+  - Smallest safe decomposition. Um worker: core + UI + alavanca `--insignia N`; o coordenador revisa e grava a animação.
+- [x] 4. Delegate code-writing to a subagent.
+  - Worker único no tree principal: núcleo (nível, tempo de sequência, já comemorado) com 8 testes, camada da insígnia, contador publicando o quadro da chama, `--insignia N`. Diff revisado.
+- [x] 5. Verify on the matching surface.
+  - Suíte do iPhone 17 verde (216 core + 42 UI). Animação gravada no simulador contra o servidor de teste na 3001 para os níveis 1, 3, 7 e 10; vídeos em output/insignia/validar. Fluidez no iPhone físico ainda não medida.
+- [ ] 6. Rebase into small, ordered commits; stack follow-ups.
+  - espera a validação do dono; RootView.swift mistura hunks de 24/09 não commitados.
+- [ ] 7. If the design is contested, `interrogate` before shipping.
+- [ ] 8. Run Opening a PR.
+  - skip: fluxo do projeto é commit em main e release.sh.
