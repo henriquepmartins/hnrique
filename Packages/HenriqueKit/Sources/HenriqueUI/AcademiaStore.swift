@@ -863,12 +863,19 @@ extension AcademiaStore {
     rest = value
     if let value, let data = try? JSONEncoder().encode(value) {
       defaults.set(data, forKey: DefaultsKey.rest)
-      restAlarm.schedule(at: value.endsAt)
+      restAlarm.schedule(at: value.endsAt, next: nextSet(after: value))
     } else {
       defaults.removeObject(forKey: DefaultsKey.rest)
       restAlarm.cancel()
     }
     scheduleRestExpiry()
+  }
+
+  /// A série que vem depois, procurada a partir do exercício que abriu o descanso.
+  func nextSet(after rest: RestState) -> NextSet? {
+    guard let workout = dashboard?.workout else { return nil }
+    let index = workout.exercises.firstIndex { $0.id == rest.exerciseId } ?? 0
+    return NextSet(from: index, in: workout)
   }
 
   /// Passado o fim, a barra fica uns segundos dizendo "vai" e sai sozinha.

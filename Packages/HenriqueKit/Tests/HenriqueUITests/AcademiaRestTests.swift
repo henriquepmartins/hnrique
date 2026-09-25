@@ -130,6 +130,25 @@ struct StoreRestTests {
     #expect(alarm.scheduled == nil)
   }
 
+  @Test("o aviso do descanso diz o exercício e a carga da próxima série")
+  func alarmNamesTheNextSet() async throws {
+    let alarm = FakeRestAlarm()
+    let store = await lojaComPainel(alarm: alarm)
+    _ = await store.record(key: workKey("supino-reto", 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
+      .value
+    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · A · 10 kg")
+
+    _ = await store.record(key: workKey("desenvolvimento", 2), weightKg: 16.5, reps: 10, completed: false, toFailure: false)?
+      .value
+    _ = await store.record(key: workKey("desenvolvimento", 1), weightKg: 14, reps: 12, completed: true, toFailure: false)?
+      .value
+    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · 16,5 kg")
+
+    store.adjustRest(by: 15)
+    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · 16,5 kg")
+    #expect(restAlarmBody(nil) == "hora da próxima série")
+  }
+
   @Test("encerrar guarda a hora, para o descanso e uma série nova reabre")
   func finishAndReopen() async throws {
     let store = await lojaComPainel()

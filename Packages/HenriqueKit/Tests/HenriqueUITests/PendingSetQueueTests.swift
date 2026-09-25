@@ -74,9 +74,13 @@ final class FakeNetwork: URLProtocol, @unchecked Sendable {
 @MainActor
 final class FakeRestAlarm: RestAlarm {
   var scheduled: Date?
+  var next: NextSet?
   var cancels = 0
 
-  func schedule(at date: Date) { scheduled = date }
+  func schedule(at date: Date, next: NextSet?) {
+    scheduled = date
+    self.next = next
+  }
   func cancel() {
     scheduled = nil
     cancels += 1

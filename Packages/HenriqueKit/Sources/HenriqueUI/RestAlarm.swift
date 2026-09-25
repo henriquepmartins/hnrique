@@ -1,12 +1,20 @@
 import Foundation
+import HenriqueCore
 import UserNotifications
 
 /// O aviso do fim do descanso com o app no fundo. Protocolo para os testes da
 /// store não tocarem na central de notificações do sistema.
 @MainActor
 protocol RestAlarm {
-  func schedule(at date: Date)
+  func schedule(at date: Date, next: NextSet?)
   func cancel()
+}
+
+/// "puxada alta · 48 kg", ou "puxada alta · A · 35 kg" no aquecimento.
+func restAlarmBody(_ next: NextSet?) -> String {
+  guard let next else { return "hora da próxima série" }
+  let warmup = next.kind == .prep ? " · A" : ""
+  return "\(next.exerciseName.lowercased())\(warmup) · \(Formatting.trim(next.weightKg)) kg"
 }
 
 /// Um aviso só, sempre com o mesmo identificador: agendar de novo substitui o
@@ -22,7 +30,7 @@ final class AcademiaRestAlarm: RestAlarm {
   /// identificador de pacote.
   private var isApp: Bool { Bundle.main.bundleURL.pathExtension == "app" }
 
-  func schedule(at date: Date) {
+  func schedule(at date: Date, next: NextSet?) {
     guard isApp else { return }
     let previous = tail
     tail = Task {
@@ -41,7 +49,7 @@ final class AcademiaRestAlarm: RestAlarm {
       }
       let content = UNMutableNotificationContent()
       content.title = "descanso completo"
-      content.body = "hora da próxima série"
+      content.body = restAlarmBody(next)
       content.sound = .default
       let request = UNNotificationRequest(
         identifier: Self.identifier, content: content,
