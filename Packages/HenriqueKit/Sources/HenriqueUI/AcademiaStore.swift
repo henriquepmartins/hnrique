@@ -401,7 +401,18 @@ public final class AcademiaStore {
     }
   }
 
-  public func signOut() async {
+  /// Séries marcadas que o servidor ainda não aceitou.
+  public var unsentCount: Int { pendingSets.count }
+
+  /// Tenta subir a fila antes de sair. Falso quando sobrou série e
+  /// `discardingUnsent` é falso: nada muda, e a tela pergunta se pode perder.
+  /// Se o reenvio esbarrar na sessão vencida, a store sai sozinha e a fila fica.
+  @discardableResult
+  public func signOut(discardingUnsent: Bool = false) async -> Bool {
+    if !discardingUnsent, !pendingSets.isEmpty {
+      _ = await resend()
+      guard pendingSets.isEmpty else { return false }
+    }
     sessionID = UUID()
     endRest()
     invalidateDays()
@@ -417,6 +428,7 @@ public final class AcademiaStore {
     banner = nil
     phase = .idle
     await client.signOut()
+    return true
   }
 
   public func load() async {

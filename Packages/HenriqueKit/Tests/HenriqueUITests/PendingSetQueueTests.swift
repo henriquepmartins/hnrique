@@ -117,6 +117,7 @@ func makeStore(alarm: FakeRestAlarm = FakeRestAlarm()) -> AcademiaStore {
 @MainActor
 func resetLocalState() {
   UserDefaults(suiteName: testDefaultsSuite)!.removePersistentDomain(forName: testDefaultsSuite)
+  MemoryTokenStore.token = "sessao-de-teste"
   limparFila()
 }
 
@@ -316,6 +317,44 @@ struct PendingSetQueueTests {
     _ = await second.resend()
     #expect(!second.isWaiting(key))
     #expect(FakeNetwork.answered["supino-reto"] == 5)
+  }
+
+  @Test("sair com série na fila e sem rede para e mantém a fila")
+  func signOutKeepsTheQueue() async {
+    let store = await lojaComPainel()
+    _ = await store.record(key: chave, weightKg: 42.5, reps: 9, completed: true, toFailure: true)?
+      .value
+    #expect(store.unsentCount == 1)
+
+    #expect(await store.signOut() == false)
+    #expect(store.isSignedIn)
+    #expect(store.unsentCount == 1)
+    #expect(makeStore().isWaiting(chave))
+  }
+
+  @Test("sair descartando apaga a fila, no aparelho e no disco")
+  func signOutDiscarding() async {
+    let store = await lojaComPainel()
+    _ = await store.record(key: chave, weightKg: 42.5, reps: 9, completed: true, toFailure: true)?
+      .value
+
+    #expect(await store.signOut(discardingUnsent: true))
+    #expect(!store.isSignedIn)
+    #expect(store.unsentCount == 0)
+    #expect(makeStore().unsentCount == 0)
+  }
+
+  @Test("sair com rede sobe a fila antes")
+  func signOutSendsFirst() async {
+    let store = await lojaComPainel()
+    _ = await store.record(key: chave, weightKg: 42.5, reps: 9, completed: true, toFailure: true)?
+      .value
+    FakeNetwork.offline = false
+
+    #expect(await store.signOut())
+    #expect(FakeNetwork.answered["supino-reto"] == 1)
+    #expect(!store.isSignedIn)
+    #expect(makeStore().unsentCount == 0)
   }
 
   @Test("a série guardada sobrevive ao app fechar")
