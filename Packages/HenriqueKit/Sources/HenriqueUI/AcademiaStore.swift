@@ -5,24 +5,6 @@ import Observation
   import UIKit
 #endif
 
-public struct SetKey: Hashable, Sendable, Codable {
-  public enum Kind: String, Hashable, Sendable, Codable { case prep, work }
-
-  public let date: CalendarDate
-  public let templateId: String
-  public let exerciseId: String
-  public let kind: Kind
-  public let index: Int
-
-  public init(date: CalendarDate, templateId: String, exerciseId: String, kind: Kind, index: Int) {
-    self.date = date
-    self.templateId = templateId
-    self.exerciseId = exerciseId
-    self.kind = kind
-    self.index = index
-  }
-}
-
 struct SetDraft: Equatable, Sendable, Codable {
   let weightKg: Double
   let reps: Int

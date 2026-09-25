@@ -174,8 +174,8 @@ struct PendingSetQueueTests {
     #expect(FakeNetwork.recordedSets > tentativasOffline)
   }
 
-  @Test("leituras e edições offline conservam a data da marcação", arguments: [SetKey.Kind.prep, .work])
-  func preservesPendingCompletionDate(kind: SetKey.Kind) async throws {
+  @Test("leituras e edições offline conservam a data da marcação", arguments: [SetKind.prep, .work])
+  func preservesPendingCompletionDate(kind: SetKind) async throws {
     let store = await lojaComPainel()
     let key = SetKey(
       date: .today, templateId: chave.templateId, exerciseId: chave.exerciseId, kind: kind, index: 2)
@@ -202,8 +202,8 @@ struct PendingSetQueueTests {
     #expect(remarked > first)
   }
 
-  @Test("editar série já salva conserva a data do servidor", arguments: [SetKey.Kind.prep, .work])
-  func preservesAcceptedCompletionDate(kind: SetKey.Kind) async throws {
+  @Test("editar série já salva conserva a data do servidor", arguments: [SetKind.prep, .work])
+  func preservesAcceptedCompletionDate(kind: SetKind) async throws {
     let store = await lojaComPainel()
     let key = SetKey(
       date: .today, templateId: chave.templateId, exerciseId: chave.exerciseId, kind: kind, index: 1)

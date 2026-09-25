@@ -375,7 +375,7 @@ struct WorkoutSessionScreen: View {
   }
 
   private func row(
-    exercise: DashboardExercise, date: CalendarDate, templateId: String, kind: SetKey.Kind,
+    exercise: DashboardExercise, date: CalendarDate, templateId: String, kind: SetKind,
     index: Int, weight: Double, reps: Int, done: Bool, failure: Bool
   ) -> some View {
     let isNext = kind == .work && !done && exercise.sets.work.first(where: { !$0.isDone })?.index == index

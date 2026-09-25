@@ -118,7 +118,7 @@ struct TrainingSetRow: View {
   @State private var tapCount = 0
   private enum Field: Hashable { case weight, reps }
   let key: SetKey
-  private var kind: SetKey.Kind { key.kind }
+  private var kind: SetKind { key.kind }
   private var index: Int { key.index }
   let weight: Double
   let repetitions: Int
@@ -322,7 +322,7 @@ struct TrainingSetRow: View {
 /// estado (parada, próxima, feita), que é o que diz ao dedo onde ir.
 private struct RowChrome: ViewModifier {
   let scale: SetRowScale
-  let kind: SetKey.Kind
+  let kind: SetKind
   let done: Bool
   let isNext: Bool
   let accent: Accent
@@ -357,7 +357,7 @@ enum WeightReference: Equatable {
 
 /// A carga da última vez, senão a do plano. O aquecimento só se compara com
 /// aquecimento: a carga de trabalho num aquecimento sem histórico dava aviso falso.
-func setReference(_ exercise: DashboardExercise, kind: SetKey.Kind, index: Int) -> WeightReference? {
+func setReference(_ exercise: DashboardExercise, kind: SetKind, index: Int) -> WeightReference? {
   switch kind {
   case .prep:
     if let last = exercise.previousPrep?.set(index)?.weightKg { return .lastTime(last) }
