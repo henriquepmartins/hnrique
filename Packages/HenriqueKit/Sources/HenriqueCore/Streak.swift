@@ -65,37 +65,38 @@ extension WorkoutStreak {
     return copy
   }
 
-  /// `sessionDates` nulo é o servidor que não sabe responder, não um histórico
-  /// vazio, e o único jeito honesto de desenhar isso é não marcar dia nenhum
-  /// como feito. Esconder a fita inteira é decisão da tela.
-  public init(dashboard: Dashboard, today: CalendarDate = .today) {
-    let done = Set(dashboard.sessionDates ?? [])
-    let plannedWeekdays = Set(dashboard.weekPlan.flatMap(\.weekdays))
+  /// A fita vai de segunda a domingo da semana de hoje, com a mesma conta da
+  /// home: um dia do plano coberto por treino em outro dia fica feito. Dia sem
+  /// plano fica feito só se teve treino, senão é folga no passado e livre
+  /// adiante. Sem `weekAttendance`, `fallback` nem `sessionDates`, nenhum dia
+  /// fica feito; esconder a fita inteira é decisão da tela.
+  public init(
+    dashboard: Dashboard, today: CalendarDate = .today,
+    fallback: [CalendarDate: AttendanceDay]? = nil
+  ) {
+    let week = dashboard.trainingWeek(today: today, fallback: fallback)
+    let attended = Set(week.attended)
 
     let days = (0..<7).map { offset in
-      let date = today.adding(days: offset - 6)
-      let isPlanned = plannedWeekdays.contains(date.weekday())
+      let date = week.monday.adding(days: offset)
       let state: StreakDayState =
-        if done.contains(date) {
-          .done
-        } else if date < today {
-          isPlanned ? .missed : .rest
-        } else {
-          isPlanned ? .planned : .open
+        switch week.slot(on: date)?.state {
+        case .done: .done
+        case .missed: .missed
+        case .today, .upcoming: .planned
+        case nil where attended.contains(date): .done
+        case nil: date < today ? .rest : .open
         }
       return StreakDay(date: date, state: state)
     }
 
     self.attendance = StreakFigure(dashboard: dashboard, kind: .attendance)
     self.complete = StreakFigure(dashboard: dashboard, kind: .complete)
-    self.weeklyCompleted = dashboard.weeklyCompleted
-    self.weeklyPlanned = dashboard.weeklyPlanned
+    self.weeklyCompleted = week.done
+    self.weeklyPlanned = week.planned
     self.days = days
-    self.isTodayDone = days[6].state == .done
-    self.isAtRisk = days[6].state == .planned
-    self.weekProgress =
-      dashboard.weeklyPlanned > 0
-      ? min(1, Double(dashboard.weeklyCompleted) / Double(dashboard.weeklyPlanned))
-      : 0
+    self.isTodayDone = attended.contains(today)
+    self.isAtRisk = week.slot(on: today)?.state == .today
+    self.weekProgress = week.planned > 0 ? Double(week.done) / Double(week.planned) : 0
   }
 }

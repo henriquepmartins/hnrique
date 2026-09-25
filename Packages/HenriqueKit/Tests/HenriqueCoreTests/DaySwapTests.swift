@@ -127,4 +127,18 @@ struct DaySwapTests {
         MissedWorkout(workout: Self.peito, lastMissed: Self.day("2026-09-14")),
       ])
   }
+
+  @Test("por presença, treino começado e não fechado já não está atrasado")
+  func attendanceCountsPartialWorkouts() {
+    let attendance = [
+      AttendanceDay(date: Self.day("2026-09-13"), workSets: 5, completed: true, workoutTemplateIds: ["peito"]),
+      AttendanceDay(date: Self.day("2026-09-15"), workSets: 1, completed: false, workoutTemplateIds: ["costas"]),
+      AttendanceDay(date: Self.day("2026-09-16"), workSets: 0, completed: false, workoutTemplateIds: ["pernas"]),
+    ]
+    #expect(
+      schedule().missedWorkouts(today: Self.day("2026-09-17"), attendance: attendance) == [
+        MissedWorkout(workout: Self.pernas, lastMissed: Self.day("2026-09-16")),
+        MissedWorkout(workout: Self.peito, lastMissed: Self.day("2026-09-14")),
+      ])
+  }
 }

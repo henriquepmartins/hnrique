@@ -80,4 +80,12 @@ struct AttendanceGridTests {
     #expect(AttendancePeriod.month(year: 2026, month: 9).name(locale: locale, calendar: sunday) == "setembro")
     #expect(AttendancePeriod.year(2026).title(locale: locale, calendar: sunday) == "2026")
   }
+
+  @Test("sem calendário, a grade começa na segunda")
+  func defaultsToMonday() {
+    // 1 de abril de 2026 é uma quarta.
+    let grid = AttendanceGrid(period: .month(year: 2026, month: 4), attendance: [:])
+    #expect(grid.weeks[0].start.iso == "2026-03-30")
+    #expect(grid.weeks[0].cells.map { $0.date?.day } == [nil, nil, 1, 2, 3, 4, 5])
+  }
 }

@@ -544,7 +544,26 @@ public struct Dashboard: Codable, Hashable, Sendable {
   public var muscleLoad: [MuscleLoad]?
   public var volume: VolumeSummary?
   public var records: [PersonalRecord]?
+  /// Os dias com série valendo de segunda da semana de `date` até `date + 6`.
+  /// Nulo no servidor antigo.
+  public var weekAttendance: [AttendanceDay]? = nil
+  /// O exercício com mais séries valendo nas últimas 8 semanas, só quando não
+  /// há meta de força. Nulo no servidor antigo.
+  public var featuredProgress: FeaturedProgress? = nil
   public var onboardingCompleted: Bool
+}
+
+/// A curva de um exercício para o gráfico de progresso quando não há meta.
+public struct FeaturedProgress: Codable, Hashable, Sendable {
+  public var exerciseId: String
+  public var exerciseName: String
+  public var points: [ProgressPoint]
+
+  public init(exerciseId: String, exerciseName: String, points: [ProgressPoint]) {
+    self.exerciseId = exerciseId
+    self.exerciseName = exerciseName
+    self.points = points
+  }
 }
 
 extension Dashboard {
@@ -588,6 +607,40 @@ extension Dashboard {
 
   public func goal(_ kind: StreakKind) -> StreakGoal? {
     streakGoals?.first { $0.kind == kind }
+  }
+
+  /// Os dias presentes da semana de `today`, de segunda até hoje. A fonte é
+  /// `weekAttendance`; sem ele, `fallback` (a frequência já carregada), e por
+  /// último `sessionDates`, que só tem treino completo. Hoje sai do treino do
+  /// painel, já com as séries pendentes projetadas, para marcar ou desmarcar
+  /// mudar a conta na hora.
+  public func attendedThisWeek(
+    today: CalendarDate, fallback: [CalendarDate: AttendanceDay]? = nil
+  ) -> Set<CalendarDate> {
+    let monday = today.trainingWeekStart()
+    let coversToday = date.trainingWeekStart() <= monday && today <= date.adding(days: 6)
+    let source = weekAttendance.flatMap { coversToday ? $0 : nil } ?? fallback.map { Array($0.values) }
+    var days =
+      source.map { Set($0.filter { $0.workSets > 0 }.map(\.date)) } ?? Set(sessionDates ?? [])
+    days = days.filter { $0 >= monday && $0 <= today }
+    if date == today, let workout {
+      let otherWorkoutToday = source?.first { $0.date == today }?.workoutTemplateIds
+        .contains { $0 != workout.id } ?? false
+      if workout.completedWorkSetCount > 0 || otherWorkoutToday {
+        days.insert(today)
+      } else {
+        days.remove(today)
+      }
+    }
+    return days
+  }
+
+  public func trainingWeek(
+    today: CalendarDate, fallback: [CalendarDate: AttendanceDay]? = nil
+  ) -> TrainingWeek {
+    TrainingWeek(
+      schedule: schedule, attended: attendedThisWeek(today: today, fallback: fallback),
+      today: today)
   }
 
   /// `sessionDates` só lista dias já fechados, então a série marcada agora no

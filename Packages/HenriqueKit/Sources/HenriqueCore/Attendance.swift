@@ -84,7 +84,7 @@ public struct AttendanceGrid: Hashable, Sendable {
 
   public init(
     period: AttendancePeriod, attendance: [CalendarDate: AttendanceDay],
-    calendar: Calendar = .autoupdatingCurrent
+    calendar: Calendar = .trainingWeek
   ) {
     let range = period.range(in: calendar)
     let offset = (range.lowerBound.weekday(in: calendar) + 1 - calendar.firstWeekday + 7) % 7

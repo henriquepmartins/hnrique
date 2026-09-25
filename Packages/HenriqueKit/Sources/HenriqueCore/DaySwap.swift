@@ -54,6 +54,24 @@ public struct PlanSchedule: Sendable {
   public func missedWorkouts(
     today: CalendarDate, sessions: [WeeklyWorkoutSessions]
   ) -> [MissedWorkout] {
+    missedWorkouts(
+      today: today,
+      done: Dictionary(sessions.map { ($0.workoutTemplateId, $0.count) }, uniquingKeysWith: +))
+  }
+
+  /// A mesma conta por presença: um dia com série valendo de um treino conta
+  /// como feito, mesmo que o treino não tenha fechado.
+  public func missedWorkouts(today: CalendarDate, attendance: [AttendanceDay]) -> [MissedWorkout] {
+    let monday = today.trainingWeekStart(in: calendar)
+    let week = attendance.filter { $0.date >= monday && $0.date <= today && $0.workSets > 0 }
+    var done: [String: Int] = [:]
+    for day in week {
+      for id in Set(day.workoutTemplateIds) { done[id, default: 0] += 1 }
+    }
+    return missedWorkouts(today: today, done: done)
+  }
+
+  private func missedWorkouts(today: CalendarDate, done: [String: Int]) -> [MissedWorkout] {
     let monday = today.adding(days: -((today.weekday(in: calendar) + 6) % 7), in: calendar)
     var planned: [String: (workout: WeekPlanItem, count: Int, last: CalendarDate)] = [:]
     var date = monday
@@ -64,8 +82,6 @@ public struct PlanSchedule: Sendable {
       }
       date = date.adding(days: 1, in: calendar)
     }
-    let done = Dictionary(
-      sessions.map { ($0.workoutTemplateId, $0.count) }, uniquingKeysWith: +)
     let todays = workout(on: today)?.id
     return planned.values
       .filter { $0.workout.id != todays && $0.count > done[$0.workout.id, default: 0] }
@@ -76,6 +92,13 @@ public struct PlanSchedule: Sendable {
 
 extension Dashboard {
   public var schedule: PlanSchedule { PlanSchedule(plan: weekPlan, swaps: daySwaps ?? []) }
+
+  /// Por presença quando o servidor manda `weekAttendance`, senão pelas sessões
+  /// completas de `weeklyWorkoutSessions`.
+  public func missedWorkouts(today: CalendarDate) -> [MissedWorkout] {
+    if let weekAttendance { return schedule.missedWorkouts(today: today, attendance: weekAttendance) }
+    return schedule.missedWorkouts(today: today, sessions: weeklyWorkoutSessions ?? [])
+  }
 }
 
 extension Calendar {

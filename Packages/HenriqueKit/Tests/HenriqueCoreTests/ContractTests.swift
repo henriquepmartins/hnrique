@@ -214,6 +214,65 @@ struct ContractTests {
     #expect(Set(back.keys) == ["date"])
   }
 
+  @Test("painel sem os campos novos decodifica com os três nulos")
+  func oldServerHasNoNewFields() throws {
+    let dashboard = try Self.dashboard()
+    #expect(dashboard.weekAttendance == nil)
+    #expect(dashboard.featuredProgress == nil)
+    let previous = try #require(dashboard.workout?.exercises[0].previous)
+    #expect(previous.sets == nil)
+    #expect(previous.set(1) == nil)
+    let captured = try CapturedResponseTests.dashboard()
+    #expect(captured.weekAttendance == nil)
+    #expect(captured.featuredProgress == nil)
+  }
+
+  @Test("presença da semana, progresso em destaque e carga anterior por série decodificam")
+  func newFieldsDecode() throws {
+    var object = try #require(
+      JSONSerialization.jsonObject(with: Self.fixture("dashboard")) as? [String: Any])
+    object["weekAttendance"] = [
+      ["date": "2026-09-07", "workSets": 3, "completed": true, "workoutTemplateIds": ["tpl-terca"]]
+    ]
+    object["featuredProgress"] = [
+      "exerciseId": "supino-reto", "exerciseName": "Supino reto",
+      "points": [["date": "2026-09-01", "estimatedOneRepMax": 55.2, "volumeKg": 680]],
+    ]
+    var workout = try #require(object["workout"] as? [String: Any])
+    var exercises = try #require(workout["exercises"] as? [[String: Any]])
+    var previous = try #require(exercises[0]["previous"] as? [String: Any])
+    previous["sets"] = [
+      ["index": 2, "weightKg": 40, "reps": 7], ["index": 1, "weightKg": 42.5, "reps": 9],
+    ]
+    exercises[0]["previous"] = previous
+    workout["exercises"] = exercises
+    object["workout"] = workout
+
+    let dashboard = try JSONDecoder.henrique().decode(
+      Dashboard.self, from: JSONSerialization.data(withJSONObject: object))
+    #expect(
+      dashboard.weekAttendance == [
+        AttendanceDay(
+          date: CalendarDate(iso: "2026-09-07")!, workSets: 3, completed: true,
+          workoutTemplateIds: ["tpl-terca"])
+      ])
+    #expect(dashboard.featuredProgress?.exerciseName == "Supino reto")
+    #expect(dashboard.featuredProgress?.points.map(\.estimatedOneRepMax) == [55.2])
+    let loaded = try #require(dashboard.workout?.exercises[0].previous)
+    #expect(loaded.weightKg == 42.5)
+    #expect(loaded.set(1) == PreviousPrepSets.Set(index: 1, weightKg: 42.5, reps: 9))
+    #expect(loaded.set(2)?.weightKg == 40)
+    #expect(loaded.set(3) == nil)
+  }
+
+  @Test("formato inesperado na carga anterior por série não derruba o exercício")
+  func malformedPreviousSets() throws {
+    let json = #"{"date": "2026-09-01", "weightKg": 42.5, "reps": [9, 7], "volumeKg": 680, "sets": [1, 2]}"#
+    let previous = try JSONDecoder.henrique().decode(PreviousWorkSets.self, from: Data(json.utf8))
+    #expect(previous.sets == nil)
+    #expect(previous.reps == [9, 7])
+  }
+
   @Test("a meta de sequência manda data, tipo e alvo")
   func streakGoalEncodesKeys() throws {
     let input = SetStreakGoalInput(

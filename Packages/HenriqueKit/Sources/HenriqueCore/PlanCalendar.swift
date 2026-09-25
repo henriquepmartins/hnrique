@@ -11,7 +11,8 @@ public struct PlanCalendar: Hashable, Sendable {
     case done([String])
     /// Id do treino que o plano pede nesse dia, ainda por fazer.
     case planned(String)
-    /// Planejado, já passou, não foi feito. Só dentro da semana corrente.
+    /// Planejado, já passou e não foi coberto por treino em outro dia da semana
+    /// (`TrainingWeek`). Só dentro da semana corrente.
     case missed(String)
   }
 
@@ -39,12 +40,13 @@ public struct PlanCalendar: Hashable, Sendable {
   public init(
     period: AttendancePeriod, attendance: [CalendarDate: AttendanceDay],
     weekPlan: [WeekPlanItem], swaps: [DaySwap] = [], today: CalendarDate = .today,
-    calendar: Calendar = .autoupdatingCurrent
+    calendar: Calendar = .trainingWeek
   ) {
     let range = period.range(in: calendar)
     let schedule = PlanSchedule(plan: weekPlan, swaps: swaps, calendar: calendar)
-    let startOfWeek = today.adding(
-      days: -((today.weekday(in: calendar) + 1 - calendar.firstWeekday + 7) % 7), in: calendar)
+    let week = TrainingWeek(
+      schedule: schedule, attended: Set(attendance.values.filter { $0.workSets > 0 }.map(\.date)),
+      today: today, calendar: calendar)
 
     func mark(for date: CalendarDate) -> Mark {
       if let ids = attendance[date]?.workoutTemplateIds, !ids.isEmpty { return .done(ids) }
@@ -57,7 +59,7 @@ public struct PlanCalendar: Hashable, Sendable {
       }
       guard let item = schedule.workout(on: date) else { return .none }
       if date >= today { return .planned(item.id) }
-      if date >= startOfWeek { return .missed(item.id) }
+      if week.slot(on: date)?.state == .missed { return .missed(item.id) }
       return .none
     }
 

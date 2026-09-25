@@ -117,4 +117,21 @@ struct PlanCalendarTests {
     let todays = grid.weeks.flatMap(\.cells).filter(\.isToday).compactMap(\.date)
     #expect(todays.map(\.iso) == ["2026-09-16"])
   }
+
+  @Test("dia do plano coberto por treino em outro dia da semana não fica furado")
+  func coveredDayIsNotMissed() {
+    // Terça 15 cobre a segunda 14; hoje é quarta 16.
+    let grid = calendar(attendance: [day("2026-09-15", sets: 4)])
+    #expect(mark(grid, "2026-09-14") == PlanCalendar.Mark.none)
+    #expect(mark(grid, "2026-09-15") == .done([]))
+    #expect(mark(grid, "2026-09-16") == .planned("peito"))
+  }
+
+  @Test("sem calendário, a semana começa na segunda")
+  func defaultsToMonday() {
+    let grid = PlanCalendar(
+      period: .month(year: 2026, month: 9), attendance: [:], weekPlan: plan, today: today)
+    #expect(grid.weeks[0].cells.map { $0.date?.day } == [nil, 1, 2, 3, 4, 5, 6])
+    #expect(grid.weeks[0].start.iso == "2026-08-31")
+  }
 }
