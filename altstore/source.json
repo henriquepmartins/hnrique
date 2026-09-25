@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "41",
+          "date": "2026-09-25T12:31:18-03:00",
+          "localizedDescription": "• feat: celebrate each month of attendance with a badge grown from the flame\n• fix: open the workout session as a full-screen cover",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-41/Henrique.ipa",
+          "size": 5386180,
+          "sha256": "9f9ae222a51bae9dbc07fc9087306f05af5ae1290d472c79ebb8ac6801bf6a12",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "40",
           "date": "2026-09-24T11:36:05-03:00",
           "localizedDescription": "• feat: grow the workout session out of the tapped card",
