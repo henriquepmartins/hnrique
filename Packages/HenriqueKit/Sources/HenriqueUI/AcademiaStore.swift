@@ -157,6 +157,10 @@ public final class AcademiaStore {
   @ObservationIgnored private var dayCache: [CalendarDate: CachedDay] = [:]
   public private(set) var attendance: [CalendarDate: AttendanceDay] = [:]
   @ObservationIgnored private var attendanceRanges: [ClosedRange<CalendarDate>] = []
+  /// Os intervalos que já vieram do servidor nesta sessão. Ao contrário de
+  /// `attendanceRanges`, uma escrita não tira nada daqui: a série gravada já
+  /// corrige o próprio dia em `attendance`.
+  @ObservationIgnored private var attendanceCovered: [ClosedRange<CalendarDate>] = []
   @ObservationIgnored private var readTask: Task<Void, Never>?
   @ObservationIgnored private var readID = UUID()
   @ObservationIgnored private var sessionID = UUID()
@@ -406,6 +410,7 @@ public final class AcademiaStore {
     clearSnapshot()
     attendance.removeAll()
     attendanceRanges.removeAll()
+    attendanceCovered.removeAll()
     clearQueue()
     mutationTail?.cancel()
     mutationTail = nil
@@ -476,7 +481,17 @@ public final class AcademiaStore {
     attendance = attendance.filter { !range.contains($0.key) }
     for day in days { attendance[day.date] = day }
     attendanceRanges.append(range)
+    attendanceCovered.append(range)
     return true
+  }
+
+  /// A semana de `today` para a home, a sequência e o calendário. A frequência
+  /// carregada só entra quando cobre de segunda até hoje; senão o painel cai
+  /// em `sessionDates`.
+  public func trainingWeek(today: CalendarDate = .today) -> TrainingWeek? {
+    let monday = today.trainingWeekStart()
+    let loaded = attendanceCovered.contains { $0.lowerBound <= monday && today <= $0.upperBound }
+    return dashboard?.trainingWeek(today: today, fallback: loaded ? attendance : nil)
   }
 
   // MARK: - A insígnia
@@ -842,6 +857,7 @@ public final class AcademiaStore {
       acceptedDashboard = nil
       attendance.removeAll()
       attendanceRanges.removeAll()
+      attendanceCovered.removeAll()
       mutationTail?.cancel()
       mutationTail = nil
       phase = .idle

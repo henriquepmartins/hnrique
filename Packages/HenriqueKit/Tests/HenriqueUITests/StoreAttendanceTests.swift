@@ -93,6 +93,25 @@ extension PendingSetQueueTests {
       #expect(store.attendance[yesterday]?.workSets == 4)
     }
 
+    @Test("a semana usa a frequência carregada, mesmo depois de marcar série")
+    func trainingWeekUsesLoadedAttendance() async throws {
+      let store = await lojaComPainel()
+      let today = CalendarDate.today
+      let monday = today.trainingWeekStart()
+      #expect(Set(try #require(store.trainingWeek(today: today)).attended) == [today])
+
+      FakeNetwork.offline = false
+      FakeNetwork.bodies[.attendance] = attendanceBody([(monday, 3)])
+      #expect(await store.loadAttendance(from: monday, to: today))
+      #expect(Set(try #require(store.trainingWeek(today: today)).attended) == [monday, today])
+
+      FakeNetwork.offline = true
+      _ = await store.record(
+        key: workKey("supino-reto", 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
+        .value
+      #expect(Set(try #require(store.trainingWeek(today: today)).attended) == [monday, today])
+    }
+
     @Test("o plano fica com a série mais pesada da sessão, não com a última")
     func planKeepsTheTopSet() async {
       let store = await lojaComPainel()
