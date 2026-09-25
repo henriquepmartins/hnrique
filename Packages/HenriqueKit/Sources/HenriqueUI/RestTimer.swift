@@ -1,29 +1,6 @@
 import HenriqueCore
 import SwiftUI
 
-/// A série que vem depois da que acabou de ser marcada. O descanso só ajuda com o
-/// próximo peso à vista, e a busca segue para o exercício seguinte porque terminar
-/// um exercício não encerra a pausa.
-struct NextSet: Equatable {
-  let exerciseName: String
-  let index: Int
-  let weightKg: Double
-
-  init?(from exerciseIndex: Int, in workout: WorkoutSummary) {
-    guard workout.exercises.indices.contains(exerciseIndex) else { return nil }
-    for step in 0..<workout.exercises.count {
-      let exercise = workout.exercises[(exerciseIndex + step) % workout.exercises.count]
-      if let pending = exercise.sets.work.first(where: { !$0.isDone }) {
-        exerciseName = exercise.name.lowercased()
-        index = pending.index
-        weightKg = pending.weightKg
-        return
-      }
-    }
-    return nil
-  }
-}
-
 /// O descanso em curso. O fim é uma data, não um contador que decrementa: a tela
 /// apaga entre uma série e outra, o app vai para o fundo, e um contador por
 /// quadro pararia junto. A série que abriu o descanso fica junto porque só
@@ -110,7 +87,7 @@ struct RestTimerBar: View {
             .animation(reduceMotion ? nil : Motion.roll, value: whole)
             Group {
               if let next {
-                Text("a seguir · \(next.exerciseName) · série \(next.index) · \(weightLabel(next.weightKg))")
+                Text("a seguir · \(next.exerciseName.lowercased()) · \(next.kind == .prep ? "A" : "série \(next.index)") · \(weightLabel(next.weightKg))")
               } else {
                 Text("última série do treino")
               }
