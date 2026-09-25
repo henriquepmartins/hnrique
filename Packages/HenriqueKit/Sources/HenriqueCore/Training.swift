@@ -544,7 +544,7 @@ public struct Dashboard: Codable, Hashable, Sendable {
   public var muscleLoad: [MuscleLoad]?
   public var volume: VolumeSummary?
   public var records: [PersonalRecord]?
-  /// Os dias com série valendo de segunda da semana de `date` até `date + 6`.
+  /// Os dias com série valendo de segunda a domingo da semana de `date`.
   /// Nulo no servidor antigo.
   public var weekAttendance: [AttendanceDay]? = nil
   /// O exercício com mais séries valendo nas últimas 8 semanas, só quando não
@@ -618,7 +618,7 @@ extension Dashboard {
     today: CalendarDate, fallback: [CalendarDate: AttendanceDay]? = nil
   ) -> Set<CalendarDate> {
     let monday = today.trainingWeekStart()
-    let coversToday = date.trainingWeekStart() <= monday && today <= date.adding(days: 6)
+    let coversToday = date.trainingWeekStart() == monday
     let source = weekAttendance.flatMap { coversToday ? $0 : nil } ?? fallback.map { Array($0.values) }
     var days =
       source.map { Set($0.filter { $0.workSets > 0 }.map(\.date)) } ?? Set(sessionDates ?? [])

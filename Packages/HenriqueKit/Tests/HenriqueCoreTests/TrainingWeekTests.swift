@@ -129,16 +129,19 @@ struct TrainingWeekTests {
     #expect(dashboard.attendedThisWeek(today: Self.terca) == [Self.segunda])
   }
 
-  @Test("painel de outra semana não empresta a presença dele")
-  func dashboardOfAnotherWeek() throws {
+  @Test("painel da sexta passada não tapa a frequência desta semana")
+  func dashboardOfLastWeek() throws {
     var dashboard = try ContractTests.dashboard()
-    let nextMonday = CalendarDate(year: 2026, month: 9, day: 14)!
+    let lastFriday = CalendarDate(year: 2026, month: 9, day: 11)!
+    let monday = CalendarDate(year: 2026, month: 9, day: 14)!
+    let tuesday = CalendarDate(year: 2026, month: 9, day: 15)!
+    dashboard.date = lastFriday
     dashboard.weekAttendance = [
-      AttendanceDay(date: nextMonday, workSets: 3, completed: true, workoutTemplateIds: ["x"])
+      AttendanceDay(date: lastFriday, workSets: 3, completed: true, workoutTemplateIds: ["x"])
     ]
-    #expect(dashboard.attendedThisWeek(today: nextMonday) == [nextMonday])
-    let nextTuesday = CalendarDate(year: 2026, month: 9, day: 15)!
-    #expect(dashboard.attendedThisWeek(today: nextTuesday).isEmpty)
+    let loaded = [monday: AttendanceDay(date: monday, workSets: 4, completed: true)]
+    #expect(dashboard.attendedThisWeek(today: tuesday, fallback: loaded) == [monday])
+    #expect(dashboard.attendedThisWeek(today: tuesday).isEmpty)
   }
 
   @Test("a semana do painel usa a troca e a presença juntas")
