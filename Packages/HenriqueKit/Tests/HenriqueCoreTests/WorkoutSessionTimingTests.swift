@@ -37,16 +37,17 @@ struct WorkoutSessionTimingTests {
     #expect(timing.elapsed(at: date(9_999)) == 600)
   }
 
-  @Test("o começo do servidor vale quando o aparelho não conhece nenhum")
-  func serverStartFillsIn() throws {
+  @Test("nota às 8h não abre o relógio; a primeira série às 18h é o começo")
+  func serverStartIsIgnored() throws {
     var workout = try emptyWorkout()
-    workout.startedAt = date(900)
+    let eight = date(8 * 3_600)
+    let six = date(18 * 3_600)
     #expect(WorkoutSessionTiming.anchor(workout, known: nil) == nil)
-    workout.exercises[0].sets.work[0].completedAt = date(1_200)
-    #expect(WorkoutSessionTiming.anchor(workout, known: nil) == date(900))
-    #expect(WorkoutSessionTiming.anchor(workout, known: date(1_000)) == date(1_000))
-    workout.startedAt = date(1_300)
-    #expect(WorkoutSessionTiming.anchor(workout, known: nil) == date(1_200))
+    #expect(WorkoutSessionTiming(workout) == nil)
+    workout.exercises[0].sets.prep[0].completedAt = six
+    #expect(WorkoutSessionTiming.anchor(workout, known: nil) == six)
+    #expect(WorkoutSessionTiming(workout)?.startedAt == six)
+    #expect(WorkoutSessionTiming.anchor(workout, known: eight) == eight)
   }
 
   @Test("congela no instante da última série concluída")
@@ -87,22 +88,22 @@ struct WorkoutSessionTimingTests {
 
     let timing = try #require(WorkoutSessionTiming(workout))
     #expect(timing.startedAt == date(20))
-    #expect(timing.finishedAt == date(300))
-    #expect(timing.elapsed(at: date(500)) == 280)
+    #expect(timing.finishedAt == date(200))
+    #expect(timing.elapsed(at: date(500)) == 180)
   }
 
-  @Test("continua correndo se falta aquecimento mesmo com todo o trabalho feito")
-  func waitsForRemainingWarmups() throws {
+  @Test("aquecimento pulado não segura o relógio depois da última valendo")
+  func skippedWarmupDoesNotHoldTheClock() throws {
     var workout = try emptyWorkout()
     workout.exercises[0].sets.prep[0].completedAt = date(20)
     for exercise in workout.exercises.indices {
       for set in workout.exercises[exercise].sets.work.indices {
-        workout.exercises[exercise].sets.work[set].completedAt = date(100)
+        workout.exercises[exercise].sets.work[set].completedAt = date(100 + 10 * TimeInterval(set))
       }
     }
     let timing = try #require(WorkoutSessionTiming(workout))
-    #expect(timing.finishedAt == nil)
-    #expect(timing.elapsed(at: date(200)) == 180)
+    #expect(timing.finishedAt == date(110))
+    #expect(timing.elapsed(at: date(200)) == 90)
   }
 
   @Test("sem nenhuma série marcada não há cronômetro")
@@ -138,17 +139,17 @@ struct WorkoutSessionTimingTests {
     var workout = try emptyWorkout()
     workout.exercises = [workout.exercises[0]]
     workout.exercises[0].sets.prep = [.init(index: 1, weightKg: 20, reps: 10, completedAt: date(20))]
-    workout.exercises[0].sets.work = []
-    let finished = try #require(WorkoutSessionTiming(workout))
-    #expect(finished.finishedAt == date(20))
-    #expect(finished.elapsed(at: date(100)) == 0)
-
     workout.exercises[0].sets.work = [
       .init(index: 1, weightKg: 40, reps: 10, toFailure: false, completedAt: nil)
     ]
     let running = try #require(WorkoutSessionTiming(workout))
     #expect(running.finishedAt == nil)
     #expect(running.elapsed(at: date(100)) == 80)
+
+    workout.exercises[0].sets.work[0].completedAt = date(60)
+    #expect(WorkoutSessionTiming(workout)?.finishedAt == date(60))
+    workout.exercises[0].sets.work[0].completedAt = nil
+    #expect(WorkoutSessionTiming(workout)?.finishedAt == nil)
     workout.exercises[0].sets.prep[0].completedAt = nil
     #expect(WorkoutSessionTiming(workout) == nil)
   }

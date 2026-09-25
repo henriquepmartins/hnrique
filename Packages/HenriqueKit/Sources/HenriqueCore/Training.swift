@@ -145,8 +145,6 @@ public struct WorkoutSummary: Codable, Hashable, Sendable, Identifiable {
   public var name: String
   public var focus: String
   public var estimatedMinutes: Int
-  /// Quando o servidor abriu a sessão do dia. Nulo no servidor antigo.
-  public var startedAt: Date? = nil
   public var exerciseCount: Int
   public var workSetCount: Int
   public var completedWorkSetCount: Int
@@ -162,29 +160,29 @@ public struct WorkoutSessionTiming: Equatable, Sendable {
   /// `anchor` é o começo já visto antes: desmarcar a primeira série e marcar de
   /// novo não pode empurrar o relógio para frente.
   ///
-  /// `finishedAt` é o "encerrar" tocado antes de todas as séries saírem. Ele
-  /// para o relógio ali, e não na última série feita.
+  /// O relógio para na última série valendo quando todas as valendo saíram. Um
+  /// aquecimento pulado não segura o relógio. `finishedAt` é o "encerrar"
+  /// tocado antes disso, e para o relógio ali.
   public init?(_ workout: WorkoutSummary, anchor: Date? = nil, finishedAt closed: Date? = nil) {
-    let dates = workout.exercises.flatMap {
-      $0.sets.prep.map(\.completedAt) + $0.sets.work.map(\.completedAt)
-    }
-    guard let earliest = dates.compactMap({ $0 }).min() else { return nil }
+    let prep = workout.exercises.flatMap { $0.sets.prep.compactMap(\.completedAt) }
+    let work = workout.exercises.flatMap { $0.sets.work.map(\.completedAt) }
+    guard let earliest = (prep + work.compactMap { $0 }).min() else { return nil }
     let startedAt = anchor.map { min($0, earliest) } ?? earliest
     self.startedAt = startedAt
-    let allDone = dates.allSatisfy { $0 != nil } ? dates.compactMap { $0 }.max() : nil
-    finishedAt = allDone ?? closed.map { max($0, startedAt) }
+    let allWorkDone = !work.isEmpty && work.allSatisfy { $0 != nil }
+    let lastWork = allWorkDone ? work.compactMap { $0 }.max().map { max($0, startedAt) } : nil
+    finishedAt = lastWork ?? closed.map { max($0, startedAt) }
   }
 
   /// O começo mais antigo entre o que já se sabia e as séries marcadas agora.
-  /// O `startedAt` do servidor só entra quando o aparelho não sabe nada: o
-  /// servidor abre a sessão em qualquer escrita do dia, até numa nota.
+  /// O `startedAt` do servidor fica de fora: o servidor abre a sessão em
+  /// qualquer escrita do dia, até numa nota às 8h de um treino das 18h.
   public static func anchor(_ workout: WorkoutSummary, known: Date?) -> Date? {
     let earliest = workout.exercises.flatMap {
       $0.sets.prep.compactMap(\.completedAt) + $0.sets.work.compactMap(\.completedAt)
     }.min()
     guard let earliest else { return known }
-    let fromServer = workout.startedAt.map { min($0, earliest) } ?? earliest
-    return known.map { min($0, earliest) } ?? fromServer
+    return known.map { min($0, earliest) } ?? earliest
   }
 
   public func elapsed(at now: Date) -> TimeInterval {
