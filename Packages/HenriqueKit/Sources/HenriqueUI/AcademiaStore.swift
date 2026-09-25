@@ -847,11 +847,11 @@ extension AcademiaStore {
     saveRest(RestState(key: key, startedAt: .now, seconds: seconds))
   }
 
+  /// Mexe só na pausa corrente. O descanso do exercício muda pelo seletor do
+  /// cartão ou pelo editor do plano.
   public func adjustRest(by delta: TimeInterval) {
     guard let current = rest else { return }
-    let adjusted = current.adjusted(by: delta)
-    setRestSeconds(Int(adjusted.total), for: adjusted.exerciseId)
-    saveRest(adjusted)
+    saveRest(current.adjusted(by: delta))
   }
 
   public func endRest() {

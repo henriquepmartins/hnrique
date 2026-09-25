@@ -112,8 +112,8 @@ struct StoreRestTests {
     #expect(store.rest == nil)
   }
 
-  @Test("+15 s vira o descanso do exercício no aparelho")
-  func adjustmentBecomesTheExerciseRest() async throws {
+  @Test("±15 s mexe só na pausa corrente, não no descanso do exercício")
+  func adjustmentOnlyTouchesThisRest() async throws {
     let alarm = FakeRestAlarm()
     let store = await lojaComPainel(alarm: alarm)
     _ = await store.record(key: workKey("supino-reto", 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
@@ -122,9 +122,8 @@ struct StoreRestTests {
     store.adjustRest(by: 15)
     #expect(store.rest?.endsAt == started.endsAt + 15)
     #expect(alarm.scheduled == started.endsAt + 15)
-    #expect(store.restSeconds(for: "supino-reto") == 105)
-    #expect(store.restSeconds(for: "desenvolvimento") == 90)
-    #expect(makeStore().restSeconds(for: "supino-reto") == 105)
+    #expect(store.restSeconds(for: "supino-reto") == 90)
+    #expect(makeStore().restSeconds(for: "supino-reto") == 90)
 
     store.endRest()
     #expect(store.rest == nil)
