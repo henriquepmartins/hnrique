@@ -6,7 +6,8 @@ import Testing
 
 /// A rede do teste. Ela recusa tudo enquanto `offline` estiver ligado, que é o
 /// que acontece na academia, e conta quantas vezes o app tentou gravar a série.
-/// `recordStatus` faz o servidor responder um status por exercício.
+/// `recordStatus` faz o servidor responder um status por exercício, e `bodies`
+/// troca a resposta de uma rota.
 final class FakeNetwork: URLProtocol, @unchecked Sendable {
   nonisolated(unsafe) static var offline = true
   nonisolated(unsafe) static var recordedSets = 0
@@ -14,6 +15,7 @@ final class FakeNetwork: URLProtocol, @unchecked Sendable {
   /// Gravações que chegaram ao servidor, por exercício, com o corpo da última.
   nonisolated(unsafe) static var answered: [String: Int] = [:]
   nonisolated(unsafe) static var lastBody: [String: [String: Any]] = [:]
+  nonisolated(unsafe) static var bodies: [Route: String] = [:]
 
   static func reset() {
     offline = true
@@ -21,6 +23,7 @@ final class FakeNetwork: URLProtocol, @unchecked Sendable {
     recordStatus = [:]
     answered = [:]
     lastBody = [:]
+    bodies = [:]
   }
 
   override class func canInit(with request: URLRequest) -> Bool { true }
@@ -35,7 +38,7 @@ final class FakeNetwork: URLProtocol, @unchecked Sendable {
       return
     }
     var status = 200
-    var body = dashboardDeHoje()
+    var body = Route(rawValue: path).flatMap { Self.bodies[$0] } ?? dashboardDeHoje()
     if path == Route.recordSet.rawValue, let json = Self.body(of: request),
       let exercise = json["exerciseId"] as? String {
       Self.answered[exercise, default: 0] += 1

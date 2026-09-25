@@ -459,8 +459,8 @@ public final class AcademiaStore {
   }
 
   /// Frequência não é dado crítico: falhou, o mapa fica como está, sem banner.
-  /// Um intervalo já carregado não volta ao servidor; os dias antigos ficam e
-  /// os novos entram por cima.
+  /// Um intervalo já carregado não volta ao servidor. A resposta substitui o
+  /// intervalo inteiro: o dia que perdeu todas as séries some dela e sai daqui.
   /// Verdadeiro quando o intervalo inteiro está em `attendance`.
   @discardableResult
   public func loadAttendance(from: CalendarDate, to: CalendarDate) async -> Bool {
@@ -473,6 +473,7 @@ public final class AcademiaStore {
     let session = sessionID
     guard let days = try? await client.attendance(.init(from: from, to: to)),
       session == sessionID else { return false }
+    attendance = attendance.filter { !range.contains($0.key) }
     for day in days { attendance[day.date] = day }
     attendanceRanges.append(range)
     return true
@@ -728,6 +729,7 @@ public final class AcademiaStore {
         guard sessionID == mutationSession, !Task.isCancelled else { return .offline }
         forget(pending)
         if let date { invalidate(from: date) } else { invalidateAll() }
+        if pending != nil { noteAttendance(from: received) }
         remember(received)
         if received.date == selectedDate {
           acceptedDashboard = received
@@ -747,6 +749,27 @@ public final class AcademiaStore {
     }
     mutationTail = task
     return task
+  }
+
+  /// A série gravada muda a frequência do dia na hora, sem esperar a próxima
+  /// leitura do intervalo. `weekAttendance` é a conta do servidor; sem ele, o
+  /// treino do painel, e o dia só sai quando nenhum outro treino teve série.
+  private func noteAttendance(from received: Dashboard) {
+    let date = received.date
+    if let week = received.weekAttendance {
+      attendance[date] = week.first { $0.date == date }
+      return
+    }
+    guard let workout = received.workout else { return }
+    let others = (attendance[date]?.workoutTemplateIds ?? []).filter { $0 != workout.id }
+    if workout.completedWorkSetCount > 0 {
+      attendance[date] = AttendanceDay(
+        date: date, workSets: workout.completedWorkSetCount,
+        completed: others.isEmpty && workout.completedWorkSetCount == workout.workSetCount,
+        workoutTemplateIds: others + [workout.id])
+    } else if others.isEmpty {
+      attendance[date] = nil
+    }
   }
 
   private static func isOffline(_ error: any Error) -> Bool {
