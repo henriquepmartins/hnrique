@@ -98,9 +98,6 @@ public final class AcademiaStore {
     for pending in pendingSets.values.sorted(by: { $0.revision < $1.revision }) {
       let key = pending.key
       let draft = pending.draft
-      if key.kind == .work {
-        value = value.applyingSharedExerciseWeight(draft.weightKg, exerciseId: key.exerciseId)
-      }
       guard value.date == key.date, value.workout?.id == key.templateId,
         var workout = value.workout,
         let exercise = workout.exercises.firstIndex(where: { $0.id == key.exerciseId }) else { continue }
@@ -111,7 +108,6 @@ public final class AcademiaStore {
         workout.exercises[exercise].sets.prep[row].completedAt = draft.completedAt
       } else if key.kind == .work,
         let row = workout.exercises[exercise].sets.work.firstIndex(where: { $0.index == key.index }) {
-        workout.exercises[exercise].prescription.startingWeightKg = draft.weightKg
         workout.exercises[exercise].sets.work[row].weightKg = draft.weightKg
         workout.exercises[exercise].sets.work[row].reps = draft.reps
         workout.exercises[exercise].sets.work[row].toFailure = draft.toFailure
@@ -121,6 +117,9 @@ public final class AcademiaStore {
       workout.completionPercent = workout.workSetCount == 0 ? 0
         : Int((Double(workout.completedWorkSetCount) / Double(workout.workSetCount) * 100).rounded())
       value.workout = workout
+      if key.kind == .work, draft.completed {
+        value = value.applyingTopWorkWeight(exerciseId: key.exerciseId)
+      }
     }
     return value
   }
@@ -546,8 +545,8 @@ public final class AcademiaStore {
       ? .prep(fields) : .work(fields, toFailure: draft.toFailure)
     return enqueue(pending: pending, affecting: key.date) {
       let received = try await self.client.recordSet(input)
-      guard key.kind == .work else { return received }
-      return received.applyingSharedExerciseWeight(draft.weightKg, exerciseId: key.exerciseId)
+      guard key.kind == .work, draft.completed else { return received }
+      return received.applyingTopWorkWeight(exerciseId: key.exerciseId)
     }
   }
 
@@ -936,6 +935,13 @@ extension AcademiaStore {
 }
 
 extension Dashboard {
+  /// O plano guarda a série valendo mais pesada feita no exercício nesta
+  /// sessão: numa pirâmide 100/90/80 ele fica com 100. Desmarcar não mexe.
+  func applyingTopWorkWeight(exerciseId: String) -> Dashboard {
+    guard let top = workout?.topWorkWeight(exerciseId: exerciseId) else { return self }
+    return applyingSharedExerciseWeight(top, exerciseId: exerciseId)
+  }
+
   /// O dia já tem alguma série marcada, de aquecimento ou valendo.
   var hasMarkedSets: Bool {
     workout?.exercises.contains { exercise in
