@@ -8,18 +8,18 @@ public struct TodayScreen: View {
   @State private var openIds: Set<String> = []
   @State private var notch: CGFloat = 0.5
   @State private var enteredDates: Set<String> = []
+  @State private var showingSession = false
   @State private var editing: WeekPlanItem?
-  let sessionOpen: Bool
-  let onSession: (SessionOrigin) -> Void
+  @Namespace private var sessionSource
+  @Binding var sessionRequested: Bool
   let onPlan: () -> Void
   let onProgress: () -> Void
 
   init(
-    sessionOpen: Bool = false, onSession: @escaping (SessionOrigin) -> Void = { _ in },
+    sessionRequested: Binding<Bool> = .constant(false),
     onPlan: @escaping () -> Void = {}, onProgress: @escaping () -> Void = {}
   ) {
-    self.sessionOpen = sessionOpen
-    self.onSession = onSession
+    _sessionRequested = sessionRequested
     self.onPlan = onPlan
     self.onProgress = onProgress
   }
@@ -30,8 +30,8 @@ public struct TodayScreen: View {
         VStack(spacing: Space.m) {
           DayStrip(selected: store.selectedDate, notch: $notch)
             .staggeredEntrance(index: 0, isReady: hasData)
-          if let rest = store.rest, rest.key.date == store.selectedDate, !sessionOpen {
-            RestChip(rest: rest) { onSession(.nowhere) }
+          if let rest = store.rest, rest.key.date == store.selectedDate, !showingSession {
+            RestChip(rest: rest) { showingSession = true }
               .frame(maxWidth: .infinity, alignment: .leading)
               .transition(.opacity)
           }
@@ -40,9 +40,12 @@ public struct TodayScreen: View {
             workout: store.dashboard?.workout, date: store.selectedDate,
             finished: store.dashboard?.workout.map { store.finishedAt($0.id, on: store.selectedDate) != nil } ?? false,
             notch: notch,
-            onStart: onSession
+            sessionSource: sessionSource,
+            onStart: { showingSession = true }
           )
-          .opacity(fresh ? 1 : 0.5)
+          .animation(reduceMotion ? Motion.plain : Motion.tap) { view in
+            view.opacity(fresh ? 1 : 0.5)
+          }
           // Enquanto o painel é de outro dia, abrir a sessão daria um treino
           // que o store recusa gravar, porque `record` compara com a data
           // escolhida. O hero já aparece apagado, então também não responde.
@@ -54,7 +57,6 @@ public struct TodayScreen: View {
                 .background(.regularMaterial, in: .capsule)
             }
           }
-          .animation(Motion.tap, value: fresh)
           // O hero fica montado desde o primeiro quadro, com "descanso" no
           // lugar do nome do treino, então sem isto ele apareceria pronto por
           // baixo do esqueleto e só o resto da tela entraria. Ele é a primeira
@@ -110,6 +112,17 @@ public struct TodayScreen: View {
     .onChange(of: store.dashboard?.workout?.id, initial: true) {
       openIds = defaultOpenIds()
     }
+    .onChange(of: sessionRequested, initial: true) {
+      guard sessionRequested else { return }
+      sessionRequested = false
+      if store.dashboard?.workout != nil { showingSession = true }
+    }
+    #if os(iOS)
+      .fullScreenCover(isPresented: $showingSession) {
+        WorkoutSessionScreen(onClose: { showingSession = false })
+          .navigationTransition(.zoom(sourceID: "sessao", in: sessionSource))
+      }
+    #endif
     .sheet(item: $editing) { item in
       WorkoutEditor(
         item: item, weekdays: Set(item.weekdays), tone: item.tone,

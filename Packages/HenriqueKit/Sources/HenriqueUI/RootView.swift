@@ -218,10 +218,7 @@ struct AcademiaTabs: View {
   @Environment(AcademiaStore.self) private var store
   @State private var showingSetup = false
   @State private var showingStreak = false
-  /// A sessão mora aqui, por cima das abas, para abrir de qualquer uma delas e
-  /// cobrir a barra de abas sem ser uma tela modal do sistema. Enquanto ela
-  /// está aberta, isto guarda de qual cartão ela cresceu.
-  @State private var session: SessionOrigin?
+  @State private var sessionRequested = false
   @Binding var accent: Accent
   @Binding var tab: AcademiaTab
   @Binding var showingApps: Bool
@@ -230,7 +227,10 @@ struct AcademiaTabs: View {
     TabView(selection: appSwitcherSelection($tab, isPresented: $showingApps, bubble: .apps)) {
       Tab("hoje", systemImage: "house", value: AcademiaTab.hoje) {
         shell {
-          OverviewScreen(onWorkout: openSession, onPlan: { tab = .semana })
+          OverviewScreen(onWorkout: {
+            tab = .treino
+            sessionRequested = true
+          }, onPlan: { tab = .semana })
         }
       }
       Tab("plano", systemImage: "list.clipboard", value: AcademiaTab.semana) {
@@ -245,7 +245,7 @@ struct AcademiaTabs: View {
       Tab("treino", systemImage: "dumbbell", value: AcademiaTab.treino) {
         shell {
           TodayScreen(
-            sessionOpen: session != nil, onSession: openSession,
+            sessionRequested: $sessionRequested,
             onPlan: { tab = .semana }, onProgress: { tab = .progresso })
         }
       }
@@ -262,13 +262,6 @@ struct AcademiaTabs: View {
       }
     }
     .focoAccessory()
-    .overlay {
-      if let session {
-        // A camada cuida da própria entrada e saída; a troca aqui é seca.
-        SessionExpansion(origin: session) { self.session = nil }
-          .transition(.identity)
-      }
-    }
     .sheet(isPresented: $showingSetup) { SetupScreen() }
     .sheet(isPresented: $showingStreak) {
       if let data = store.dashboard {
@@ -279,11 +272,6 @@ struct AcademiaTabs: View {
       if store.dashboard?.onboardingCompleted == false { showingSetup = true }
     }
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
-  }
-
-  private func openSession(from origin: SessionOrigin) {
-    guard store.dashboard?.workout != nil, session == nil else { return }
-    session = origin
   }
 
   private func shell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -460,7 +448,7 @@ private struct AppSwitcherRow: View {
 /// constância moram em "progresso".
 struct OverviewScreen: View {
   @Environment(AcademiaStore.self) private var store
-  let onWorkout: (SessionOrigin) -> Void
+  let onWorkout: () -> Void
   let onPlan: () -> Void
 
   var body: some View {

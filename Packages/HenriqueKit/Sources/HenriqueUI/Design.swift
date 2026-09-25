@@ -359,6 +359,10 @@ extension View {
   func staggeredEntrance(index: Int, columns: Int = 1, isReady: Bool) -> some View {
     modifier(StudyStaggeredEntrance(index: index / max(columns, 1), isReady: isReady))
   }
+
+  func firstEntrance(index: Int, settled: Bool) -> some View {
+    modifier(StudyStaggeredEntrance(index: index, isReady: true, settled: settled))
+  }
 }
 
 private struct SubtleEntrance: ViewModifier {
@@ -380,11 +384,13 @@ private struct StudyStaggeredEntrance: ViewModifier {
   @State private var shown = false
   let index: Int
   let isReady: Bool
+  var settled = false
 
   func body(content: Content) -> some View {
     content
-      .opacity(shown ? 1 : 0)
-      .animation(animation, value: shown)
+      .animation(animation) { view in
+        view.opacity(shown || settled ? 1 : 0)
+      }
       .onChange(of: isReady, initial: true) { _, ready in
         if ready { shown = true }
       }
@@ -463,10 +469,11 @@ private struct RevealEntrance: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .opacity(visible ? 1 : 0)
       .animation(
-        reduceMotion ? nil : Motion.subtleEntrance.delay(Motion.delay(index: index)),
-        value: shown)
+        reduceMotion ? nil : Motion.subtleEntrance.delay(Motion.delay(index: index))
+      ) { view in
+        view.opacity(visible ? 1 : 0)
+      }
   }
 
   private var visible: Bool { shown || reduceMotion }

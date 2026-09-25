@@ -42,17 +42,16 @@ struct DayCard: View {
   let workout: WorkoutSummary?
   /// Nulo quando o servidor ainda não troca dia: sem menu, em vez de um menu que falha.
   let choices: DaySwapChoices?
-  let onWorkout: (SessionOrigin) -> Void
+  let onWorkout: () -> Void
   let onPlan: () -> Void
   let onSwap: @MainActor (String?) async -> Bool
   @State private var swaps = 0
-  @State private var source = SessionSourceFrame()
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(kicker).font(.caption.weight(.medium)).foregroundStyle(accent.deep)
       if let rest = store.rest, rest.key.date == store.selectedDate {
-        RestChip(rest: rest) { onWorkout(.nowhere) }
+        RestChip(rest: rest, onOpen: onWorkout)
       }
       SyncStatusLine()
       ZStack(alignment: .topLeading) {
@@ -71,7 +70,7 @@ struct DayCard: View {
         if workout == nil {
           onPlan()
         } else {
-          onWorkout(.card(frame: source.value, fill: .day))
+          onWorkout()
         }
       }
         .buttonStyle(.glassProminent).tint(accent.deep).foregroundStyle(.white).controlSize(.large)
@@ -83,7 +82,6 @@ struct DayCard: View {
     .background(workout == nil ? AnyShapeStyle(Color.white) : AnyShapeStyle(accent.acid),
       in: .rect(cornerRadius: Radius.card))
     .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(accent.deep.opacity(0.12)))
-    .sessionSource(source)
     .contentShape(.contextMenuPreview, .rect(cornerRadius: Radius.card))
     .contextMenu {
       if let choices, !choices.all.isEmpty {

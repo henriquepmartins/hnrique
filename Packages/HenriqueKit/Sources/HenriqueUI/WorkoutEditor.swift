@@ -58,8 +58,6 @@ struct WorkoutEditor: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var draft: WorkoutDraft
   @State private var step: EditorStep
-  /// Para onde o fluxo andou por último. O passo novo entra por esse lado.
-  @State private var enteringEdge: Edge = .trailing
   @State private var isSaving = false
   @State private var appliedRestOverrides = false
   /// A pasta ocupa metade da tela. Com o teclado aberto sobrava pouco para a
@@ -87,15 +85,7 @@ struct WorkoutEditor: View {
   }
 
   private var stepAnimation: Animation {
-    reduceMotion ? .easeOut(duration: 0.15) : .snappy(duration: 0.35)
-  }
-
-  private var stepTransition: AnyTransition {
-    guard !reduceMotion else { return .opacity }
-    let leaving: Edge = enteringEdge == .trailing ? .leading : .trailing
-    return .asymmetric(
-      insertion: .move(edge: enteringEdge).combined(with: .opacity),
-      removal: .move(edge: leaving).combined(with: .opacity))
+    reduceMotion ? Motion.plain : Motion.subtleEntrance
   }
 
   var body: some View {
@@ -172,18 +162,18 @@ struct WorkoutEditor: View {
       ZStack {
         switch step {
         case .identidade:
-          IdentityStep(draft: $draft).transition(stepTransition)
+          IdentityStep(draft: $draft).transition(.opacity)
         case .cor:
-          WorkoutColorPicker(color: $draft.color).padding(16).transition(stepTransition)
+          WorkoutColorPicker(color: $draft.color).padding(16).transition(.opacity)
         case .dias:
           WorkoutDaysSection(selection: $draft.weekdays, workoutId: workoutId)
-            .padding(16).transition(stepTransition)
+            .padding(16).transition(.opacity)
         case .exercicios:
           ExercisesStep(
             exercises: $draft.exercises, exerciseInfo: $exerciseInfo, catalog: catalog,
             workoutId: workoutId, workoutName: draft.trimmedName, isSaving: isSaving, onDelete: remove
           )
-          .transition(stepTransition)
+          .transition(.opacity)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -213,7 +203,6 @@ struct WorkoutEditor: View {
   private func go(to target: EditorStep?) {
     guard let target else { return }
     dismissKeyboard()
-    enteringEdge = target.rawValue > step.rawValue ? .trailing : .leading
     withAnimation(stepAnimation) { step = target }
   }
 

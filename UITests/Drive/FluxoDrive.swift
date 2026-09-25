@@ -344,6 +344,37 @@ final class FluxoDrive: XCTestCase {
     shot("31-calendario-mes-anterior")
   }
 
+  func testTransicaoSessaoTreino() {
+    launch()
+    let mondays = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[cd] 'segunda' OR label CONTAINS[cd] 'Monday'"))
+    let visibleMonday = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        mondays.allElementsBoundByIndex.contains(where: { $0.isHittable })
+      }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [visibleMonday], timeout: 8), .completed)
+    guard let monday = mondays.allElementsBoundByIndex.first(where: { $0.isHittable }) else {
+      XCTFail("segunda-feira visível na semana atual")
+      return
+    }
+    monday.tap()
+    let start = app.buttons.matching(
+      NSPredicate(format: "label IN {'começar', 'continuar', 'ver o treino'}")).firstMatch
+    XCTAssertTrue(start.waitForExistence(timeout: 10), "segunda tem treino no banco de teste")
+    shot("motion-01-card")
+    for index in 0..<3 {
+      start.tap()
+      let close = app.buttons["sessao.fechar"]
+      XCTAssertTrue(close.waitForExistence(timeout: 5), "sessão abriu")
+      XCTAssertTrue(close.isHittable, "fechar está acessível após o morph")
+      shot("motion-02-open-\(index)")
+      close.tap()
+      XCTAssertTrue(close.waitForNonExistence(timeout: 5), "sessão fechou")
+      XCTAssertTrue(start.isHittable, "card voltou a receber toques")
+    }
+    shot("motion-03-return")
+  }
+
   /// O modo treino atrás do botão do hero. Prova as três coisas que a tela de
   /// hoje não prova: a sessão abre, marcar série ali sobe o contador da sessão,
   /// e o descanso começa junto.

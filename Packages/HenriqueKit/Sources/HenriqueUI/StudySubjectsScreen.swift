@@ -364,15 +364,3 @@ private func properties(of detail: SubjectDetail, now: Date) -> [SubjectProperty
     },
   ].compactMap { $0 }
 }
-
-// MARK: - Entrada de lista
-
-extension View {
-  /// A cascata é da primeira montagem. Trocar de aba ou de filtro refaz a
-  /// subárvore inteira, e sem esta trava a lista entraria em cascata de novo a
-  /// cada toque. Quem chama vira `settled` no mesmo passo que troca a aba.
-  @ViewBuilder
-  func firstEntrance(index: Int, settled: Bool) -> some View {
-    if settled { self } else { staggeredEntrance(index: index, isReady: true) }
-  }
-}

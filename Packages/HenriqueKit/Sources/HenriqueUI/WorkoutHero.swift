@@ -57,12 +57,12 @@ struct WorkoutHero: View {
   @Environment(\.accent) private var accent
   @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 76.0
   @ScaledMetric(relativeTo: .largeTitle) private var restTitleSize = 52.0
-  @State private var source = SessionSourceFrame()
   let workout: WorkoutSummary?
   let date: CalendarDate
   var finished = false
   let notch: CGFloat
-  let onStart: (SessionOrigin) -> Void
+  let sessionSource: Namespace.ID
+  let onStart: () -> Void
 
   var body: some View {
     let model = HeroModel(workout: workout, date: date, finished: finished)
@@ -82,9 +82,8 @@ struct WorkoutHero: View {
             .font(.system(size: 14)).monospacedDigit().foregroundStyle(HeroInk.meta)
             .contentTransition(.numericText())
           Spacer(minLength: 0)
-          PaperButton(label: session.actionLabel) {
-            onStart(.card(frame: source.value, fill: .hero))
-          }
+          PaperButton(label: session.actionLabel, action: onStart)
+            .matchedTransitionSource(id: "sessao", in: sessionSource)
         }
       }
     }
@@ -97,7 +96,6 @@ struct WorkoutHero: View {
         .frame(height: 24)
     }
     .clipShape(.rect(cornerRadius: 32))
-    .sessionSource(source)
     .shadow(color: accent.deep.opacity(0.13), radius: 30, y: 22)
   }
 

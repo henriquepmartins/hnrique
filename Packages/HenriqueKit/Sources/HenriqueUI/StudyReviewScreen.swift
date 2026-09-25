@@ -430,11 +430,10 @@ private struct StudyReviewAnswerEntrance: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .opacity(shown ? 1 : 0)
-      .offset(y: shown || reduceMotion ? 0 : 10)
-      .onAppear {
-        withAnimation(.easeOut(duration: reduceMotion ? 0.15 : 0.3)) { shown = true }
+      .animation(reduceMotion ? Motion.plain : Motion.subtleEntrance) { view in
+        view.opacity(shown ? 1 : 0)
       }
+      .onAppear { shown = true }
   }
 }
 
