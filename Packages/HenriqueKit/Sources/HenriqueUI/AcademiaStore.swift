@@ -127,7 +127,8 @@ public final class AcademiaStore {
   public private(set) var isSignedIn: Bool = false
   public var selectedDate: CalendarDate = .today
   /// O dia que era hoje na última olhada. Quem estava em hoje quando a
-  /// meia-noite passou vai junto para o dia novo; quem escolheu outro dia fica.
+  /// meia-noite passou vai junto para o dia novo; quem escolheu outro dia ou
+  /// está no meio de um treino fica.
   @ObservationIgnored private var knownToday: CalendarDate = .today
   public var banner: String?
 
@@ -327,13 +328,35 @@ public final class AcademiaStore {
   }
 
   /// Chamada quando o app volta ou o dia vira. Só anda se quem usa estava
-  /// olhando o dia que era hoje.
-  func followToday(now today: CalendarDate = .today) {
+  /// olhando o dia que era hoje e o treino dele não está aberto. Enquanto está,
+  /// o dia velho continua sendo o conhecido, e a próxima volta ao app pergunta
+  /// de novo.
+  func followToday(today: CalendarDate = .today, now: Date = .now) {
     let previous = knownToday
+    guard previous != today else { return }
+    let following = selectedDate == previous && isSignedIn
+    if following, hasOpenSession(on: previous, now: now) { return }
     knownToday = today
-    guard previous != today, selectedDate == previous, isSignedIn else { return }
+    guard following else { return }
     Task { await select(date: today) }
   }
+
+  /// O treino do dia começou, não foi encerrado, ainda tem série valendo e
+  /// saiu série há menos de 3 h ou o descanso corre. Uma sessão que passa da
+  /// meia-noite fica na data em que começou.
+  public func hasOpenSession(on date: CalendarDate, now: Date = .now) -> Bool {
+    guard let dashboard, dashboard.date == date, let workout = dashboard.workout,
+      startedAt(workout.id, on: date) != nil, finishedAt(workout.id, on: date) == nil,
+      workout.exercises.contains(where: { !$0.sets.work.allSatisfy(\.isDone) })
+    else { return false }
+    if let rest, rest.key.date == date, !rest.isExpired(at: now) { return true }
+    let last = workout.exercises.flatMap {
+      $0.sets.prep.compactMap(\.completedAt) + $0.sets.work.compactMap(\.completedAt)
+    }.max()
+    return last.map { now.timeIntervalSince($0) < Self.openSessionWindow } ?? false
+  }
+
+  static let openSessionWindow: TimeInterval = 3 * 60 * 60
 
   #if DEBUG
     /// A casca do app sem servidor nem conta, só para capturar as telas com

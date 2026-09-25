@@ -149,6 +149,37 @@ struct StoreRestTests {
     #expect(restAlarmBody(nil) == "hora da próxima série")
   }
 
+  @Test("sessão aberta à meia-noite fica no dia em que começou até 3 h sem série")
+  func openSessionHoldsTheDay() async throws {
+    let store = await lojaComPainel()
+    let today = CalendarDate.today
+    let tomorrow = today.adding(days: 1)
+    _ = await store.record(key: workKey("supino-reto", 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
+      .value
+    let last = try #require(completionDate(in: store, key: workKey("supino-reto", 2)))
+
+    store.followToday(today: tomorrow, now: last + 20 * 60)
+    try? await Task.sleep(for: .milliseconds(100))
+    #expect(store.selectedDate == today)
+    #expect(store.hasOpenSession(on: today, now: last + 20 * 60))
+
+    store.followToday(today: tomorrow, now: last + 3 * 60 * 60 + 1)
+    await esperar { store.selectedDate == tomorrow }
+    #expect(store.selectedDate == tomorrow)
+  }
+
+  @Test("treino encerrado não segura o dia")
+  func finishedSessionFollowsTheDay() async throws {
+    let store = await lojaComPainel()
+    let tomorrow = CalendarDate.today.adding(days: 1)
+    _ = await store.record(key: workKey("supino-reto", 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
+      .value
+    store.finishWorkout()
+    store.followToday(today: tomorrow, now: .now)
+    await esperar { store.selectedDate == tomorrow }
+    #expect(store.selectedDate == tomorrow)
+  }
+
   @Test("encerrar guarda a hora, para o descanso e uma série nova reabre")
   func finishAndReopen() async throws {
     let store = await lojaComPainel()
@@ -184,14 +215,14 @@ struct StoreRestTests {
   func followsTheNewDay() async {
     let store = await lojaComPainel()
     let tomorrow = CalendarDate.today.adding(days: 1)
-    store.followToday(now: tomorrow)
+    store.followToday(today: tomorrow)
     await esperar { store.selectedDate == tomorrow }
     #expect(store.selectedDate == tomorrow)
 
     let other = await lojaComPainel()
     let yesterday = CalendarDate.today.adding(days: -1)
     await other.select(date: yesterday)
-    other.followToday(now: tomorrow)
+    other.followToday(today: tomorrow)
     try? await Task.sleep(for: .milliseconds(100))
     #expect(other.selectedDate == yesterday)
   }
