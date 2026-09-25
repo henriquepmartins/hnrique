@@ -203,7 +203,7 @@ struct SessionFiguresTests {
     #expect(weightWarning(250, reference: .lastTime(25)) == "250 kg? da última vez foi 25")
     #expect(weightWarning(250, reference: .plan(25)) == "250 kg? o plano é 25")
     #expect(weightWarning(450, reference: nil) == "450 kg? confere o número")
-    #expect(weightWarning(1200, reference: .lastTime(100)) == "o limite é 1000 kg")
+    #expect(weightWarning(1200, reference: .lastTime(100)) == "o limite é 1.000 kg")
     #expect(weightWarning(50, reference: .plan(0)) == nil)
     #expect(weightWarning(nil, reference: .lastTime(20)) == nil)
   }

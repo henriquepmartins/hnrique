@@ -5,8 +5,13 @@ import Foundation
 public enum RecordKind: String, Codable, Hashable, Sendable {
   case carga, reps, estreia
 
+  /// O selo da estreia é um símbolo, não texto: "1º" ao lado de "estreia"
+  /// dizia a mesma coisa duas vezes.
+  public var badgeSymbol: String? { self == .estreia ? "sparkle" : nil }
+
   /// O selo da esquerda, com o número em cima e a unidade embaixo. Em uma linha
-  /// só, "+2,5 kg" não cabe nos 42 pontos do quadrado.
+  /// só, "+2,5 kg" não cabe nos 42 pontos do quadrado. A estreia usa
+  /// `badgeSymbol`; o texto dela fica para quem ainda não desenha o símbolo.
   public func badge(delta: Double) -> String {
     switch self {
     case .carga: "+\(Formatting.trim(delta))\nkg"
@@ -64,10 +69,9 @@ public struct PersonalRecord: Codable, Hashable, Sendable, Identifiable {
 }
 
 public enum Formatting {
-  /// 26.0 vira "26" e 27.5 continua "27,5". Meio quilo existe nas anilhas, o ",0" não.
+  /// 26.0 vira "26", 27.5 continua "27,5" e 1008 vira "1.008". Meio quilo
+  /// existe nas anilhas, o ",0" não.
   public static func trim(_ value: Double) -> String {
-    value == value.rounded()
-      ? String(Int(value))
-      : value.formatted(.number.precision(.fractionLength(0...1)).locale(Locale(identifier: "pt_BR")))
+    value.formatted(.number.precision(.fractionLength(0...1)).locale(Locale(identifier: "pt_BR")))
   }
 }

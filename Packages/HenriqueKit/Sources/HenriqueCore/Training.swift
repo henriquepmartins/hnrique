@@ -57,9 +57,28 @@ public struct ExerciseSets: Codable, Hashable, Sendable {
 
 public struct PreviousWorkSets: Codable, Hashable, Sendable {
   public var date: CalendarDate
+  /// A maior carga da última sessão.
   public var weightKg: Double
   public var reps: [Int]
   public var volumeKg: Double
+  /// Carga e repetições de cada série. Nulo no servidor antigo, que só manda o
+  /// maior peso e as repetições soltas.
+  public var sets: [PreviousPrepSets.Set]? = nil
+
+  /// Casa pelo índice da série, não pela posição no array.
+  public func set(_ index: Int) -> PreviousPrepSets.Set? { sets?.first { $0.index == index } }
+}
+
+extension PreviousWorkSets {
+  /// `sets` é aditivo: um formato inesperado vira nulo em vez de derrubar o painel.
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    date = try container.decode(CalendarDate.self, forKey: .date)
+    weightKg = try container.decode(Double.self, forKey: .weightKg)
+    reps = try container.decode([Int].self, forKey: .reps)
+    volumeKg = try container.decode(Double.self, forKey: .volumeKg)
+    sets = (try? container.decodeIfPresent([PreviousPrepSets.Set].self, forKey: .sets)) ?? nil
+  }
 }
 
 /// De onde o exercício veio: do plano ou acrescentado só para a sessão de hoje.
@@ -150,6 +169,12 @@ public struct WorkoutSummary: Codable, Hashable, Sendable, Identifiable {
   public var completedWorkSetCount: Int
   public var completionPercent: Int
   public var exercises: [DashboardExercise]
+
+  /// A série valendo mais pesada feita no exercício nesta sessão. É a carga que
+  /// o plano guarda: numa pirâmide 100/90/80 o plano fica com 100.
+  public func topWorkWeight(exerciseId: String) -> Double? {
+    exercises.first { $0.id == exerciseId }?.sets.work.filter(\.isDone).map(\.weightKg).max()
+  }
 }
 
 public struct WorkoutSessionTiming: Equatable, Sendable {
@@ -200,13 +225,40 @@ public struct WorkoutRecap: Equatable, Sendable {
   /// Volume de hoje e da última vez, só dos exercícios com `previous`. Nulo
   /// quando nenhum exercício tem histórico.
   public let comparison: VolumeComparison?
+  /// Uma linha por exercício, na ordem do treino.
+  public let exercises: [ExerciseLine]
+  /// Os recordes batidos no dia do treino.
+  public let records: [PersonalRecord]
 
   public struct VolumeComparison: Equatable, Sendable {
     public let today: Double
     public let previous: Double
   }
 
-  public init(_ workout: WorkoutSummary, timing: WorkoutSessionTiming?, now: Date = .now) {
+  public struct ExerciseLine: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    public let doneSets: Int
+    public let totalSets: Int
+    /// A série valendo feita mais pesada, e no empate a de mais repetições.
+    /// Nulo quando nenhuma saiu.
+    public let top: WorkSet?
+
+    init(_ exercise: DashboardExercise) {
+      id = exercise.id
+      name = exercise.name
+      doneSets = exercise.sets.completedWorkCount
+      totalSets = exercise.sets.work.count
+      top = exercise.sets.work.filter(\.isDone)
+        .max { ($0.weightKg, $0.reps) < ($1.weightKg, $1.reps) }
+    }
+  }
+
+  /// `records` pode vir inteiro do painel: só os de `date` ficam.
+  public init(
+    _ workout: WorkoutSummary, timing: WorkoutSessionTiming?, records: [PersonalRecord] = [],
+    on date: CalendarDate = .today, now: Date = .now
+  ) {
     durationSeconds = timing.map { Int($0.elapsed(at: now)) }
     workVolumeKg = workout.exercises.reduce(0) { $0 + HenriqueCore.workVolumeKg($1.sets.work) }
     doneSets = workout.exercises.reduce(0) { $0 + $1.sets.completedWorkCount }
@@ -215,6 +267,8 @@ public struct WorkoutRecap: Equatable, Sendable {
     comparison = compared.isEmpty ? nil : VolumeComparison(
       today: compared.reduce(0) { $0 + HenriqueCore.workVolumeKg($1.sets.work) },
       previous: compared.reduce(0) { $0 + ($1.previous?.volumeKg ?? 0) })
+    exercises = workout.exercises.map(ExerciseLine.init)
+    self.records = records.filter { $0.date == date }
   }
 }
 

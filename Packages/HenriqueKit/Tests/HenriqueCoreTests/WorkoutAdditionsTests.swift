@@ -144,6 +144,64 @@ struct WorkoutAdditionsTests {
     #expect(recap.comparison == WorkoutRecap.VolumeComparison(today: 320, previous: 680))
   }
 
+  @Test("o resumo traz uma linha por exercício com a maior série e os recordes do dia")
+  func recapLines() throws {
+    var workout = try Self.workout()
+    workout.exercises[0].sets.work[1].completedAt = Date(timeIntervalSince1970: 1_757_337_000)
+    workout.exercises[0].sets.work[1].weightKg = 45
+    workout.exercises[0].sets.work[1].reps = 6
+    let day = CalendarDate(iso: "2026-09-08")!
+    let today = PersonalRecord(
+      exerciseId: "supino-reto", exerciseName: "Supino reto", kind: .carga, weightKg: 45, reps: 6,
+      date: day, delta: 2.5)
+    let older = PersonalRecord(
+      exerciseId: "supino-reto", exerciseName: "Supino reto", kind: .reps, weightKg: 40, reps: 9,
+      date: CalendarDate(iso: "2026-09-01")!, delta: 1)
+    let recap = WorkoutRecap(workout, timing: nil, records: [older, today], on: day)
+    #expect(recap.exercises.count == 1)
+    #expect(recap.exercises[0].name == "Supino reto")
+    #expect(recap.exercises[0].doneSets == 2)
+    #expect(recap.exercises[0].totalSets == 2)
+    #expect(recap.exercises[0].top?.weightKg == 45)
+    #expect(recap.exercises[0].top?.reps == 6)
+    #expect(recap.records == [today])
+  }
+
+  @Test("a carga do plano é a série valendo mais pesada feita, não a última")
+  func topWorkWeight() throws {
+    var workout = try Self.workout()
+    workout.exercises[0].sets.work = [
+      WorkSet(index: 1, weightKg: 100, reps: 5, toFailure: false, completedAt: .now),
+      WorkSet(index: 2, weightKg: 90, reps: 6, toFailure: false, completedAt: .now),
+      WorkSet(index: 3, weightKg: 120, reps: 8, toFailure: false),
+      WorkSet(index: 4, weightKg: 80, reps: 8, toFailure: false, completedAt: .now),
+    ]
+    #expect(workout.topWorkWeight(exerciseId: "supino-reto") == 100)
+    #expect(workout.topWorkWeight(exerciseId: "outro") == nil)
+    workout.exercises[0].sets.work = workout.exercises[0].sets.work.map {
+      var set = $0
+      set.completedAt = nil
+      return set
+    }
+    #expect(workout.topWorkWeight(exerciseId: "supino-reto") == nil)
+  }
+
+  @Test("o número de kg agrupa milhar e só mostra a casa decimal quando existe")
+  func trimGroupsThousands() {
+    #expect(Formatting.trim(1008) == "1.008")
+    #expect(Formatting.trim(26) == "26")
+    #expect(Formatting.trim(27.5) == "27,5")
+    #expect(Formatting.trim(12_345.5) == "12.345,5")
+  }
+
+  @Test("só a estreia usa símbolo no selo")
+  func badgeSymbol() {
+    #expect(RecordKind.estreia.badgeSymbol == "sparkle")
+    #expect(RecordKind.carga.badgeSymbol == nil)
+    #expect(RecordKind.carga.badge(delta: 2.5) == "+2,5\nkg")
+    #expect(RecordKind.reps.badgeSymbol == nil)
+  }
+
   private static func workout() throws -> WorkoutSummary {
     let exercise = try JSONDecoder.henrique().decode(DashboardExercise.self, from: exerciseJSON(extra: ""))
     var prep = exercise
