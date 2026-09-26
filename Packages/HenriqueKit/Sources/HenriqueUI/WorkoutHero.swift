@@ -62,8 +62,6 @@ struct WorkoutHero: View {
   let date: CalendarDate
   var finished = false
   var duration: TimeInterval?
-  /// A cor do treino no plano. Nula para um treino que não está no plano.
-  var tone: WorkoutTone?
   let notch: CGFloat
   let sessionSource: Namespace.ID
   let onStart: () -> Void
@@ -71,13 +69,13 @@ struct WorkoutHero: View {
   var body: some View {
     let model = HeroModel(workout: workout, finished: finished, duration: duration)
     let dateLabel = HeroModel.dateLabel(date)
-    SpreadColumn(minHeight: 408 - 44 - 24, minGap: 24) {
+    HeroColumn(minHeight: 408 - 44 - 24, minGap: 24, topInset: 44, bottomInset: 24) {
       switch model {
       case .rest:
-        title("descanso", size: restTitleSize, dot: nil)
+        title("descanso", size: restTitleSize)
           .accessibilityLabel("\(dateLabel), descanso")
       case .session(let session):
-        title(session.workout.name, size: titleSize, dot: tone?.top)
+        title(session.workout.name, size: titleSize)
           .accessibilityLabel("\(dateLabel), \(session.workout.name)")
           .accessibilityValue(session.workout.focus)
         HStack(spacing: 12) {
@@ -104,19 +102,8 @@ struct WorkoutHero: View {
 
   /// A linha exata de `size * 1.05` deixa a perna do "ç" e do "p" fora do
   /// quadro, e o rodapé encostava nela. A folga de baixo devolve esse espaço.
-  /// O ponto na cor do treino fica pendurado na margem, na altura do meio da
-  /// primeira linha: ao lado do nome ele tirava largura e "Pernas e glúteos"
-  /// quebrava em três linhas.
-  private func title(_ text: String, size: CGFloat, dot: Color?) -> some View {
+  private func title(_ text: String, size: CGFloat) -> some View {
     FilmTitle(text: text, size: size)
-      .overlay(alignment: .topLeading) {
-        if let dot {
-          Circle().fill(dot)
-            .overlay(Circle().strokeBorder(HeroInk.title.opacity(0.7), lineWidth: 1.5))
-            .frame(width: 10, height: 10)
-            .offset(x: -17, y: size * 0.525 - 5)
-        }
-      }
       .padding(.bottom, size * 0.18)
       .accessibilityElement(children: .ignore)
   }
@@ -128,12 +115,17 @@ private enum HeroInk {
   static let cream = Color(hex: 0xf3ede2)
 }
 
-/// O `justify-content: space-between` do web. Um VStack com Spacer não cresce
+/// O rodapé no pé e o título no meio do espaço entre a borda de cima do cartão
+/// e o rodapé; sem rodapé, no meio do cartão. Um VStack com Spacer não cresce
 /// dentro do ScrollView, que não propõe altura, então o cartão ficaria do
-/// tamanho do texto em vez dos 408 pontos do web.
-private struct SpreadColumn: Layout {
+/// tamanho do texto em vez dos 408 pontos do web. `topInset` e `bottomInset`
+/// são as folgas do cartão em volta da coluna, para medir o meio pela borda do
+/// cartão. Um nome longo desce até `minGap` do rodapé e depois empurra o cartão.
+private struct HeroColumn: Layout {
   let minHeight: CGFloat
   let minGap: CGFloat
+  let topInset: CGFloat
+  let bottomInset: CGFloat
 
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let width = proposal.width ?? subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
@@ -143,16 +135,24 @@ private struct SpreadColumn: Layout {
   }
 
   func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    let heights = subviews.map { $0.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height }
-    let gap = subviews.count > 1
-      ? (bounds.height - heights.reduce(0, +)) / CGFloat(subviews.count - 1) : 0
-    var y = bounds.minY
-    for (subview, height) in zip(subviews, heights) {
-      subview.place(
-        at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+    guard let title = subviews.first else { return }
+    let titleHeight = title.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
+    var footerTop = bounds.maxY
+    for footer in subviews.dropFirst().reversed() {
+      let height = footer.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil)).height
+      footerTop -= height
+      footer.place(
+        at: CGPoint(x: bounds.minX, y: footerTop), anchor: .topLeading,
         proposal: ProposedViewSize(width: bounds.width, height: height))
-      y += height + gap
     }
+    let hasFooter = subviews.count > 1
+    let floor = hasFooter ? footerTop - minGap - titleHeight : bounds.maxY - titleHeight
+    let bottom = hasFooter ? footerTop : bounds.maxY + bottomInset
+    let middle = (bounds.minY - topInset + bottom) / 2
+    let y = max(bounds.minY, min(middle - titleHeight / 2, floor))
+    title.place(
+      at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+      proposal: ProposedViewSize(width: bounds.width, height: titleHeight))
   }
 }
 
