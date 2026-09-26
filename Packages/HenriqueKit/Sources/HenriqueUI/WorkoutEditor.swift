@@ -8,8 +8,8 @@ enum EditorStep: Int, CaseIterable, Hashable {
 
   var title: String {
     switch self {
-    case .identidade: "nome e foco"
-    case .cor: "escolha a cor"
+    case .identidade: "nome"
+    case .cor: "cor"
     case .dias: "dias"
     case .exercicios: "exercícios"
     }
@@ -55,6 +55,7 @@ struct WorkoutEditor: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.accent) private var accent
   @State private var draft: WorkoutDraft
   @State private var step: EditorStep
   @State private var isSaving = false
@@ -121,7 +122,7 @@ struct WorkoutEditor: View {
         Button("concluir") { save() }
           .buttonStyle(.glassProminent)
           .controlSize(.large)
-          .tint(.blue)
+          .tint(accent.deep)
           .disabled(!draft.canSave || isSaving)
       }
       .padding(.horizontal, Space.l)
@@ -422,7 +423,7 @@ private struct ExercisesStep: View {
   }
 }
 
-/// Os sete dias num toque cada, na ordem da semana do aparelho. O aviso embaixo
+/// Os sete dias num toque cada, de segunda a domingo. O aviso embaixo
 /// diz quando um dia marcado sai de outro treino, antes de salvar.
 struct WorkoutDaysSection: View {
   @Environment(AcademiaStore.self) private var store
@@ -431,7 +432,7 @@ struct WorkoutDaysSection: View {
   let workoutId: String?
 
   private var orderedWeekdays: [Int] {
-    let first = Calendar.autoupdatingCurrent.firstWeekday - 1
+    let first = Calendar.trainingWeek.firstWeekday - 1
     return (0..<7).map { (first + $0) % 7 }
   }
 
@@ -518,7 +519,7 @@ extension View {
 }
 
 #if DEBUG
-  #Preview("Editor, nome e foco") { WorkoutEditorPreview(step: .identidade) }
+  #Preview("Editor, nome") { WorkoutEditorPreview(step: .identidade) }
   #Preview("Editor, cor") { WorkoutEditorPreview(step: .cor) }
   #Preview("Editor, dias") { WorkoutEditorPreview(step: .dias) }
   #Preview("Editor, exercícios") { WorkoutEditorPreview(step: .exercicios) }
