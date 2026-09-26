@@ -1,8 +1,5 @@
 import HenriqueCore
 import SwiftUI
-#if canImport(UIKit)
-  import UIKit
-#endif
 
 /// Os passos do editor, na ordem em que aparecem. A barra de baixo, o botão de
 /// voltar e o de concluir leem daqui, então um passo novo entra só nesta lista.
@@ -62,9 +59,6 @@ struct WorkoutEditor: View {
   @State private var step: EditorStep
   @State private var isSaving = false
   @State private var appliedRestOverrides = false
-  /// A pasta ocupa metade da tela. Com o teclado aberto sobrava pouco para a
-  /// lista, e o campo focado ficava escondido atrás da pasta.
-  @State private var keyboardUp = false
   /// O catálogo por id, montado uma vez. Cada tecla no nome roda o body de novo
   /// e cada linha de exercício lê daqui, então a busca não pode varrer a lista.
   @State private var exerciseInfo: [String: ExerciseCatalogItem]
@@ -133,16 +127,22 @@ struct WorkoutEditor: View {
       .padding(.horizontal, Space.l)
       .padding(.top, Space.m)
 
-      if !keyboardUp {
+      if step == .cor {
         WorkoutFolderCard(
-          name: draft.name.isEmpty ? "novo treino" : draft.name,
-          tone: draft.color.tone, hasDays: !draft.weekdays.isEmpty
+          name: displayName, tone: draft.color.tone, hasDays: !draft.weekdays.isEmpty
         )
         .dynamicTypeSize(.large)
-        .containerRelativeFrame(.horizontal) { width, _ in width * 0.62 }
+        // A 62% a pasta, o seletor e o título passavam da altura da folha e
+        // empurravam o "fechar" para cima só neste passo.
+        .containerRelativeFrame(.horizontal) { width, _ in width * 0.54 }
         .padding(.top, 8)
         .accessibilityHidden(true)
         .transition(.opacity)
+      } else {
+        WorkoutPreviewRow(name: displayName, tone: draft.color.tone)
+          .padding(.horizontal, 16)
+          .padding(.top, 12)
+          .transition(.opacity)
       }
 
       ZStack {
@@ -181,14 +181,6 @@ struct WorkoutEditor: View {
       .clipped()
     }
     .background(Color.canvas)
-    #if os(iOS)
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-      withAnimation(stepAnimation) { keyboardUp = true }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-      withAnimation(stepAnimation) { keyboardUp = false }
-    }
-    #endif
     .safeAreaInset(edge: .bottom) {
       if let next = step.next {
         Button("avançar") { go(to: next) }
@@ -199,6 +191,10 @@ struct WorkoutEditor: View {
           .disabled(!step.isSatisfied(by: draft) || isSaving)
       }
     }
+  }
+
+  private var displayName: String {
+    draft.trimmedName.isEmpty ? "novo treino" : draft.trimmedName
   }
 
   private func go(to target: EditorStep?) {
@@ -254,6 +250,31 @@ private struct RoundButton: View {
     }
     .buttonStyle(StudyPressStyle())
     .accessibilityLabel(label)
+  }
+}
+
+/// A prévia fora do passo da cor: a amostra e o nome numa linha de 56 pt, para
+/// sobrar tela para os campos e a lista.
+private struct WorkoutPreviewRow: View {
+  let name: String
+  let tone: WorkoutTone
+
+  var body: some View {
+    HStack(spacing: 12) {
+      RoundedRectangle(cornerRadius: 10)
+        .fill(tone.top)
+        .frame(width: 32, height: 32)
+      Text(name)
+        .font(.headline.weight(.semibold))
+        .foregroundStyle(Color.ink)
+        .lineLimit(1)
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 12)
+    .frame(height: 56)
+    .background(.white, in: .rect(cornerRadius: 18))
+    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+    .accessibilityHidden(true)
   }
 }
 
