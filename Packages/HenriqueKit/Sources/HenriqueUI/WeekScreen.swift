@@ -236,13 +236,21 @@ struct WorkoutFolderCard: View {
         .offset(x: 389 * scale, y: 29 * scale)
         .accessibilityHidden(true)
       VStack(spacing: 0) {
-        Text(hasDays ? "começar treino" : "sem dia")
-          .font(.system(size: footerSize * textScale, weight: .semibold))
-          .multilineTextAlignment(.center)
-          .lineLimit(2)
-          .padding(.horizontal, 24 * scale)
-          .foregroundStyle(Color.mutedInk)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if hasDays {
+          Image(systemName: "play.fill")
+            .font(.system(size: footerSize * textScale * 0.85, weight: .semibold))
+            .foregroundStyle(tone.ink)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityHidden(true)
+        } else {
+          Text("sem dia")
+            .font(.system(size: footerSize * textScale, weight: .semibold))
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .padding(.horizontal, 24 * scale)
+            .foregroundStyle(Color.mutedInk)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
       }
       .frame(height: (97 + extraFooterHeight) * scale)
       .frame(maxHeight: .infinity, alignment: .bottom)
