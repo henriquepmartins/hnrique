@@ -198,25 +198,35 @@ public final class AcademiaStore {
     persist(value)
   }
 
-  private static var snapshotURL: URL? {
+  static var defaultSnapshotURL: URL? {
     FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
       .appending(path: "henrique-dashboard.json")
   }
+  @ObservationIgnored private let snapshotURL: URL?
 
   /// Pinta a última tela salva antes da rede responder. Só vale para hoje: dia
-  /// antigo entra apagado e desabilitado, pior que o esqueleto.
+  /// antigo entra apagado e desabilitado, pior que o esqueleto. A exceção é o
+  /// treino de ontem ainda aberto depois da meia-noite, que abre no dia dele,
+  /// como `followToday` faria com o app aberto.
   private func loadSnapshot() {
-    guard let url = Self.snapshotURL,
+    guard let url = snapshotURL,
       let data = try? Data(contentsOf: url),
-      let saved = try? JSONDecoder.henrique().decode(Dashboard.self, from: data),
-      saved.date == .today
+      let saved = try? JSONDecoder.henrique().decode(Dashboard.self, from: data)
     else { return }
     acceptedDashboard = saved
+    if saved.date != .today {
+      guard hasOpenSession(on: saved.date) else {
+        acceptedDashboard = nil
+        return
+      }
+      selectedDate = saved.date
+      knownToday = saved.date
+    }
     phase = .ready
   }
 
   private func persist(_ value: Dashboard) {
-    guard let url = Self.snapshotURL,
+    guard let url = snapshotURL,
       let data = try? JSONEncoder.henrique().encode(value)
     else { return }
     Task.detached(priority: .background) {
@@ -225,7 +235,7 @@ public final class AcademiaStore {
   }
 
   private func clearSnapshot() {
-    guard let url = Self.snapshotURL else { return }
+    guard let url = snapshotURL else { return }
     Task.detached(priority: .background) {
       try? FileManager.default.removeItem(at: url)
     }
@@ -278,13 +288,18 @@ public final class AcademiaStore {
     self.init(client: client, restAlarm: AcademiaRestAlarm(), defaults: .standard)
   }
 
-  init(client: APIClient, restAlarm: any RestAlarm, defaults: UserDefaults) {
+  init(
+    client: APIClient, restAlarm: any RestAlarm, defaults: UserDefaults, snapshotURL: URL? = AcademiaStore.defaultSnapshotURL
+  ) {
     self.client = client
     self.restAlarm = restAlarm
     self.defaults = defaults
+    self.snapshotURL = snapshotURL
     loadLocalState()
-    loadSnapshot()
+    // A fila antes do retrato: a série marcada e não enviada diz se o treino
+    // de ontem ainda está aberto.
     loadQueue()
+    loadSnapshot()
     observeDayChanges()
   }
 
@@ -336,6 +351,9 @@ public final class AcademiaStore {
   /// o dia velho continua sendo o conhecido, e a próxima volta ao app pergunta
   /// de novo.
   func followToday(today: CalendarDate = .today, now: Date = .now) {
+    // Antes do chaveiro responder, `isSignedIn` ainda é falso e o dia velho
+    // seria esquecido sem ninguém andar. `start()` pergunta de novo.
+    guard sessionChecked else { return }
     let previous = knownToday
     guard previous != today else { return }
     let following = selectedDate == previous && isSignedIn
@@ -386,6 +404,7 @@ public final class AcademiaStore {
       return
     }
     await load()
+    followToday()
   }
 
   public func signIn(username: String, password: String) async {
