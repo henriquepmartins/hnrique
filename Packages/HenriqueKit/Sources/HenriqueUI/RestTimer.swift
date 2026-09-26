@@ -46,8 +46,7 @@ func restClock(_ seconds: TimeInterval) -> String {
 struct RestTimerBar: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @ScaledMetric(relativeTo: .largeTitle) private var timeSize = 38.0
-  @ScaledMetric(relativeTo: .caption) private var labelSize = 11.5
+  @ScaledMetric(relativeTo: .title) private var timeSize = 26.0
   @ScaledMetric(relativeTo: .footnote) private var nextSize = 12.5
   @ScaledMetric(relativeTo: .body) private var buttonSize = 15.0
   let rest: RestState
@@ -55,48 +54,55 @@ struct RestTimerBar: View {
   let onAdjust: (TimeInterval) -> Void
   let onDismiss: () -> Void
 
+  /// "puxada alta · 48 kg", ou "puxada alta · A · 35 kg" no aquecimento.
+  private var nextLine: String {
+    guard let next else { return "última série do treino" }
+    let kind = next.kind == .prep ? " · A" : ""
+    return "\(next.exerciseName.lowercased())\(kind) · \(Formatting.trim(next.weightKg)) kg"
+  }
+
+  private var spokenNext: String {
+    guard let next else { return "última série do treino" }
+    let kind = next.kind == .prep ? "aquecimento" : "série \(next.index)"
+    return "a seguir, \(next.exerciseName.lowercased()), \(kind), \(Formatting.trim(next.weightKg)) quilos"
+  }
+
+  /// Compacto de propósito: o cartão encolhe a lista por baixo, e alto ele
+  /// tapava o "+ série" e o exercício seguinte.
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.2)) { context in
       let remaining = rest.remaining(at: context.date)
       let whole = Int(remaining.rounded())
       let over = remaining <= 0
-      VStack(spacing: 0) {
-        HStack(spacing: 14) {
+      VStack(spacing: 10) {
+        HStack(spacing: 12) {
           ZStack {
-            Circle().stroke(Color.white.opacity(0.18), lineWidth: 5)
+            Circle().stroke(Color.white.opacity(0.18), lineWidth: 4)
             Circle().trim(from: 0, to: rest.fraction(at: context.date))
-              .stroke(accent.acid, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+              .stroke(accent.acid, style: StrokeStyle(lineWidth: 4, lineCap: .round))
               .rotationEffect(.degrees(-90))
           }
-          .frame(width: 54, height: 54)
-          VStack(alignment: .leading, spacing: 0) {
-            Text(over ? "descanso completo" : "descanso")
-              .font(.system(size: labelSize, design: .monospaced)).tracking(labelSize * 0.03)
-              .foregroundStyle(accent.acid)
-              .padding(.bottom, 2)
-            Group {
-              if over {
-                Text("vai").foregroundStyle(accent.acid)
-              } else {
-                Text(restClock(remaining)).foregroundStyle(.white)
-                  .contentTransition(.numericText(countsDown: true))
-              }
+          .frame(width: 36, height: 36)
+          .accessibilityHidden(true)
+          Group {
+            if over {
+              Text("vai").foregroundStyle(accent.acid)
+            } else {
+              Text(restClock(remaining)).foregroundStyle(.white)
+                .contentTransition(.numericText(countsDown: true))
             }
-            .font(.system(size: timeSize, weight: .semibold)).monospacedDigit()
-            .tracking(timeSize * -0.055)
-            .animation(reduceMotion ? nil : Motion.roll, value: whole)
-            Group {
-              if let next {
-                Text("a seguir · \(next.exerciseName.lowercased()) · \(next.kind == .prep ? "A" : "série \(next.index)") · \(weightLabel(next.weightKg))")
-              } else {
-                Text("última série do treino")
-              }
-            }
-            .font(.system(size: nextSize)).monospacedDigit()
-            .foregroundStyle(Color.white.opacity(0.62)).lineLimit(1)
-            .padding(.top, 4)
           }
-          Spacer(minLength: 0)
+          .font(.system(size: timeSize, weight: .semibold)).monospacedDigit()
+          .tracking(timeSize * -0.05)
+          .fixedSize()
+          .animation(reduceMotion ? nil : Motion.roll, value: whole)
+          .accessibilityLabel(over ? "descanso completo" : "descanso")
+          .accessibilityValue(over ? "" : restClock(remaining))
+          Text(nextLine)
+            .font(.system(size: nextSize)).monospacedDigit()
+            .foregroundStyle(Color.white.opacity(0.62)).lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(spokenNext)
         }
         WeightedRow(weights: [1, 1, 1.3], spacing: 8) {
           step("−15s") { onAdjust(-15) }
@@ -104,21 +110,20 @@ struct RestTimerBar: View {
           Button(action: onDismiss) {
             Text(over ? "fechar" : "pular")
               .font(.system(size: buttonSize, weight: .semibold)).foregroundStyle(accent.deep)
-              .padding(.vertical, 13).frame(maxWidth: .infinity)
+              .padding(.vertical, 9).frame(maxWidth: .infinity)
               .background(accent.acid, in: .capsule)
           }
           .buttonStyle(PressScaleStyle())
         }
-        .padding(.top, 16)
       }
-      .padding(.top, 16).padding(.horizontal, 18).padding(.bottom, 18)
-      .background(over ? accent.base : accent.deep, in: .rect(cornerRadius: 30))
+      .padding(12)
+      .background(over ? accent.base : accent.deep, in: .rect(cornerRadius: 24))
       .shadow(color: accent.deep.opacity(0.75), radius: 24, y: 12)
       .animation(reduceMotion ? nil : Motion.crossfade, value: over)
       .sensoryFeedback(.success, trigger: over) { _, fired in fired }
       .accessibilityElement(children: .contain)
       .accessibilityLabel("descanso")
-      .accessibilityValue(restClock(remaining))
+      .accessibilityIdentifier("descanso.cartao")
     }
   }
 
@@ -127,7 +132,7 @@ struct RestTimerBar: View {
       Text(title)
         .font(.system(size: buttonSize, weight: .medium)).monospacedDigit()
         .foregroundStyle(Color.white.opacity(0.93))
-        .padding(.vertical, 13).frame(maxWidth: .infinity)
+        .padding(.vertical, 9).frame(maxWidth: .infinity)
         .background(Color.white.opacity(0.12), in: .capsule)
     }
     .buttonStyle(PressScaleStyle())

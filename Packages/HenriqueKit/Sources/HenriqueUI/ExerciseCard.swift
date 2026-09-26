@@ -25,8 +25,9 @@ struct ExerciseCard: View {
           }
           VStack(alignment: .leading, spacing: 6) {
             Text(exercise.name.lowercased()).font(.headline.weight(.medium))
-            Text(prescription).font(.caption).foregroundStyle(Color.mutedInk)
+            prescription.font(.caption).foregroundStyle(Color.mutedInk)
               .fixedSize(horizontal: false, vertical: true)
+              .accessibilityLabel(spokenPrescription)
           }
           Spacer(minLength: 0)
           Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
@@ -38,10 +39,11 @@ struct ExerciseCard: View {
         VStack(spacing: 8) {
           HStack {
             Color.clear.frame(width: 34, height: 1)
-            Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+            Text("kg").frame(maxWidth: .infinity)
             Text("reps").frame(maxWidth: .infinity)
             Color.clear.frame(width: 44, height: 1)
           }.font(.caption2).foregroundStyle(Color.mutedInk)
+          .accessibilityHidden(true)
           if !exercise.sets.prep.isEmpty {
             group("aquecimento", color: .mutedInk)
             ForEach(exercise.sets.prep) { set in
@@ -50,15 +52,11 @@ struct ExerciseCard: View {
                 reference: setReference(exercise, kind: .prep, index: set.index))
             }
           }
-          group(exercise.prescription.workToFailure ? "valendo · falha" : "valendo", color: accent.base)
+          group("valendo", color: accent.base, toFailure: exercise.prescription.workToFailure)
           ForEach(exercise.sets.work) { set in
             TrainingSetRow(key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: .work, index: set.index),
               weight: set.weightKg, repetitions: set.reps, done: set.isDone, failure: set.toFailure,
               reference: setReference(exercise, kind: .work, index: set.index))
-          }
-          ForEach([previousPrep, previous].compactMap { $0 }, id: \.self) { line in
-            Text(line).font(.caption).foregroundStyle(Color.mutedInk)
-              .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
           }
         }.padding(Space.s).background(.white, in: .rect(cornerRadius: Radius.concentric(SetRowScale.list.radius, padding: Space.s))).padding(6)
           .transition(.opacity)
@@ -67,27 +65,43 @@ struct ExerciseCard: View {
     .paperCard(radius: Radius.concentric(24, padding: 6), fill: .surfaceMuted)
   }
 
-  private var prescription: String {
+  /// "2 × 6–10" e o raio quando as séries valendo vão à falha.
+  private var prescription: some View {
     let p = exercise.prescription
-    let reps = p.workToFailure ? "falha" : "\(p.repsMin)-\(p.repsMax)"
-    return "\(p.workSets) × \(reps) · \(weightLabel(p.startingWeightKg))"
+    return HStack(spacing: 4) {
+      Text("\(p.workSets) × \(p.repsMin)–\(p.repsMax)")
+      if p.workToFailure { FailureMark() }
+      Text("· \(weightLabel(p.startingWeightKg))")
+    }
   }
-  private var previous: String? {
-    guard let previous = exercise.previous else { return nil }
-    return "última: \(previous.reps.map(String.init).joined(separator: ", ")) × \(weightLabel(previous.weightKg))"
+  private var spokenPrescription: String {
+    let p = exercise.prescription
+    let failure = p.workToFailure ? ", até a falha" : ""
+    return "\(p.workSets) séries de \(p.repsMin) a \(p.repsMax)\(failure), \(weightLabel(p.startingWeightKg))"
   }
-  private var previousPrep: String? {
-    guard let previous = exercise.previousPrep, !previous.sets.isEmpty else { return nil }
-    let sets = previous.sets.sorted { $0.index < $1.index }
-      .map { "\(Formatting.trim($0.weightKg)) × \($0.reps)" }
-    return "aquecimento da última: \(sets.joined(separator: ", "))"
-  }
-  private func group(_ title: String, color: Color) -> some View {
+  private func group(_ title: String, color: Color, toFailure: Bool = false) -> some View {
     HStack(spacing: 6) {
       Circle().fill(color).frame(width: 5, height: 5).offset(y: 1)
       Text(title).font(.caption)
+      if toFailure { FailureMark() }
       Spacer()
-    }.foregroundStyle(color).padding(.top, 8)
+    }
+    .foregroundStyle(color).padding(.top, 8)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(toFailure ? "\(title), até a falha" : title)
+  }
+}
+
+/// O raio das séries que vão à falha. O modelo tem um booleano por exercício, então
+/// ele marca todas as séries valendo, não só a última.
+struct FailureMark: View {
+  @Environment(\.accent) private var accent
+  @ScaledMetric(relativeTo: .caption2) private var size = 9.0
+
+  var body: some View {
+    Image(systemName: "bolt.fill")
+      .font(.system(size: size, weight: .semibold)).foregroundStyle(accent.base)
+      .accessibilityLabel("até a falha")
   }
 }
 
@@ -110,7 +124,6 @@ struct TrainingSetRow: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .body) private var tileHeight = 46.0
   @ScaledMetric(relativeTo: .footnote) private var indexSize = 13.0
-  @ScaledMetric(relativeTo: .caption2) private var unitSize = 10.0
   @State private var weightDraft: Double?
   @State private var repsDraft: Int?
   @FocusState private var focused: Field?
@@ -174,19 +187,26 @@ struct TrainingSetRow: View {
     HStack(spacing: 8) {
       switch scale {
       case .list:
-        Text(kind == .prep ? "P\(index)" : "\(index)").font(.caption).frame(width: 26)
+        Text(kind == .prep ? "A" : "\(index)").font(.caption).frame(width: 26)
+          .accessibilityLabel(spokenName)
       case .session:
-        Text(kind == .prep ? "A" : "\(index)")
-          .font(.system(size: indexSize, weight: isNext ? .medium : .regular, design: .monospaced))
-          .foregroundStyle(kind == .prep ? Color.orange : Color.ink)
-          .frame(width: 30)
-        Text(previous ?? (kind == .prep ? "aquecimento" : "estreia"))
+        HStack(spacing: 2) {
+          Text(kind == .prep ? "A" : "\(index)")
+            .font(.system(size: indexSize, weight: isNext ? .medium : .regular, design: .monospaced))
+            .foregroundStyle(kind == .prep ? Color.orange : Color.ink)
+          if failure { FailureMark() }
+        }
+        .frame(width: 30)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(failure ? "\(spokenName), até a falha" : spokenName)
+        Text(previous ?? "–")
           .font(.system(size: indexSize)).monospacedDigit()
           .foregroundStyle(done ? accent.deep.opacity(0.6) : Color.mutedInk)
           .lineLimit(1).minimumScaleFactor(0.8)
           .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityLabel(previous.map { "anterior \($0)" } ?? "sem registro anterior")
       }
-      cell(unit: unit("kg")) {
+      cell {
         TextField("0", value: $weightDraft, format: .number.precision(.fractionLength(0...2)))
           #if os(iOS)
           .keyboardType(.decimalPad)
@@ -197,7 +217,7 @@ struct TrainingSetRow: View {
           .accessibilityIdentifier(fieldID + ".weight")
           .accessibilityLabel("Peso \(kind == .prep ? "do" : "da") \(spokenName)")
       }
-      cell(unit: repsUnit) {
+      cell {
         TextField("0", value: $repsDraft, format: .number)
           #if os(iOS)
           .keyboardType(.numberPad)
@@ -216,22 +236,22 @@ struct TrainingSetRow: View {
         focused = nil
         tapCount += 1
       } label: {
-        // O visto está sempre desenhado e só muda de cor. É o cinza dele que
-        // diz "ainda não", e o verde na próxima série que convida ao toque.
-        // Enquanto a marcação não chegou ao servidor o visto fica vazado, com
-        // borda tracejada e um relógio no canto. A borda escura sobre o verde
-        // cheio não aparecia no aparelho.
+        // O visto só aparece na série feita: desenhado cinza em toda linha, ele
+        // lia como já marcado. A próxima ganha a borda verde, que convida ao
+        // toque. Enquanto a marcação não chegou ao servidor o visto fica vazado,
+        // com borda tracejada e um relógio no canto.
         Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
-          .foregroundStyle(done && !waiting ? Color.white : done || isNext ? accent.base : Color.ink.opacity(0.28))
+          .foregroundStyle(waiting ? accent.base : Color.white)
+          .opacity(done ? 1 : 0)
           .offset(y: -0.5)
           .frame(width: scale.check, height: scale.check)
           .background(done && !waiting ? accent.base : .white, in: .circle)
           .overlay {
             if waiting {
               Circle().strokeBorder(accent.base, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
-            } else {
+            } else if !done {
               Circle().strokeBorder(
-                done ? .clear : isNext ? accent.base : Color.ink.opacity(0.16), lineWidth: 1.5)
+                isNext ? accent.base : Color.ink.opacity(0.16), lineWidth: isNext ? 2 : 1.5)
             }
           }
           .overlay(alignment: .topTrailing) {
@@ -250,6 +270,9 @@ struct TrainingSetRow: View {
         .animation(reduceMotion ? nil : Motion.confirm, value: done)
         .accessibilityLabel(done ? "Desmarcar \(spokenName)" : "Concluir \(spokenName)")
         .accessibilityValue(waiting ? "esperando enviar" : "")
+        // O VoiceOver lia "Selecionado" em todo visto, feito ou não.
+        .accessibilityRemoveTraits(done ? [] : .isSelected)
+        .accessibilityAddTraits(done ? .isSelected : [])
         .sensoryFeedback(currentDone ? .success : .impact(weight: .light), trigger: tapCount)
     }
   }
@@ -265,43 +288,20 @@ struct TrainingSetRow: View {
     #endif
   }
 
-  /// A unidade de reps. A lista de hoje tem cabeçalho e só escreve "falha"; a
-  /// sessão escreve a unidade embaixo do número.
-  private var repsUnit: Text? {
-    if failure { return unit("falha", toFailure: true) }
-    return scale == .session ? unit("reps") : nil
-  }
-
-  /// A unidade já sai daqui com fonte e cor. Quem pinta é a própria unidade,
-  /// não o ladrilho, senão a série à falha esverdeia o quilo junto com o reps.
-  private func unit(_ text: String, toFailure: Bool = false) -> Text {
-    Text(text)
-      .font(scale == .session
-        ? .system(size: unitSize)
-        : toFailure ? .system(size: 9) : .caption2)
-      .foregroundStyle(toFailure ? accent.base : Color.mutedInk)
-  }
-
-  /// O ladrilho de kg ou reps. Na lista o número e a unidade ficam lado a lado
-  /// numa pílula branca; na sessão a unidade vai embaixo, num ladrilho que muda
-  /// de fundo com o estado da linha.
+  /// O ladrilho de kg ou reps. A unidade fica no cabeçalho das colunas. Na lista
+  /// é uma pílula branca; na sessão, um ladrilho que muda de fundo com o estado
+  /// da linha.
   @ViewBuilder
-  private func cell<Field: View>(unit: Text?, @ViewBuilder field: () -> Field) -> some View {
+  private func cell<Field: View>(@ViewBuilder field: () -> Field) -> some View {
     switch scale {
     case .list:
-      HStack(spacing: 2) {
-        field()
-        unit
-      }
-      .padding(8).background(.white, in: .rect(cornerRadius: Radius.field))
+      field()
+        .padding(8).background(.white, in: .rect(cornerRadius: Radius.field))
     case .session:
-      VStack(spacing: 0) {
-        field()
-        unit
-      }
-      .frame(minWidth: 56, maxWidth: 66).frame(height: tileHeight)
-      .background(done ? .clear : isNext ? .white : Color.surfaceMuted, in: .rect(cornerRadius: 12))
-      .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.ink.opacity(isNext && !done ? 0.08 : 0)))
+      field()
+        .frame(minWidth: 56, maxWidth: 66).frame(height: tileHeight)
+        .background(done ? .clear : isNext ? .white : Color.surfaceMuted, in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.ink.opacity(isNext && !done ? 0.08 : 0)))
     }
   }
 
@@ -363,7 +363,9 @@ func setReference(_ exercise: DashboardExercise, kind: SetKind, index: Int) -> W
     if let last = exercise.previousPrep?.set(index)?.weightKg { return .lastTime(last) }
     return exercise.prepWeightKg.map { .plan($0) }
   case .work:
-    if let last = exercise.previous?.weightKg { return .lastTime(last) }
+    if let previous = exercise.previous {
+      return .lastTime(previous.set(index)?.weightKg ?? previous.weightKg)
+    }
     return .plan(exercise.prescription.startingWeightKg)
   }
 }

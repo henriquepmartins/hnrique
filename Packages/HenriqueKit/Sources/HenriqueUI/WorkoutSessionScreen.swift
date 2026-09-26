@@ -28,10 +28,24 @@ func firstOpenExercise(in workout: WorkoutSummary) -> Int {
 
 /// O que a série de hoje tem a bater. Vem do último treino deste exercício, casada
 /// pelo índice, porque comparar a terceira com a terceira é o que diz se progrediu.
+/// O servidor antigo não manda `sets`: aí a carga é a maior e as repetições vão
+/// pela posição.
 func previousLabel(_ previous: PreviousWorkSets?, index: Int) -> String? {
-  guard let previous, let reps = previous.reps.indices.contains(index - 1) ? previous.reps[index - 1] : nil
-  else { return nil }
-  return "\(Formatting.trim(previous.weightKg)) × \(reps)"
+  guard let previous else { return nil }
+  if previous.sets != nil {
+    return previous.set(index).map { "\(Formatting.trim($0.weightKg)) × \($0.reps)" }
+  }
+  guard previous.reps.indices.contains(index - 1) else { return nil }
+  return "\(Formatting.trim(previous.weightKg)) × \(previous.reps[index - 1])"
+}
+
+/// A melhor série da última vez, a mais pesada e no empate a de mais repetições.
+func previousTop(_ previous: PreviousWorkSets?) -> (weightKg: Double, reps: Int)? {
+  guard let previous else { return nil }
+  if let top = previous.sets?.max(by: { ($0.weightKg, $0.reps) < ($1.weightKg, $1.reps) }) {
+    return (top.weightKg, top.reps)
+  }
+  return previous.reps.first.map { (previous.weightKg, $0) }
 }
 
 /// O mesmo para o aquecimento, que guarda carga por série.
@@ -84,44 +98,55 @@ struct WorkoutSessionScreen: View {
       if let data = store.dashboard, let workout = data.workout {
         let progress = SessionProgress(workout)
         let openId = openExercise(in: workout)
-        ScrollView {
-          LazyVStack(spacing: Space.m) {
-            ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
-              Group {
-                if openId == exercise.id {
-                  card(exercise: exercise, date: data.date, templateId: workout.id)
-                    .transition(.opacity)
-                } else {
-                  collapsed(exercise: exercise)
-                    .transition(.opacity)
+        ScrollViewReader { proxy in
+          ScrollView {
+            LazyVStack(spacing: Space.m) {
+              ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
+                Group {
+                  if openId == exercise.id {
+                    card(exercise: exercise, date: data.date, templateId: workout.id)
+                      .transition(.opacity)
+                  } else {
+                    collapsed(exercise: exercise)
+                      .transition(.opacity)
+                  }
                 }
+                .revealEntrance(index: index + 1, shown: entered)
               }
-              .revealEntrance(index: index + 1, shown: entered)
+              addExerciseButton
+                .revealEntrance(index: workout.exercises.count + 1, shown: entered)
             }
-            addExerciseButton
-              .revealEntrance(index: workout.exercises.count + 1, shown: entered)
+            .padding(.horizontal, Space.l).padding(.top, Space.l)
+            .padding(.bottom, Space.page)
           }
-          .padding(.horizontal, Space.l).padding(.top, Space.l)
-          .padding(.bottom, Space.page)
-        }
-        .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .top, spacing: 0) {
-          top(workout: workout, progress: progress, date: data.date)
-            .revealEntrance(index: 0, shown: entered)
-        }
-        // Inset, e não overlay: a lista encolhe junto com a barra e a última
-        // série continua alcançável com o descanso aberto.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-          if let rest = store.rest, rest.key.date == data.date {
-            RestTimerBar(
-              rest: rest, next: nextSet(after: rest, in: workout),
-              onAdjust: { store.adjustRest(by: $0) }, onDismiss: { store.endRest() }
-            )
-            .padding(.horizontal, 12).padding(.bottom, 12)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+          .scrollDismissesKeyboard(.interactively)
+          .safeAreaInset(edge: .top, spacing: 0) {
+            top(workout: workout, progress: progress, date: data.date)
+              .revealEntrance(index: 0, shown: entered)
+          }
+          // Inset, e não overlay: a lista encolhe junto com a barra e a última
+          // série continua alcançável com o descanso aberto.
+          .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let rest = store.rest, rest.key.date == data.date {
+              RestTimerBar(
+                rest: rest, next: store.nextSet(after: rest),
+                onAdjust: { store.adjustRest(by: $0) }, onDismiss: { store.endRest() }
+              )
+              .padding(.horizontal, 12).padding(.bottom, 12)
+              .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+          }
+          .animation(glide, value: store.rest == nil)
+          // O cartão do descanso encolhe a área da lista. Sem rolar, o "+ série" e
+          // o próximo exercício ficavam atrás dele.
+          .onChange(of: store.rest?.startedAt) { _, started in
+            guard started != nil, let openId else { return }
+            Task {
+              try? await Task.sleep(for: .milliseconds(120))
+              withAnimation(glide) { proxy.scrollTo(openId, anchor: .bottom) }
+            }
           }
         }
-        .animation(glide, value: store.rest == nil)
         .animation(reduceMotion ? nil : Motion.subtleEntrance, value: openId)
         // As peças só começam a aparecer quando o cartão já cresceu o bastante
         // para elas caberem dentro dele.
@@ -161,6 +186,7 @@ struct WorkoutSessionScreen: View {
 
   private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
     let closedAt = store.finishedAt(workout.id, on: date)
+    let complete = progress.total > 0 && progress.done >= progress.total
     return VStack(spacing: 14) {
       HStack(spacing: Space.m) {
         Button(action: onClose) {
@@ -179,19 +205,22 @@ struct WorkoutSessionScreen: View {
           name: workout.name)
           .frame(maxWidth: .infinity, alignment: .leading)
         Button {
-          if closedAt != nil || progress.done >= progress.total {
+          if closedAt != nil || complete {
             finish()
           } else {
             confirmingFinish = true
           }
         } label: {
           Text(closedAt == nil ? "encerrar" : "resumo")
-            .font(.system(size: 14, weight: .medium)).foregroundStyle(Color.ink)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(complete ? Color.white : Color.ink)
             .padding(.top, 10).padding(.bottom, 12).padding(.horizontal, 16)
-            .background(.white, in: .capsule)
-            .overlay(Capsule().strokeBorder(hairline))
+            .background(complete ? accent.base : .white, in: .capsule)
+            .overlay(Capsule().strokeBorder(complete ? .clear : hairline))
+            .animation(glide, value: complete)
         }
         .buttonStyle(PressScaleStyle())
+        .sensoryFeedback(.success, trigger: complete) { old, new in !old && new }
         .accessibilityIdentifier("sessao.encerrar")
       }
       VStack(spacing: 6) {
@@ -199,15 +228,19 @@ struct WorkoutSessionScreen: View {
           Text("\(progress.done)")
             .contentTransition(.numericText(value: Double(progress.done)))
             .animation(reduceMotion ? nil : Motion.roll, value: progress.done)
-          Text(" ")
-          Text("de \(progress.total) séries")
+          Text(" de \(progress.total)")
           Spacer()
-          Text(progress.volumeKg.formatted(.number.precision(.fractionLength(0))))
-            .contentTransition(.numericText(value: progress.volumeKg))
-            .animation(reduceMotion ? nil : Motion.roll, value: progress.volumeKg)
-          Text(" kg até agora")
+          if progress.volumeKg > 0 {
+            Text("\(Formatting.trim(progress.volumeKg.rounded())) kg")
+              .contentTransition(.numericText(value: progress.volumeKg))
+              .animation(reduceMotion ? nil : Motion.roll, value: progress.volumeKg)
+          }
         }
         .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Color.mutedInk)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(progress.done) de \(progress.total) séries valendo")
+        .accessibilityValue(progress.volumeKg > 0
+          ? "\(Formatting.trim(progress.volumeKg.rounded())) quilos de volume" : "")
         SyncStatusLine()
         GeometryReader { geo in
           Capsule().fill(Color.surfaceMuted)
@@ -250,8 +283,10 @@ struct WorkoutSessionScreen: View {
           Text(exercise.name.lowercased())
             .font(.system(size: collapsedNameSize, weight: .medium)).tracking(collapsedNameSize * -0.015)
             .foregroundStyle(Color.ink).lineLimit(1)
-          Text(subtitle(exercise))
-            .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk).lineLimit(1)
+          if let top = previousTop(exercise.previous) {
+            Text("\(Formatting.trim(top.weightKg)) × \(top.reps)")
+              .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk).lineLimit(1)
+          }
         }
         Spacer(minLength: Space.s)
         Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
@@ -265,41 +300,41 @@ struct WorkoutSessionScreen: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(exercise.name.lowercased())
+    .accessibilityValue(spokenSummary(exercise))
+    .accessibilityAddTraits(.isButton)
     .accessibilityIdentifier("sessao.exercicio.\(exercise.id)")
   }
 
-  private func subtitle(_ exercise: DashboardExercise) -> String {
-    let count = "\(exercise.prescription.workSets) séries"
-    guard let previous = exercise.previous, let reps = previous.reps.first else { return count }
-    return "\(count) · \(Formatting.trim(previous.weightKg)) kg × \(reps) da última vez"
+  private func spokenSummary(_ exercise: DashboardExercise) -> String {
+    let count = "\(exercise.sets.completedWorkCount) de \(exercise.prescription.workSets) séries"
+    guard let top = previousTop(exercise.previous) else { return count }
+    return "\(count), \(Formatting.trim(top.weightKg)) quilos por \(top.reps) da última vez"
   }
 
   private func card(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: Space.s) {
-        Text(exercise.muscleGroup.lowercased())
-          .font(.system(size: 12, weight: .medium)).foregroundStyle(accent.deep)
-          .padding(.horizontal, 11).padding(.vertical, 5)
-          .background(accent.pale, in: .capsule)
-        if exercise.isFromSession {
-          onlyTodayChip(exercise: exercise, date: date, templateId: templateId)
-        }
+    let next = NextSet.next(in: exercise)
+    return VStack(alignment: .leading, spacing: 0) {
+      if exercise.isFromSession {
+        onlyTodayChip(exercise: exercise, date: date, templateId: templateId)
+          .padding(.bottom, 12)
       }
       Text(exercise.name.lowercased())
         .font(.system(size: nameSize, weight: .semibold)).tracking(nameSize * -0.045)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.top, 12)
       meta(exercise).padding(.top, 8)
       header.padding(.top, 18).padding(.bottom, 8)
       VStack(spacing: 2) {
         ForEach(exercise.sets.prep) { set in
           row(exercise: exercise, date: date, templateId: templateId, kind: .prep,
-            index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone, failure: false)
+            index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone, failure: false,
+            next: next)
         }
         ForEach(exercise.sets.work) { set in
           row(exercise: exercise, date: date, templateId: templateId, kind: .work,
             index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone,
-            failure: set.toFailure)
+            failure: set.toFailure, next: next)
         }
       }
       setCountRow(exercise: exercise, date: date, templateId: templateId).padding(.top, 10)
@@ -330,13 +365,8 @@ struct WorkoutSessionScreen: View {
     .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk)
   }
 
-  @ViewBuilder
   private func metaText(_ exercise: DashboardExercise) -> some View {
     Text("\(exercise.prescription.workSets) séries valendo")
-    if exercise.prescription.workToFailure {
-      Text("·")
-      Text("última à falha")
-    }
   }
 
   private func restPicker(_ exercise: DashboardExercise) -> some View {
@@ -376,9 +406,9 @@ struct WorkoutSessionScreen: View {
 
   private func row(
     exercise: DashboardExercise, date: CalendarDate, templateId: String, kind: SetKind,
-    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool
+    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool, next: NextSet?
   ) -> some View {
-    let isNext = kind == .work && !done && exercise.sets.work.first(where: { !$0.isDone })?.index == index
+    let isNext = next?.kind == kind && next?.index == index
     return TrainingSetRow(
       key: SetKey(date: date, templateId: templateId, exerciseId: exercise.id, kind: kind, index: index),
       weight: weight, repetitions: reps, done: done, failure: failure, scale: .session,
@@ -396,31 +426,34 @@ struct WorkoutSessionScreen: View {
     let count = exercise.sets.work.count
     let canRemove = count > Limits.workSets.lowerBound && exercise.sets.work.last?.isDone == false
     return HStack(spacing: Space.s) {
-      ghostButton("+ adicionar série", color: accent.base) {
+      Button {
         Task { await store.setCount(.init(date: date, workoutTemplateId: templateId,
           exerciseId: exercise.id, kind: .work, count: count + 1)) }
+      } label: {
+        Text("+ série")
+          .font(.system(size: 14.5, weight: .medium)).foregroundStyle(accent.base)
+          .frame(maxWidth: .infinity)
+          .padding(11)
+          .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(hairline))
       }
+      .buttonStyle(PressScaleStyle())
       .disabled(count >= Limits.workSets.upperBound)
+      .accessibilityLabel("adicionar série")
       .accessibilityIdentifier("sessao.adicionar-serie.\(exercise.id)")
       if canRemove {
-        ghostButton("− série", color: Color.mutedInk) {
+        Button {
           Task { await store.setCount(.init(date: date, workoutTemplateId: templateId,
             exerciseId: exercise.id, kind: .work, count: count - 1)) }
+        } label: {
+          Image(systemName: "minus")
+            .font(.system(size: 15, weight: .medium)).foregroundStyle(Color.mutedInk)
+            .frame(width: 44, height: 44)
         }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel("tirar uma série")
         .accessibilityIdentifier("sessao.remover-serie.\(exercise.id)")
       }
     }
-  }
-
-  private func ghostButton(_ title: String, color: Color, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      Text(title)
-        .font(.system(size: 14.5, weight: .medium)).foregroundStyle(color)
-        .frame(maxWidth: .infinity)
-        .padding(11)
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(hairline))
-    }
-    .buttonStyle(PressScaleStyle())
   }
 
   private func noteField(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
@@ -511,12 +544,6 @@ struct WorkoutSessionScreen: View {
     return workout.exercises[safe: firstOpenExercise(in: workout)]?.id
   }
 
-  /// A série que vem depois, procurada a partir do exercício que abriu o descanso.
-  private func nextSet(after rest: RestState, in workout: WorkoutSummary) -> NextSet? {
-    let index = workout.exercises.firstIndex { $0.id == rest.exerciseId } ?? 0
-    return NextSet(from: index, in: workout)
-  }
-
   private func openSetsQuestion(_ open: Int) -> String {
     open == 1 ? "encerrar com 1 série em aberto?" : "encerrar com \(open) séries em aberto?"
   }
@@ -531,7 +558,8 @@ struct WorkoutSessionScreen: View {
     let timing = WorkoutSessionTiming(
       workout, anchor: store.startedAt(workout.id, on: data.date),
       finishedAt: store.finishedAt(workout.id, on: data.date))
-    recap = RecapPresentation(recap: WorkoutRecap(workout, timing: timing))
+    recap = RecapPresentation(
+      recap: WorkoutRecap(workout, timing: timing, records: data.records ?? [], on: data.date))
   }
 }
 
@@ -563,10 +591,8 @@ private struct SessionClock: View {
     } else if let timing {
       readout(at: .now, timing: timing, live: false)
     } else {
-      VStack(alignment: .leading, spacing: 1) {
-        Text(name.lowercased()).font(.headline.weight(.semibold))
-        Text("nenhuma série marcada ainda").font(.system(size: 13)).foregroundStyle(Color.mutedInk)
-      }
+      Text(name.lowercased()).font(.headline.weight(.semibold))
+        .accessibilityValue("nenhuma série marcada")
     }
   }
 
@@ -588,12 +614,12 @@ private struct SessionClock: View {
           .contentTransition(.numericText(value: Double(seconds)))
           .animation(reduceMotion ? nil : Motion.roll, value: seconds)
       }
-      Text("\(name.lowercased()) · começou \(start)")
+      Text(name.lowercased())
         .font(.system(size: 13)).foregroundStyle(Color.mutedInk).lineLimit(1)
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel("tempo de treino")
-    .accessibilityValue(time)
+    .accessibilityValue("\(time), começou \(start)")
     .accessibilityIdentifier("sessao.tempo")
   }
 }
