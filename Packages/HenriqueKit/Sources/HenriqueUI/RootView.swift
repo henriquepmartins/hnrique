@@ -1,6 +1,10 @@
 import HenriqueCore
 import SwiftUI
 
+#if canImport(UIKit)
+  import UIKit
+#endif
+
 public enum AcademiaTab: String, Hashable, Sendable, CaseIterable {
   case hoje, semana, treino, progresso, apps
 
@@ -327,8 +331,12 @@ struct AcademiaTabs: View {
             Menu {
               Button("primeiros passos", systemImage: "slider.horizontal.3") { showingSetup = true }
               Picker("cor", selection: $accent) {
-                ForEach(Accent.allCases) { color in Text(color.label).tag(color) }
+                ForEach(Accent.allCases) { color in
+                  Label { Text(color.label) } icon: { swatch(color.base) }
+                    .tag(color)
+                }
               }
+              .pickerStyle(.palette)
             } label: { Label("configurar", systemImage: "gearshape") }
           }
           ToolbarItem(placement: .primaryAction) {
@@ -350,6 +358,17 @@ struct AcademiaTabs: View {
         }
     }
   }
+}
+
+/// A bolinha da cor no menu. O menu pinta imagem de molde com a cor do texto,
+/// então a cor vai gravada na própria imagem.
+private func swatch(_ color: Color) -> Image {
+  #if canImport(UIKit)
+    let symbol = UIImage(systemName: "circle.fill") ?? UIImage()
+    return Image(uiImage: symbol.withTintColor(UIColor(color), renderingMode: .alwaysOriginal))
+  #else
+    return Image(systemName: "circle.fill")
+  #endif
 }
 
 /// A bolha redonda separada da barra é o papel `prominent`, novo no iOS 27. No
