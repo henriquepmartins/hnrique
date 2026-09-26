@@ -1,32 +1,20 @@
 import HenriqueCore
 import SwiftUI
 
-/// Abre a tela com a hora do dia, para o app dizer algo antes de pedir alguma coisa.
-/// A sequência fica de fora porque o contador do topo já a mostra, e repetida ela
-/// gasta a linha maior da tela dizendo o que já estava dito.
-struct GreetingHeader: View {
-  @Environment(\.accent) private var accent
+/// A data abre a tela. A sequência fica de fora porque o contador do topo já a
+/// mostra.
+struct DateHeader: View {
   let date: CalendarDate
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(dateLabel).font(.caption.weight(.medium)).foregroundStyle(accent.base)
-      Text(greeting)
-        .font(.title.weight(.medium)).tracking(-1.2)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    Text(label)
+      .font(.title.weight(.medium)).tracking(-1.2)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .accessibilityAddTraits(.isHeader)
   }
 
-  private var greeting: String {
-    switch Calendar.autoupdatingCurrent.component(.hour, from: .now) {
-    case ..<12: "bom dia"
-    case ..<18: "boa tarde"
-    default: "boa noite"
-    }
-  }
-
-  private var dateLabel: String {
+  private var label: String {
     date.date().formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "pt_BR")))
       .lowercased()
   }
@@ -49,13 +37,17 @@ struct DayCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(kicker).font(.caption.weight(.medium)).foregroundStyle(accent.deep)
+      if let kicker {
+        Text(kicker).font(.caption.weight(.medium)).foregroundStyle(accent.deep)
+      }
       if let rest = store.rest, rest.key.date == store.selectedDate {
         RestChip(rest: rest, onOpen: onWorkout)
       }
       SyncStatusLine()
       ZStack(alignment: .topLeading) {
-        DayCardTitle(workout: workout)
+        DayCardTitle(
+          workout: workout, tone: workout.flatMap { store.dashboard?.tone(forWorkout: $0.id) },
+          time: time)
           .id(workout?.id)
           .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
       }
@@ -108,19 +100,29 @@ struct DayCard: View {
     return percent >= 100 || store.finishedAt(workout.id, on: store.selectedDate) != nil
   }
 
-  private var kicker: String {
-    let state: String
-    if workout == nil {
-      state = "hoje é descanso"
-    } else if percent >= 100 {
-      state = "treino de hoje, concluído"
-    } else if isClosed {
-      state = "treino de hoje, encerrado"
-    } else {
-      state = percent > 0 ? "treino em andamento" : "treino de hoje"
-    }
-    guard let replaced = choices?.replaced else { return state }
-    return "\(state) · \(replaced)"
+  /// Só aparece quando o dia foge do comum. Treino por começar e descanso já
+  /// se dizem pelo título.
+  private var kicker: String? {
+    let state: String? =
+      if workout == nil { nil }
+      else if percent >= 100 { "feito" }
+      else if isClosed { "encerrado" }
+      else if percent > 0 { "em andamento" }
+      else { nil }
+    let parts = [state, choices?.replaced].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+
+  /// Aberto, o card mostra a estimativa; encerrado, o tempo que levou. Menos
+  /// de um minuto é série marcada depois do treino, não duração, e some.
+  private var time: DayCardTitle.Time {
+    guard isClosed, let workout else { return .estimate }
+    let date = store.selectedDate
+    let elapsed = WorkoutSessionTiming(
+      workout, anchor: store.startedAt(workout.id, on: date),
+      finishedAt: store.finishedAt(workout.id, on: date)
+    )?.elapsed(at: .now) ?? 0
+    return elapsed >= 60 ? .took(elapsed) : .unknown
   }
 
   private var actionSymbol: String {
@@ -140,20 +142,63 @@ struct DayCard: View {
 private struct DayCardTitle: View {
   @Environment(\.accent) private var accent
   let workout: WorkoutSummary?
+  /// A cor do treino no plano, a mesma da pasta e dos próximos dias.
+  let tone: WorkoutTone?
+  let time: Time
+
+  enum Time {
+    case estimate
+    case took(TimeInterval)
+    case unknown
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(workout?.name.lowercased() ?? "corpo em recuperação")
-        .font(.system(size: 34, weight: .medium)).tracking(-1.5)
-        .fixedSize(horizontal: false, vertical: true)
-      Text(workout?.focus ?? "sem treino programado. mobilidade e uma caminhada já contam.")
-        .font(.subheadline).foregroundStyle(workout == nil ? Color.mutedInk : accent.deep)
+      HStack(alignment: .firstTextBaseline, spacing: 10) {
+        if let tone {
+          Circle().fill(tone.top).frame(width: 12, height: 12)
+            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+            .accessibilityHidden(true)
+        }
+        Text(workout?.name.lowercased() ?? "descanso")
+          .font(.system(size: 34, weight: .medium)).tracking(-1.5)
+          .fixedSize(horizontal: false, vertical: true)
+      }
       if let workout {
-        Text("\(workout.exerciseCount) exercícios · \(workout.workSetCount) séries · \(workout.estimatedMinutes) min")
+        if !workout.focus.isEmpty {
+          Text(workout.focus).font(.subheadline).foregroundStyle(accent.deep)
+        }
+        Text(counts(workout))
           .font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk)
+          .accessibilityLabel(spokenCounts(workout))
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func counts(_ workout: WorkoutSummary) -> String {
+    let parts = ["\(workout.exerciseCount) exercícios", "\(workout.workSetCount) séries"]
+    switch time {
+    case .estimate: return (parts + ["\(workout.estimatedMinutesComputed) min"]).joined(separator: " · ")
+    case .took(let seconds): return (parts + [clock(seconds)]).joined(separator: " · ")
+    case .unknown: return parts.joined(separator: " · ")
+    }
+  }
+
+  private func spokenCounts(_ workout: WorkoutSummary) -> String {
+    let parts = ["\(workout.exerciseCount) exercícios", "\(workout.workSetCount) séries"]
+    switch time {
+    case .estimate:
+      return (parts + ["uns \(workout.estimatedMinutesComputed) minutos"]).joined(separator: ", ")
+    case .took(let seconds):
+      let spoken = Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes]))
+      return (parts + ["durou \(spoken)"]).joined(separator: ", ")
+    case .unknown: return parts.joined(separator: ", ")
+    }
+  }
+
+  private func clock(_ seconds: TimeInterval) -> String {
+    Duration.seconds(Int(seconds)).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond))
   }
 }
 
@@ -183,8 +228,7 @@ struct DaySwapChoices: Equatable {
     let schedule = dashboard.schedule
     let locked = dashboard.hasMarkedSets
     let current = dashboard.workout?.id
-    let late = schedule
-      .missedWorkouts(today: dashboard.date, sessions: dashboard.weeklyWorkoutSessions ?? [])
+    let late = dashboard.missedWorkouts(today: dashboard.date)
       .filter { $0.id != current }
     missed = locked ? [] : late.map {
       Option(

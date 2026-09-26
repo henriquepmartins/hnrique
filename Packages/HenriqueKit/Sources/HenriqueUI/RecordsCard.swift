@@ -23,18 +23,14 @@ struct RecordsCard: View {
   }
 
   private func row(_ record: PersonalRecord) -> some View {
-    let badge = record.kind.badge(delta: record.delta)
     // Pilha sem espaçamento próprio porque ele valeria dos dois lados do Spacer e
-    // daria 36 pontos de folga mínima antes do chip, comendo a largura do nome.
-    return HStack(spacing: 0) {
-      Text(badge)
-        .font(.system(size: badgeSize, weight: .semibold, design: .monospaced))
-        .tracking(badgeSize * 0.02)
-        .multilineTextAlignment(.center)
+    // daria 36 pontos de folga mínima, comendo a largura do nome.
+    HStack(spacing: 0) {
+      medal(record)
         .foregroundStyle(accent.deep)
         .frame(width: medalSize, height: medalSize)
         .background(Color.surfaceMuted, in: .rect(cornerRadius: medalSize / 3))
-        .accessibilityLabel(badge.replacingOccurrences(of: "\n", with: " "))
+        .accessibilityHidden(true)
         .padding(.trailing, 14)
       VStack(alignment: .leading, spacing: 2) {
         Text(record.exerciseName.lowercased())
@@ -42,15 +38,35 @@ struct RecordsCard: View {
         Text(record.summary(today: today))
           .font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk)
       }
-      Spacer(minLength: 14)
-      Text(record.kind.label)
-        .font(.footnote.weight(.semibold)).foregroundStyle(accent.base)
-        .padding(.horizontal, 9).padding(.vertical, 5)
-        .background(accent.pale, in: .capsule)
+      Spacer(minLength: 0)
     }
     .padding(.horizontal, Space.l).padding(.vertical, 14)
     .frame(maxWidth: .infinity, alignment: .leading)
     .paperCard(radius: Radius.row)
     .accessibilityElement(children: .combine)
+    .accessibilityLabel(spoken(record))
+  }
+
+  /// O selo diz o tipo sozinho: "+2,5 kg", "+1 rep" ou a estrela da estreia.
+  @ViewBuilder
+  private func medal(_ record: PersonalRecord) -> some View {
+    if let symbol = record.kind.badgeSymbol {
+      Image(systemName: symbol).font(.system(size: badgeSize * 1.5, weight: .semibold))
+    } else {
+      Text(record.kind.badge(delta: record.delta))
+        .font(.system(size: badgeSize, weight: .semibold, design: .monospaced))
+        .tracking(badgeSize * 0.02)
+        .multilineTextAlignment(.center)
+    }
+  }
+
+  private func spoken(_ record: PersonalRecord) -> String {
+    let kind =
+      switch record.kind {
+      case .carga: "recorde de carga, \(Formatting.trim(record.delta)) kg a mais"
+      case .reps: "recorde de repetições, \(Int(record.delta)) a mais"
+      case .estreia: "estreia"
+      }
+    return "\(record.exerciseName.lowercased()), \(kind), \(record.summary(today: today))"
   }
 }

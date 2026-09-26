@@ -1,6 +1,10 @@
 import HenriqueCore
 import SwiftUI
 
+#if canImport(UIKit)
+  import UIKit
+#endif
+
 public enum AcademiaTab: String, Hashable, Sendable, CaseIterable {
   case hoje, semana, treino, progresso, apps
 
@@ -129,8 +133,8 @@ public struct RootView: View {
       if let initialSection { section = initialSection }
     }
     .task {
-      estudos.onUnauthorized = { await store.signOut() }
-      idiomas.onUnauthorized = { await store.signOut() }
+      estudos.onUnauthorized = { store.expireSession() }
+      idiomas.onUnauthorized = { store.expireSession() }
       await store.start()
     }
     .onChange(of: store.isSignedIn) {
@@ -218,6 +222,7 @@ struct AcademiaTabs: View {
   @Environment(AcademiaStore.self) private var store
   @State private var showingSetup = false
   @State private var showingStreak = false
+  @State private var confirmingSignOut = false
   @State private var sessionRequested = false
   @State private var stage = InsigniaStage()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -280,13 +285,18 @@ struct AcademiaTabs: View {
     .sheet(isPresented: $showingSetup) { SetupScreen() }
     .sheet(isPresented: $showingStreak) {
       if let data = store.dashboard {
-        StreakScreen(snapshot: StreakSnapshot(dashboard: data))
+        StreakScreen(dashboard: data)
       }
     }
     .onChange(of: store.dashboard?.onboardingCompleted, initial: true) {
       if store.dashboard?.onboardingCompleted == false { showingSetup = true }
     }
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
+  }
+
+  private var unsentTitle: String {
+    let count = store.unsentCount
+    return count == 1 ? "1 série ainda não subiu" : "\(count) séries ainda não subiram"
   }
 
   private func closeInsignia() {
@@ -321,21 +331,44 @@ struct AcademiaTabs: View {
             Menu {
               Button("primeiros passos", systemImage: "slider.horizontal.3") { showingSetup = true }
               Picker("cor", selection: $accent) {
-                ForEach(Accent.allCases) { color in Text(color.label).tag(color) }
+                ForEach(Accent.allCases) { color in
+                  Label { Text(color.label) } icon: { swatch(color.base) }
+                    .tag(color)
+                }
               }
+              .pickerStyle(.palette)
             } label: { Label("configurar", systemImage: "gearshape") }
           }
           ToolbarItem(placement: .primaryAction) {
             Menu {
               Button("sair", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                Task { await store.signOut() }
+                Task { confirmingSignOut = !(await store.signOut()) }
               }
             } label: { Image(systemName: "person.crop.circle") }
             .accessibilityLabel("sua conta")
+            .confirmationDialog(
+              unsentTitle, isPresented: $confirmingSignOut, titleVisibility: .visible
+            ) {
+              Button("sair e perder", role: .destructive) {
+                Task { await store.signOut(discardingUnsent: true) }
+              }
+              Button("cancelar", role: .cancel) {}
+            }
           }
         }
     }
   }
+}
+
+/// A bolinha da cor no menu. O menu pinta imagem de molde com a cor do texto,
+/// então a cor vai gravada na própria imagem.
+private func swatch(_ color: Color) -> Image {
+  #if canImport(UIKit)
+    let symbol = UIImage(systemName: "circle.fill") ?? UIImage()
+    return Image(uiImage: symbol.withTintColor(UIColor(color), renderingMode: .alwaysOriginal))
+  #else
+    return Image(systemName: "circle.fill")
+  #endif
 }
 
 /// A bolha redonda separada da barra é o papel `prominent`, novo no iOS 27. No
@@ -480,24 +513,21 @@ struct OverviewScreen: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
-        GreetingHeader(date: store.selectedDate)
+        DateHeader(date: store.selectedDate)
         if let data = store.dashboard {
           DayCard(
             workout: data.workout, choices: DaySwapChoices(data), onWorkout: onWorkout,
             onPlan: onPlan, onSwap: { await store.swapDay(workoutTemplateId: $0) })
             .staggeredEntrance(index: 0, isReady: true)
           NextDaysStrip(
-            days: plannedDays(
-              from: data.date, schedule: data.schedule, done: Set(data.sessionDates ?? [])),
-            plan: data.weekPlan, onPlan: onPlan)
+            days: plannedDays(from: data.date, schedule: data.schedule), onPlan: onPlan)
             .staggeredEntrance(index: 1, isReady: true)
           if let records = data.records, !records.isEmpty {
             RecordsCard(records: records, today: data.date)
               .staggeredEntrance(index: 2, isReady: true)
           }
-          if data.weekPlan.contains(where: { !$0.weekdays.isEmpty }) {
-            WeeklyAdherenceCard(
-              plan: data.weekPlan, done: Set(data.sessionDates ?? []), today: data.date)
+          if let week = store.trainingWeek(today: data.date), week.planned > 0 {
+            WeeklyAdherenceCard(week: week, today: data.date)
               .staggeredEntrance(index: 3, isReady: true)
           }
           if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {

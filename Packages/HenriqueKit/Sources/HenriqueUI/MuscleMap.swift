@@ -9,10 +9,11 @@ struct MuscleMap: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .body) private var nameSize = 16.0
   @ScaledMetric(relativeTo: .footnote) private var valueSize = 13.5
-  @ScaledMetric(relativeTo: .caption2) private var captionSize = 11.0
   @ScaledMetric(relativeTo: .caption2) private var legendSize = 11.5
   @State private var period: MusclePeriod = .week
   @State private var picked: MuscleSlug?
+  /// A dica "toque num músculo" some depois do primeiro toque.
+  @AppStorage("academia.musculos.tocou") private var touched = false
   let load: [MuscleLoad]
   let today: CalendarDate
 
@@ -36,10 +37,10 @@ struct MuscleMap: View {
       VStack(alignment: .leading, spacing: 0) {
         VStack(alignment: .leading, spacing: 0) {
           HStack(spacing: 10) {
-            figure(BodyChart.anterior, caption: "frente")
-            figure(BodyChart.posterior, caption: "costas")
+            figure(BodyChart.anterior, side: "frente")
+            figure(BodyChart.posterior, side: "costas")
           }
-          readout
+          if picked != nil || !touched { readout }
           legend
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -61,36 +62,39 @@ struct MuscleMap: View {
     load.map { $0.sets(in: period) }.max() ?? 0
   }
 
-  private func figure(_ polygons: [BodyPolygon], caption: String) -> some View {
-    VStack(spacing: 8) {
-      ZStack {
-        BodyShape(polygons.filter { $0.group == nil }).fill(Color.ink.opacity(0.14))
-        ForEach(MuscleSlug.allCases, id: \.self) { group in
-          let shape = BodyShape(polygons.filter { $0.group == group })
-          shape
-            .fill(heat(for: group))
-            .opacity(picked == nil || picked == group ? 1 : 0.5)
-            .overlay {
-              if picked == group { shape.stroke(Color.ink, lineWidth: 1) }
-            }
-            // Sem o recorte de acessibilidade junto, cada músculo ocupa o
-            // retângulo inteiro para o VoiceOver e o toque exploratório lê
-            // sempre o último do empilhamento.
-            .contentShape([.interaction, .accessibility], shape)
-            .onTapGesture { picked = picked == group ? nil : group }
-            .accessibilityElement()
-            .accessibilityLabel(group.label)
-            .accessibilityValue("\(byGroup[group]?.sets(in: period) ?? 0) séries em \(period.span)")
-            .accessibilityAddTraits(picked == group ? [.isButton, .isSelected] : .isButton)
-            .accessibilityAction { picked = picked == group ? nil : group }
-        }
+  private func figure(_ polygons: [BodyPolygon], side: String) -> some View {
+    ZStack {
+      BodyShape(polygons.filter { $0.group == nil }).fill(Color.ink.opacity(0.14))
+      ForEach(MuscleSlug.allCases, id: \.self) { group in
+        let shape = BodyShape(polygons.filter { $0.group == group })
+        shape
+          .fill(heat(for: group))
+          .opacity(picked == nil || picked == group ? 1 : 0.5)
+          .overlay {
+            if picked == group { shape.stroke(Color.ink, lineWidth: 1) }
+          }
+          // Sem o recorte de acessibilidade junto, cada músculo ocupa o
+          // retângulo inteiro para o VoiceOver e o toque exploratório lê
+          // sempre o último do empilhamento.
+          .contentShape([.interaction, .accessibility], shape)
+          .onTapGesture { pick(group) }
+          .accessibilityElement()
+          .accessibilityLabel(group.label)
+          .accessibilityValue("\(byGroup[group]?.sets(in: period) ?? 0) séries em \(period.span)")
+          .accessibilityAddTraits(picked == group ? [.isButton, .isSelected] : .isButton)
+          .accessibilityAction { pick(group) }
       }
-      .aspectRatio(BodyChart.frame.width / BodyChart.frame.height, contentMode: .fit)
-      .frame(maxWidth: 136)
-      Text(caption).font(.system(size: captionSize, design: .monospaced)).tracking(captionSize * 0.01)
-        .foregroundStyle(Color.mutedInk)
     }
+    .aspectRatio(BodyChart.frame.width / BodyChart.frame.height, contentMode: .fit)
+    .frame(maxWidth: 136)
     .frame(maxWidth: .infinity)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(side)
+  }
+
+  private func pick(_ group: MuscleSlug) {
+    picked = picked == group ? nil : group
+    touched = true
   }
 
   /// Lê a mesma tabela da legenda. Duas listas de cor separadas dão certo no dia
@@ -108,22 +112,27 @@ struct MuscleMap: View {
       // a folga mínima aqui seria 36 e o número quebraria em duas linhas antes da
       // hora. O Spacer sozinho carrega a folga.
       HStack(spacing: 0) {
-        Text(picked.map { $0.label } ?? "toque num músculo")
-          .font(.system(size: nameSize, weight: .medium))
-        Spacer(minLength: 12)
-        Text(readoutValue)
-          .font(.system(size: valueSize)).monospacedDigit().foregroundStyle(Color.mutedInk)
-          .multilineTextAlignment(.trailing)
+        if let picked {
+          Text(picked.label)
+            .font(.system(size: nameSize, weight: .medium))
+          Spacer(minLength: 12)
+          Text(readoutValue(byGroup[picked]))
+            .font(.system(size: valueSize)).monospacedDigit().foregroundStyle(Color.mutedInk)
+            .multilineTextAlignment(.trailing)
+        } else {
+          Text("toque num músculo")
+            .font(.system(size: valueSize)).foregroundStyle(Color.mutedInk)
+        }
       }
-      .frame(minHeight: 44)
+      .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
       .accessibilityElement(children: .combine)
     }
     .padding(.top, 14)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  private var readoutValue: String {
-    guard let picked, let item = byGroup[picked] else { return "volume dos últimos \(period.span)" }
+  private func readoutValue(_ item: MuscleLoad?) -> String {
+    guard let item else { return "0 séries em \(period.span)" }
     return "\(item.sets(in: period)) séries em \(period.span) · \(lastLabel(item))"
   }
 

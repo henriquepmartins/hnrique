@@ -1,3 +1,4 @@
+import HenriqueCore
 import SwiftUI
 
 extension Color {
@@ -60,6 +61,14 @@ struct WorkoutTone: Sendable, Hashable {
     self.ink = ink
     self.color = color
     hex = color.hex
+  }
+}
+
+extension Dashboard {
+  /// A cor de um treino onde quer que ele apareça: a mesma da pasta no plano.
+  /// Nulo quando o treino não está no plano da semana.
+  func tone(forWorkout id: String) -> WorkoutTone? {
+    weekPlan.first { $0.id == id }?.tone
   }
 }
 

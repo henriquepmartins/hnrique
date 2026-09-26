@@ -45,26 +45,6 @@ public struct WorkoutStreak: Sendable, Hashable {
 }
 
 extension WorkoutStreak {
-  /// Os dias de segunda até `today` com ao menos uma série valendo. É a mesma
-  /// presença do contador do topo e do calendário do plano, na mesma semana.
-  public static func presentDays(
-    in attendance: [CalendarDate: AttendanceDay], today: CalendarDate,
-    calendar: Calendar = .trainingWeek
-  ) -> Int {
-    let monday = today.adding(days: -((today.weekday(in: calendar) + 6) % 7), in: calendar)
-    return attendance.values.count { $0.date >= monday && $0.date <= today && $0.workSets > 0 }
-  }
-
-  /// A contagem da semana trocada pela presença. `weeklyCompleted` do servidor
-  /// conta só treinos completos, e ao lado de um calendário que mostra presença
-  /// os dois números não batiam.
-  public func counting(presentDays: Int) -> WorkoutStreak {
-    var copy = self
-    copy.weeklyCompleted = presentDays
-    copy.weekProgress = weeklyPlanned > 0 ? min(1, Double(presentDays) / Double(weeklyPlanned)) : 0
-    return copy
-  }
-
   /// A fita vai de segunda a domingo da semana de hoje, com a mesma conta da
   /// home: um dia do plano coberto por treino em outro dia fica feito. Dia sem
   /// plano fica feito só se teve treino, senão é folga no passado e livre
