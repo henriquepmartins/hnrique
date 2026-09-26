@@ -49,6 +49,7 @@ public struct RootView: View {
   @State private var idiomasTab: IdiomasTab
   @State private var appliedInitialSection = false
   @State private var showingApps = false
+  @State private var sessionRequested = false
   @State private var foco: FocoStore
   private let store: AcademiaStore
   private let estudos: EstudosStore
@@ -83,7 +84,9 @@ public struct RootView: View {
       } else if store.isSignedIn {
         switch section {
         case .academia:
-          AcademiaTabs(accent: $accent, tab: $tab, showingApps: $showingApps)
+          AcademiaTabs(
+            accent: $accent, tab: $tab, showingApps: $showingApps,
+            sessionRequested: $sessionRequested)
             .transition(.opacity)
         case .estudos:
           EstudosTabs(
@@ -117,6 +120,13 @@ public struct RootView: View {
       }
     #endif
     .focoPresenceCheck(inCover: false)
+    // O toque na Live Activity abre a sessão de treino.
+    .onOpenURL { url in
+      guard url.scheme == "henrique", url.host() == "sessao" else { return }
+      section = .academia
+      tab = .treino
+      sessionRequested = true
+    }
     .environment(store)
     .environment(estudos)
     .environment(idiomas)
@@ -223,12 +233,12 @@ struct AcademiaTabs: View {
   @State private var showingSetup = false
   @State private var showingStreak = false
   @State private var confirmingSignOut = false
-  @State private var sessionRequested = false
   @State private var stage = InsigniaStage()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var accent: Accent
   @Binding var tab: AcademiaTab
   @Binding var showingApps: Bool
+  @Binding var sessionRequested: Bool
 
   var body: some View {
     TabView(selection: appSwitcherSelection($tab, isPresented: $showingApps, bubble: .apps)) {

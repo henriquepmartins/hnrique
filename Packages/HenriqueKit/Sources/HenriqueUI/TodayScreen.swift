@@ -42,7 +42,7 @@ public struct TodayScreen: View {
               || stoppedTiming != nil,
             duration: stoppedTiming.map { $0.elapsed(at: .now) },
             tone: store.dashboard?.workout.flatMap { workout in
-              store.weekPlan.first { $0.id == workout.id }?.tone
+              store.dashboard?.tone(forWorkout: workout.id)
             },
             notch: notch,
             sessionSource: sessionSource,

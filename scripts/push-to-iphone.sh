@@ -93,6 +93,12 @@ build_signed() {
     git -C "$ROOT" archive "build-$build" | tar -x -C "$TMP/src"
     mv "$TMP/src" "$dir/src"
   fi
+  # Desde a Live Activity o id do app vem de APP_BUNDLE_ID, e a extensão fica com
+  # o mesmo id mais .live. PRODUCT_BUNDLE_IDENTIFIER na linha de comando daria o
+  # id do app à extensão também. Tags anteriores não têm APP_BUNDLE_ID.
+  local bundle_id="APP_BUNDLE_ID=$BUNDLE_ID"
+  grep -q 'APP_BUNDLE_ID' "$dir/src/Henrique.xcodeproj/project.pbxproj" \
+    || bundle_id="PRODUCT_BUNDLE_IDENTIFIER=$BUNDLE_ID"
   log "Compilando o build $build a partir da tag."
   if ! xcodebuild build \
     -project "$dir/src/Henrique.xcodeproj" \
@@ -103,7 +109,7 @@ build_signed() {
     -allowProvisioningUpdates \
     DEVELOPMENT_TEAM="$TEAM" \
     CODE_SIGN_STYLE=Automatic \
-    PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+    "$bundle_id" \
     > "$dir/xcodebuild.log" 2>&1; then
     tail -30 "$dir/xcodebuild.log"
     fail "o xcodebuild falhou. Log completo em $dir/xcodebuild.log"
