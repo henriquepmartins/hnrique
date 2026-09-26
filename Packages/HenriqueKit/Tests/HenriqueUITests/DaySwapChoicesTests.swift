@@ -13,7 +13,8 @@ struct DaySwapChoicesTests {
   ]
 
   private static func dashboard(
-    date: String, workout: String?, swaps: [(String, String)]?
+    date: String, workout: String?, swaps: [(String, String)]?,
+    weekAttendance: [(date: String, workSets: Int, ids: [String])]? = nil
   ) throws -> Dashboard {
     let planItems = plan.map { item in
       [
@@ -35,6 +36,12 @@ struct DaySwapChoicesTests {
     }
     if let swaps {
       json["daySwaps"] = swaps.map { ["date": $0.0, "workoutTemplateId": $0.1] }
+    }
+    if let weekAttendance {
+      json["weekAttendance"] = weekAttendance.map {
+        ["date": $0.date, "workSets": $0.workSets, "completed": false, "workoutTemplateIds": $0.ids]
+          as [String: Any]
+      }
     }
     return try JSONDecoder.henrique().decode(
       Dashboard.self, from: JSONSerialization.data(withJSONObject: json))
@@ -78,5 +85,16 @@ struct DaySwapChoicesTests {
         try Self.dashboard(
           date: "2026-09-20", workout: "ombro", swaps: [("2026-09-20", "ombro")])))
     #expect(choices.replaced == "no lugar do descanso")
+  }
+
+  @Test("treino feito pela metade em outro dia não aparece como faltou")
+  func halfDoneWorkoutIsNotMissed() throws {
+    let choices = try #require(
+      DaySwapChoices(
+        try Self.dashboard(
+          date: "2026-09-16", workout: "pernas", swaps: [],
+          weekAttendance: [("2026-09-15", 1, ["peito"])])))
+    #expect(titles(choices.missed) == ["costas · faltou terça"])
+    #expect(titles(choices.others) == ["peito", "ombro"])
   }
 }

@@ -183,8 +183,7 @@ struct DaySwapChoices: Equatable {
     let schedule = dashboard.schedule
     let locked = dashboard.hasMarkedSets
     let current = dashboard.workout?.id
-    let late = schedule
-      .missedWorkouts(today: dashboard.date, sessions: dashboard.weeklyWorkoutSessions ?? [])
+    let late = dashboard.missedWorkouts(today: dashboard.date)
       .filter { $0.id != current }
     missed = locked ? [] : late.map {
       Option(
