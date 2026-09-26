@@ -1,37 +1,48 @@
 import HenriqueCore
 import SwiftUI
 
-/// O que aparece ao tocar "encerrar": quanto durou, quanto saiu e se foi mais
-/// que da última vez.
+/// O que aparece ao tocar "encerrar": quanto durou, quanto saiu, os recordes do
+/// dia e a melhor série de cada exercício.
 struct WorkoutRecapSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accent) private var accent
+  @ScaledMetric(relativeTo: .caption) private var badgeSize = 11.0
+  @ScaledMetric(relativeTo: .caption) private var medalSize = 36.0
   let recap: WorkoutRecap
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.l) {
-      Text("treino encerrado").font(.title2.weight(.medium)).tracking(-0.8)
-      HStack(alignment: .top, spacing: Space.m) {
-        stat(duration, caption: "de treino")
-        stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume")
-        stat("\(recap.doneSets)/\(recap.totalSets)", caption: "séries valendo")
+    VStack(alignment: .leading, spacing: 0) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: Space.l) {
+          Text("treino encerrado").font(.title2.weight(.medium)).tracking(-0.8)
+          HStack(alignment: .top, spacing: Space.m) {
+            stat(duration, caption: "de treino")
+            stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume", delta: delta)
+            stat("\(recap.doneSets)/\(recap.totalSets)", caption: "séries valendo")
+          }
+          if !recap.records.isEmpty {
+            VStack(spacing: Space.s) {
+              ForEach(recap.records) { record(for: $0) }
+            }
+          }
+          VStack(spacing: 0) {
+            ForEach(recap.exercises) { line in
+              exerciseLine(line)
+              if line.id != recap.exercises.last?.id { Divider() }
+            }
+          }
+        }
+        .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
-      if let comparison = recap.comparison {
-        Text(compare(comparison))
-          .font(.subheadline).foregroundStyle(Color.mutedInk)
-          .fixedSize(horizontal: false, vertical: true)
-          .accessibilityIdentifier("resumo.comparacao")
-      }
-      Spacer(minLength: 0)
       Button("fechar") { dismiss() }
         .buttonStyle(.glassProminent).tint(accent.deep).controlSize(.large)
         .frame(maxWidth: .infinity)
         .accessibilityIdentifier("resumo.fechar")
+        .padding(.horizontal, Space.xl).padding(.bottom, Space.l)
     }
-    .padding(Space.xl)
-    .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color.canvas.ignoresSafeArea())
-    .presentationDetents([.medium])
+    .presentationDetents([.medium, .large])
   }
 
   private var duration: String {
@@ -40,23 +51,73 @@ struct WorkoutRecapSheet: View {
       .time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond(padMinuteToLength: 2)))
   }
 
-  private func stat(_ value: String, caption: String) -> some View {
+  /// A diferença para a última vez, nos exercícios que têm histórico. Zero não
+  /// aparece: "o mesmo volume" era uma frase inteira para dizer nada.
+  private var delta: Double? {
+    guard let comparison = recap.comparison else { return nil }
+    let delta = (comparison.today - comparison.previous).rounded()
+    return delta == 0 ? nil : delta
+  }
+
+  private func stat(_ value: String, caption: String, delta: Double? = nil) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(value).font(.title3.weight(.semibold)).monospacedDigit()
         .lineLimit(1).minimumScaleFactor(0.7)
       Text(caption).font(.caption).foregroundStyle(Color.mutedInk)
+      if let delta {
+        Text("\(delta > 0 ? "+" : "−")\(Formatting.trim(abs(delta))) kg")
+          .font(.caption.weight(.medium)).monospacedDigit()
+          .foregroundStyle(delta > 0 ? accent.base : Color.mutedInk)
+          .padding(.top, 2)
+          .accessibilityLabel(
+            "\(Formatting.trim(abs(delta))) quilos a \(delta > 0 ? "mais" : "menos") que da última vez")
+          .accessibilityIdentifier("resumo.comparacao")
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
   }
 
-  private func compare(_ comparison: WorkoutRecap.VolumeComparison) -> String {
-    let delta = (comparison.today - comparison.previous).rounded()
-    if delta == 0 { return "o mesmo volume da última vez nos mesmos exercícios" }
-    let amount = Formatting.trim(abs(delta))
-    return delta > 0
-      ? "\(amount) kg a mais que da última vez nos mesmos exercícios"
-      : "\(amount) kg a menos que da última vez nos mesmos exercícios"
+  private func record(for record: PersonalRecord) -> some View {
+    let badge = record.kind.badge(delta: record.delta)
+    return HStack(spacing: 12) {
+      Group {
+        if let symbol = record.kind.badgeSymbol {
+          Image(systemName: symbol).font(.system(size: badgeSize + 3, weight: .semibold))
+        } else {
+          Text(badge)
+            .font(.system(size: badgeSize, weight: .semibold, design: .monospaced))
+            .multilineTextAlignment(.center)
+        }
+      }
+      .foregroundStyle(accent.deep)
+      .frame(width: medalSize, height: medalSize)
+      .background(accent.pale, in: .rect(cornerRadius: medalSize / 3))
+      Text(record.exerciseName.lowercased())
+        .font(.callout.weight(.medium)).lineLimit(1)
+      Spacer(minLength: Space.s)
+      Text("\(Formatting.trim(record.weightKg)) × \(record.reps)")
+        .font(.callout).monospacedDigit().foregroundStyle(Color.mutedInk)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("recorde de \(record.kind.label), \(record.exerciseName.lowercased())")
+    .accessibilityValue(
+      "\(Formatting.trim(record.weightKg)) quilos por \(record.reps), \(badge.replacingOccurrences(of: "\n", with: " "))")
+  }
+
+  /// "puxada alta · 2/2 · 48 × 8", com a série valendo mais pesada feita.
+  private func exerciseLine(_ line: WorkoutRecap.ExerciseLine) -> some View {
+    HStack(spacing: Space.s) {
+      Text(line.name.lowercased()).font(.subheadline).lineLimit(1)
+      Spacer(minLength: Space.s)
+      Text("\(line.doneSets)/\(line.totalSets)")
+        .font(.subheadline).monospacedDigit().foregroundStyle(Color.mutedInk)
+      Text(line.top.map { "\(Formatting.trim($0.weightKg)) × \($0.reps)" } ?? "–")
+        .font(.subheadline.weight(.medium)).monospacedDigit()
+        .frame(minWidth: 64, alignment: .trailing)
+    }
+    .padding(.vertical, 11)
+    .accessibilityElement(children: .combine)
   }
 }
 
