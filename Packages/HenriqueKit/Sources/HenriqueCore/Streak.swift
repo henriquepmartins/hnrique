@@ -40,7 +40,6 @@ public struct WorkoutStreak: Sendable, Hashable {
   public var weeklyPlanned: Int
   public var days: [StreakDay]
   public var isTodayDone: Bool
-  public var isAtRisk: Bool
   public var weekProgress: Double
 }
 
@@ -76,7 +75,6 @@ extension WorkoutStreak {
     self.weeklyPlanned = week.planned
     self.days = days
     self.isTodayDone = attended.contains(today)
-    self.isAtRisk = week.slot(on: today)?.state == .today
     self.weekProgress = week.planned > 0 ? Double(week.done) / Double(week.planned) : 0
   }
 }

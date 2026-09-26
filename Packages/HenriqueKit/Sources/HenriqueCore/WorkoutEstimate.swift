@@ -20,18 +20,20 @@ public enum WorkoutEstimate {
     let minutes = (seconds + 299) / 300 * 5
     return minutes.clamped(to: Limits.estimatedMinutes)
   }
+
+  public static func minutes(plan exercises: [PlanExercise]) -> Int {
+    minutes(exercises.map { ($0.prepSets, $0.workSets, $0.restSeconds) })
+  }
 }
 
 extension WorkoutSummary {
   /// Conta as séries da sessão, então "+ série" já muda a estimativa.
-  public var estimatedMinutesComputed: Int {
+  public var estimatedMinutes: Int {
     WorkoutEstimate.minutes(
       exercises.map { ($0.sets.prep.count, $0.sets.work.count, $0.restSeconds) })
   }
 }
 
 extension WeekPlanItem {
-  public var estimatedMinutesComputed: Int {
-    WorkoutEstimate.minutes(exercises.map { ($0.prepSets, $0.workSets, $0.restSeconds) })
-  }
+  public var estimatedMinutes: Int { WorkoutEstimate.minutes(plan: exercises) }
 }

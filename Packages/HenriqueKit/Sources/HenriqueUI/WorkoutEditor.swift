@@ -45,9 +45,7 @@ struct WorkoutDraft: Hashable {
   var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
   var trimmedFocus: String { focus.trimmingCharacters(in: .whitespaces) }
   /// O servidor exige o campo; ele sai das séries em vez de ser digitado.
-  var estimatedMinutes: Int {
-    WorkoutEstimate.minutes(exercises.map { ($0.prepSets, $0.workSets, $0.restSeconds) })
-  }
+  var estimatedMinutes: Int { WorkoutEstimate.minutes(plan: exercises) }
   var canSave: Bool { EditorStep.allCases.allSatisfy { $0.isSatisfied(by: self) } }
 }
 

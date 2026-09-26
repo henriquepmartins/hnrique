@@ -74,7 +74,7 @@ struct NextSetTests {
     let done = Self.exercise("remada", prep: [true, true], work: [true, true, true])
     let fresh = Self.exercise("supino")
     let workout = WorkoutSummary(
-      id: "tpl", name: "Empurrar", focus: "", estimatedMinutes: 45, exerciseCount: 2,
+      id: "tpl", name: "Empurrar", focus: "", exerciseCount: 2,
       workSetCount: 6, completedWorkSetCount: 3, completionPercent: 50,
       exercises: [fresh, done])
     #expect(NextSet(from: 1, in: workout)?.exerciseId == "supino")

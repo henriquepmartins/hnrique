@@ -39,19 +39,18 @@ struct WorkoutEstimateTests {
         PlanExercise(
           exerciseId: "e\($0)", prepSets: 2, workSets: 3, repsMin: 6, repsMax: 10,
           workToFailure: false, startingWeightKg: 40, restSeconds: 150)
-      },
-      estimatedMinutes: 55)
-    #expect(plan.estimatedMinutesComputed == 35)
+      })
+    #expect(plan.estimatedMinutes == 35)
 
     var workout = try #require(ContractTests.dashboard().workout)
     // Supino 2 + 2 e desenvolvimento 1 + 2, descanso padrão:
     // 4 × 40 + 2 × 60 + 90 + 60 = 430 s e 3 × 40 + 60 + 90 + 60 = 330 s. 760 s, 13 min.
-    #expect(workout.estimatedMinutesComputed == 15)
+    #expect(workout.estimatedMinutes == 15)
     for _ in 0..<6 {
       workout.exercises[0].sets.work.append(
         WorkSet(index: workout.exercises[0].sets.work.count + 1, weightKg: 40, reps: 8, toFailure: false))
     }
     // Mais 6 séries de 40 s + 90 s: 760 + 780 = 1540 s, 26 min.
-    #expect(workout.estimatedMinutesComputed == 30)
+    #expect(workout.estimatedMinutes == 30)
   }
 }

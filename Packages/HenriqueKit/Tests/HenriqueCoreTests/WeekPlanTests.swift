@@ -6,8 +6,7 @@ import Testing
 struct WeekPlanTests {
   static func item(_ id: String, _ weekdays: [Int]) -> WeekPlanItem {
     WeekPlanItem(
-      id: id, weekdays: weekdays, name: id, focus: "foco", exerciseCount: 0, exercises: [],
-      estimatedMinutes: 45)
+      id: id, weekdays: weekdays, name: id, focus: "foco", exerciseCount: 0, exercises: [])
   }
 
   @Test("iniciar vai para o dia mais perto, contando hoje", arguments: [

@@ -207,7 +207,7 @@ struct WorkoutAdditionsTests {
     var prep = exercise
     prep.sets.prep[0].completedAt = Date(timeIntervalSince1970: 1_757_336_000)
     return WorkoutSummary(
-      id: "tpl", name: "Empurrar", focus: "peito", estimatedMinutes: 55, exerciseCount: 1,
+      id: "tpl", name: "Empurrar", focus: "peito", exerciseCount: 1,
       workSetCount: 2, completedWorkSetCount: 1, completionPercent: 50, exercises: [prep])
   }
 }

@@ -21,7 +21,7 @@ struct HeroModelTests {
     let count = "\(workout.exerciseCount) exercícios"
     #expect(meta(HeroModel(workout: workout, finished: true, duration: 283)) == "\(count) · 4:43")
     #expect(meta(HeroModel(workout: workout, finished: true, duration: 3730)) == "\(count) · 1:02:10")
-    let estimate = "\(count) · \(workout.estimatedMinutesComputed) min"
+    let estimate = "\(count) · \(workout.estimatedMinutes) min"
     #expect(meta(HeroModel(workout: workout, finished: true, duration: 20)) == estimate)
     #expect(meta(HeroModel(workout: workout, finished: true)) == estimate)
   }

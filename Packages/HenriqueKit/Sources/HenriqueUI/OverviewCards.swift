@@ -179,8 +179,8 @@ private struct DayCardTitle: View {
   private func counts(_ workout: WorkoutSummary) -> String {
     let parts = ["\(workout.exerciseCount) exercícios", "\(workout.workSetCount) séries"]
     switch time {
-    case .estimate: return (parts + ["\(workout.estimatedMinutesComputed) min"]).joined(separator: " · ")
-    case .took(let seconds): return (parts + [clock(seconds)]).joined(separator: " · ")
+    case .estimate: return (parts + ["\(workout.estimatedMinutes) min"]).joined(separator: " · ")
+    case .took(let seconds): return (parts + [HeroModel.clock(seconds)]).joined(separator: " · ")
     case .unknown: return parts.joined(separator: " · ")
     }
   }
@@ -189,16 +189,12 @@ private struct DayCardTitle: View {
     let parts = ["\(workout.exerciseCount) exercícios", "\(workout.workSetCount) séries"]
     switch time {
     case .estimate:
-      return (parts + ["uns \(workout.estimatedMinutesComputed) minutos"]).joined(separator: ", ")
+      return (parts + ["uns \(workout.estimatedMinutes) minutos"]).joined(separator: ", ")
     case .took(let seconds):
       let spoken = Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes]))
       return (parts + ["durou \(spoken)"]).joined(separator: ", ")
     case .unknown: return parts.joined(separator: ", ")
     }
-  }
-
-  private func clock(_ seconds: TimeInterval) -> String {
-    Duration.seconds(Int(seconds)).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond))
   }
 }
 

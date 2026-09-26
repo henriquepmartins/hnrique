@@ -25,7 +25,7 @@ struct PlanCalendarTests {
   private static func item(id: String, weekdays: [Int]) -> WeekPlanItem {
     WeekPlanItem(
       id: id, weekdays: weekdays, name: id, focus: "", exerciseCount: 0, exercises: [],
-      estimatedMinutes: 0, color: nil)
+      color: nil)
   }
 
   private func day(_ iso: String, sets: Int, ids: [String] = []) -> (CalendarDate, AttendanceDay) {

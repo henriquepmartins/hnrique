@@ -22,7 +22,7 @@ enum HeroModel {
       return
     }
     let exercises = "\(workout.exerciseCount) exercícios"
-    let estimate = "\(exercises) · \(workout.estimatedMinutesComputed) min"
+    let estimate = "\(exercises) · \(workout.estimatedMinutes) min"
     if finished {
       // Séries marcadas todas de uma vez, depois do treino, dariam "0:00".
       let real = duration.flatMap { $0 >= 60 ? $0 : nil }

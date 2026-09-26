@@ -163,7 +163,6 @@ public struct WorkoutSummary: Codable, Hashable, Sendable, Identifiable {
   public var id: String
   public var name: String
   public var focus: String
-  public var estimatedMinutes: Int
   public var exerciseCount: Int
   public var workSetCount: Int
   public var completedWorkSetCount: Int
@@ -225,9 +224,7 @@ public struct WorkoutRecap: Equatable, Sendable {
   /// Volume de hoje e da última vez, só dos exercícios com `previous`. Nulo
   /// quando nenhum exercício tem histórico.
   public let comparison: VolumeComparison?
-  /// Uma linha por exercício, na ordem do treino.
   public let exercises: [ExerciseLine]
-  /// Os recordes batidos no dia do treino.
   public let records: [PersonalRecord]
 
   public struct VolumeComparison: Equatable, Sendable {
@@ -355,7 +352,6 @@ public struct WeekPlanItem: Codable, Hashable, Sendable, Identifiable {
   public var focus: String
   public var exerciseCount: Int
   public var exercises: [PlanExercise]
-  public var estimatedMinutes: Int
   /// Hex `#RRGGBB`. Nulo quando o treino não tem cor escolhida.
   public var color: String?
 
@@ -379,7 +375,6 @@ extension WeekPlanItem {
     focus = try container.decode(String.self, forKey: .focus)
     exerciseCount = try container.decode(Int.self, forKey: .exerciseCount)
     exercises = try container.decode([PlanExercise].self, forKey: .exercises)
-    estimatedMinutes = try container.decode(Int.self, forKey: .estimatedMinutes)
     color = try container.decodeIfPresent(String.self, forKey: .color)
   }
 }
