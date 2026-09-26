@@ -33,7 +33,7 @@ public struct TrainingWeek: Equatable, Sendable {
     let monday = today.trainingWeekStart(in: calendar)
     let days = (0..<7).map { monday.adding(days: $0, in: calendar) }
     let attended = days.filter { $0 <= today && attended.contains($0) }
-    let planned = days.compactMap { date in schedule.workout(on: date).map { (date, $0) } }
+    let planned = days.compactMap { date in schedule.plannedWorkout(on: date).map { (date, $0) } }
     let done = min(planned.count, attended.count)
     self.monday = monday
     self.attended = attended

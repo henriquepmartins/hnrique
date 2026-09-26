@@ -48,6 +48,12 @@ public struct PlanSchedule: Sendable {
     return weekdayWorkout(on: date)
   }
 
+  /// O que conta como dia planejado. Trocar um dia de descanso por um treino
+  /// repõe um dia perdido, não soma outro à semana.
+  public func plannedWorkout(on date: CalendarDate) -> WeekPlanItem? {
+    weekdayWorkout(on: date) == nil ? nil : workout(on: date)
+  }
+
   /// Os treinos da semana (segunda a ontem) que foram previstos mais vezes do que
   /// saíram, do dia perdido mais recente para o mais antigo. O treino de hoje fica
   /// de fora: ele já é o que está marcado para agora.
@@ -76,7 +82,7 @@ public struct PlanSchedule: Sendable {
     var planned: [String: (workout: WeekPlanItem, count: Int, last: CalendarDate)] = [:]
     var date = monday
     while date < today {
-      if let workout = workout(on: date) {
+      if let workout = plannedWorkout(on: date) {
         planned[workout.id, default: (workout, 0, date)].count += 1
         planned[workout.id]?.last = date
       }

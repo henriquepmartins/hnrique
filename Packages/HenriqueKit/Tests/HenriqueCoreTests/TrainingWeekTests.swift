@@ -71,13 +71,30 @@ struct TrainingWeekTests {
       states(week) == ["2026-09-14": .missed, "2026-09-16": .today, "2026-09-18": .upcoming])
   }
 
-  @Test("a troca de dia vira um dia do plano")
-  func swapAddsSlot() {
+  @Test("a troca num dia de treino muda o treino do dia")
+  func swapOnTrainingDay() {
     let schedule = PlanSchedule(
-      plan: Self.plan, swaps: [DaySwap(date: Self.day(19), workoutTemplateId: "a")])
+      plan: Self.plan, swaps: [DaySwap(date: Self.day(16), workoutTemplateId: "a")])
     let week = TrainingWeek(schedule: schedule, attended: [], today: Self.day(14))
-    #expect(week.slots.map(\.date.iso) == ["2026-09-14", "2026-09-16", "2026-09-18", "2026-09-19"])
-    #expect(week.slots.last?.workout.id == "a")
+    #expect(week.slots.map(\.date.iso) == ["2026-09-14", "2026-09-16", "2026-09-18"])
+    #expect(week.slots.map(\.workout.id) == ["a", "a", "c"])
+  }
+
+  @Test("repor no sábado de descanso não soma um dia à semana")
+  func swapOnRestDayRecoversMissedDay() {
+    let schedule = PlanSchedule(
+      plan: Self.plan, swaps: [DaySwap(date: Self.day(19), workoutTemplateId: "b")])
+    let week = TrainingWeek(
+      schedule: schedule, attended: [Self.day(14), Self.day(18), Self.day(19)],
+      today: Self.day(19))
+    #expect(week.planned == 3)
+    #expect(week.done == 3)
+    let attendance = [14, 18, 19].map {
+      AttendanceDay(
+        date: Self.day($0), workSets: 3, completed: true,
+        workoutTemplateIds: [$0 == 14 ? "a" : $0 == 18 ? "c" : "b"])
+    }
+    #expect(schedule.missedWorkouts(today: Self.day(19), attendance: attendance).isEmpty)
   }
 
   // O painel da fixture é de terça, 8 de setembro, com o treino tpl-terca e a
