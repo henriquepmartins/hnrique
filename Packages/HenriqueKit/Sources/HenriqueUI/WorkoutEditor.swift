@@ -28,7 +28,6 @@ enum EditorStep: Int, CaseIterable, Hashable {
     case .identidade:
       Limits.workoutNameLength.contains(draft.trimmedName.count)
         && Limits.workoutFocusLength.contains(draft.trimmedFocus.count)
-        && Limits.estimatedMinutes.contains(draft.estimatedMinutes)
     case .cor, .dias:
       true
     case .exercicios:
@@ -42,13 +41,16 @@ enum EditorStep: Int, CaseIterable, Hashable {
 struct WorkoutDraft: Hashable {
   var name: String
   var focus: String
-  var estimatedMinutes: Int
   var color: WorkoutColor
   var weekdays: Set<Int>
   var exercises: [PlanExercise]
 
   var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
   var trimmedFocus: String { focus.trimmingCharacters(in: .whitespaces) }
+  /// O servidor exige o campo; ele sai das séries em vez de ser digitado.
+  var estimatedMinutes: Int {
+    WorkoutEstimate.minutes(exercises.map { ($0.prepSets, $0.workSets, $0.restSeconds) })
+  }
   var canSave: Bool { EditorStep.allCases.allSatisfy { $0.isSatisfied(by: self) } }
 }
 
@@ -80,7 +82,6 @@ struct WorkoutEditor: View {
     exerciseInfo = Dictionary(catalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     draft = WorkoutDraft(
       name: item?.name ?? "", focus: item?.focus ?? "",
-      estimatedMinutes: item?.estimatedMinutes ?? 55,
       color: tone.color, weekdays: weekdays, exercises: item?.exercises ?? [])
   }
 
@@ -266,14 +267,6 @@ private struct IdentityStep: View {
       }
       EditorField {
         TextField("foco", text: $draft.focus).submitLabel(.done)
-      }
-      EditorField {
-        HStack {
-          TextField("minutos", value: $draft.estimatedMinutes, format: .number)
-            .submitLabel(.done)
-            .decimalInput()
-          Text("min").font(.subheadline).foregroundStyle(Color.mutedInk)
-        }
       }
     }
     .padding(16)
