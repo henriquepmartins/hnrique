@@ -54,7 +54,7 @@ extension AcademiaStore {
     guard key.date == .today, let dashboard, dashboard.date == key.date,
       let workout = dashboard.workout, workout.id == key.templateId
     else { return }
-    let tone = dashboard.weekPlan.first { $0.id == workout.id }?.tone
+    let tone = dashboard.tone(forWorkout: workout.id)
     let attributes = SetActivityAttributes(
       date: dashboard.date, templateId: workout.id, workoutName: workout.name.lowercased(),
       toneHex: tone?.hex)
