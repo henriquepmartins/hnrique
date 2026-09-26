@@ -30,7 +30,6 @@ struct SetupScreen: View {
   @State private var weekday = CalendarDate.today.weekday()
   @State private var name = ""
   @State private var focus = ""
-  @State private var minutes = 55
   @State private var exercises: [PlanExercise] = []
   @State private var goalExercise = ""
   @State private var target: Double?
@@ -127,18 +126,13 @@ struct SetupScreen: View {
         Picker("dia", selection: $weekday) {
           ForEach(0..<7, id: \.self) { Text(days[$0]).tag($0) }
         }.onChange(of: weekday) { oldDay, _ in
-          workoutDrafts[oldDay] = SetupWorkoutDraft(name: name, focus: focus, minutes: minutes, exercises: exercises)
+          workoutDrafts[oldDay] = SetupWorkoutDraft(name: name, focus: focus, exercises: exercises)
           loadWorkout()
         }
         TextField("nome", text: $name).textFieldStyle(.roundedBorder)
           .submitLabel(.done)
         TextField("foco", text: $focus).textFieldStyle(.roundedBorder)
           .submitLabel(.done)
-        HStack {
-          Text("minutos")
-          TextField("55", value: $minutes, format: .number).decimalInput().multilineTextAlignment(.trailing)
-            .submitLabel(.done)
-        }
       }.padding(Space.xl).paperCard()
     case .exercises:
       VStack(spacing: Space.l) {
@@ -208,14 +202,12 @@ struct SetupScreen: View {
     if let draft = workoutDrafts[weekday] {
       name = draft.name
       focus = draft.focus
-      minutes = draft.minutes
       exercises = draft.exercises
       return
     }
     let item = plannedWorkout
     name = item?.name ?? ""
     focus = item?.focus ?? ""
-    minutes = item?.estimatedMinutes ?? 55
     exercises = item?.exercises ?? []
   }
 
@@ -239,9 +231,8 @@ struct SetupScreen: View {
     case .workout:
       let trimmedFocus = focus.trimmingCharacters(in: .whitespaces)
       guard Limits.workoutNameLength.contains(name.trimmingCharacters(in: .whitespaces).count),
-        trimmedFocus.isEmpty || Limits.workoutFocusLength.contains(trimmedFocus.count),
-        Limits.estimatedMinutes.contains(minutes) else {
-        error = "nome de 2 a 80 letras, foco até 140 e 15 a 180 min"; return
+        trimmedFocus.isEmpty || Limits.workoutFocusLength.contains(trimmedFocus.count) else {
+        error = "nome de 2 a 80 letras e foco até 140"; return
       }
       step = .exercises
     case .exercises:
@@ -252,7 +243,7 @@ struct SetupScreen: View {
       let planned = plannedWorkout
       let input = SaveWorkoutInput(date: store.selectedDate, workoutTemplateId: planned?.id,
         weekdays: planned?.weekdays ?? [weekday], name: name,
-        focus: resolvedFocus, estimatedMinutes: minutes, exercises: exercises)
+        focus: resolvedFocus, estimatedMinutes: WorkoutEstimate.minutes(plan: exercises), exercises: exercises)
       if input != savedWorkout {
         guard await store.saveWorkout(input) else { error = store.banner; return }
         savedWorkout = input
@@ -277,6 +268,5 @@ struct SetupScreen: View {
 private struct SetupWorkoutDraft {
   let name: String
   let focus: String
-  let minutes: Int
   let exercises: [PlanExercise]
 }
