@@ -24,7 +24,8 @@ final class FluxoDrive: XCTestCase {
     app.launchArguments = ["--app", "academia", "--aba", aba]
     app.launch()
     let user = app.textFields["usuário"]
-    if user.waitForExistence(timeout: 4) {
+    let loggingIn = user.waitForExistence(timeout: 4)
+    if loggingIn {
       let banner = app.alerts.buttons["ok"]
       if banner.waitForExistence(timeout: 1) { banner.tap() }
       guard let username = env["HENRIQUE_TEST_USERNAME"], let password = env["HENRIQUE_TEST_PASSWORD"] else {
@@ -40,9 +41,11 @@ final class FluxoDrive: XCTestCase {
     }
     let counter = app.buttons["sequência"]
     XCTAssert(counter.waitForExistence(timeout: 15), "painel carregou depois do login")
-    // O iOS oferece guardar a senha depois do primeiro login de cada instalação.
+    // O iOS oferece guardar a senha depois do primeiro login de cada instalação,
+    // e o alerta às vezes chega depois do painel.
     let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-    for notNow in [app.buttons["Not Now"], springboard.buttons["Not Now"]] where notNow.waitForExistence(timeout: 3) {
+    for notNow in [app.buttons["Not Now"], springboard.buttons["Not Now"]]
+    where notNow.waitForExistence(timeout: loggingIn ? 10 : 1) {
       notNow.tap()
       break
     }
@@ -50,15 +53,29 @@ final class FluxoDrive: XCTestCase {
     if setup.waitForExistence(timeout: 1) { setup.tap() }
   }
 
-  /// O plano semeado não tem treino em toda terça, quinta, sábado e domingo.
-  /// Quando hoje cai num desses dias, o fluxo põe o dia no primeiro treino do
-  /// plano, pelo mesmo editor que o usuário usa.
-  func ensureWorkoutToday() {
-    guard app.staticTexts["sem exercícios"].waitForExistence(timeout: 3) else { return }
+  static let weekdayNames = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]
+
+  static var saoPaulo: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "America/Sao_Paulo")!
-    let names = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]
-    let today = names[calendar.component(.weekday, from: Date()) - 1]
+    calendar.firstWeekday = 2
+    return calendar
+  }
+
+  /// O plano semeado não tem treino em toda terça, quinta, sábado e domingo.
+  /// Quando hoje cai num desses dias, o hero diz "descanso" e o fluxo põe o dia
+  /// em Superiores, pelo mesmo editor que o usuário usa.
+  func ensureWorkoutToday() {
+    let rest = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label ENDSWITH ', descanso'")).firstMatch
+    guard rest.waitForExistence(timeout: 3) else { return }
+    let today = Self.weekdayNames[Self.saoPaulo.component(.weekday, from: Date()) - 1]
+    toggleSuperioresDay(today)
+    XCTAssert(app.buttons["Concluir série 1"].firstMatch.waitForExistence(timeout: 10), "o dia ganhou treino com séries")
+  }
+
+  /// Liga ou desliga um dia da semana em Superiores e volta para a aba treino.
+  func toggleSuperioresDay(_ weekday: String) {
     app.tabBars.buttons["plano"].tap()
     let menu = app.buttons["editar Superiores"]
     XCTAssert(menu.waitForExistence(timeout: 8), "plano listou Superiores")
@@ -66,15 +83,45 @@ final class FluxoDrive: XCTestCase {
     let editar = app.buttons["editar"]
     XCTAssert(editar.waitForExistence(timeout: 3), "menu do treino abriu")
     editar.tap()
-    XCTAssert(app.staticTexts["nome e foco"].waitForExistence(timeout: 3), "editor de Superiores abriu")
+    XCTAssert(app.staticTexts["nome"].waitForExistence(timeout: 3), "editor de Superiores abriu")
     goToStep("dias")
-    let day = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", today)).firstMatch
-    XCTAssert(day.waitForExistence(timeout: 3), "dia \(today) visível no editor")
+    let day = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", weekday)).firstMatch
+    XCTAssert(day.waitForExistence(timeout: 3), "dia \(weekday) visível no editor")
     day.tap()
     app.buttons["concluir"].tap()
     XCTAssert(app.buttons["concluir"].waitForNonExistence(timeout: 10), "editor fechou depois de salvar")
     app.tabBars.buttons["treino"].tap()
-    XCTAssert(app.buttons["Concluir série 1"].firstMatch.waitForExistence(timeout: 10), "treino de hoje apareceu com séries")
+  }
+
+  /// Um dia já passado desta semana, sem treino no plano semeado e sem série
+  /// marcada, lido na fita de dias da aba treino. Nulo quando a semana ainda
+  /// não teve um dia assim, como numa segunda.
+  func unattendedPastFreeDay() -> String? {
+    let calendar = Self.saoPaulo
+    let now = Date()
+    guard let week = calendar.dateInterval(of: .weekOfYear, for: now) else { return nil }
+    let yesterday = calendar.startOfDay(for: now).addingTimeInterval(-1)
+    var day = week.start
+    while day <= yesterday {
+      let name = Self.weekdayNames[calendar.component(.weekday, from: day) - 1]
+      if ["terça", "quinta", "sábado"].contains(name) {
+        let chipName = name == "sábado" ? name : "\(name)-feira"
+        let chip = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] %@", chipName + ", ")).firstMatch
+        if chip.waitForExistence(timeout: 3), !chip.label.contains(", treinou") { return name }
+      }
+      day = calendar.date(byAdding: .day, value: 1, to: day)!
+    }
+    return nil
+  }
+
+  /// Abre o ajuste do exercício do editor cujo nome começa com `prefix`, ou do
+  /// primeiro. O editor lista cada exercício recolhido numa linha só.
+  func expandPlanExercise(_ prefix: String? = nil) {
+    let predicate = prefix.map { NSPredicate(format: "label BEGINSWITH[c] %@ AND value CONTAINS ' valendo'", $0) }
+      ?? NSPredicate(format: "value CONTAINS ' valendo'")
+    let row = app.descendants(matching: .any).matching(predicate).firstMatch
+    XCTAssert(row.waitForExistence(timeout: 5), "editor listou o exercício")
+    row.tap()
   }
 
   /// O editor mostra um passo por vez. Toca em "avançar" até o título ser o
@@ -125,6 +172,7 @@ final class FluxoDrive: XCTestCase {
     app.buttons["editar Superiores"].tap()
     app.buttons["editar"].tap()
     goToStep("exercícios")
+    expandPlanExercise("supino inclinado")
     let planWeight = app.textFields["Carga em kg"].firstMatch
     XCTAssert(planWeight.waitForExistence(timeout: 5), "editor mostra carga do plano")
     let updated = NSPredicate(format: "value == %@", "37,5")
@@ -154,7 +202,7 @@ final class FluxoDrive: XCTestCase {
     focus.tap()
     focus.typeText("Adaptação")
     dismissKeyboard()
-    goToStep("escolha a cor")
+    goToStep("cor")
     shot("13a-cor-do-treino-novo")
     goToStep("exercícios")
     app.buttons["adicionar"].tap()
@@ -175,7 +223,7 @@ final class FluxoDrive: XCTestCase {
     let tile = app.buttons["editar Treino futuro de teste, sem dia"]
     XCTAssert(tile.waitForExistence(timeout: 10), "treino sem dia continua no plano após reabrir")
     tile.tap()
-    XCTAssert(app.staticTexts["nome e foco"].waitForExistence(timeout: 5), "toque no treino sem dia abre edição")
+    XCTAssert(app.staticTexts["nome"].waitForExistence(timeout: 5), "toque no treino sem dia abre edição")
     goToStep("dias")
     app.buttons["sábado"].tap()
     app.buttons["concluir"].tap()
@@ -247,10 +295,10 @@ final class FluxoDrive: XCTestCase {
     app.swipeUp()
     shot("41-home-musculos")
 
-    app.buttons["musculos.month"].tap()
-    XCTAssert(
-      app.staticTexts["volume dos últimos 28 dias"].waitForExistence(timeout: 3),
-      "o mapa troca para a janela de vinte e oito dias")
+    let mes = app.buttons["musculos.month"]
+    mes.tap()
+    expectation(for: NSPredicate(format: "isSelected == true"), evaluatedWith: mes)
+    waitForExpectations(timeout: 3)
     shot("42-home-musculos-mes")
   }
 
@@ -276,9 +324,70 @@ final class FluxoDrive: XCTestCase {
       "o atalho da fita leva para a aba do plano")
   }
 
+  /// Um treino atrasado cobre o dia do plano que ficou para trás. Roda antes
+  /// de todos porque precisa de hoje fora do plano e sem série: a fixture deixa
+  /// terça, quinta, sábado e domingo livres, e os outros testes põem hoje no
+  /// plano e marcam séries. Desfaz tudo no fim.
+  func testA1SemanaCobertaPorTreinoAtrasado() throws {
+    launch()
+    let rest = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label ENDSWITH ', descanso'")).firstMatch
+    guard rest.waitForExistence(timeout: 5) else { throw XCTSkip("hoje tem treino no plano semeado") }
+    guard let missed = unattendedPastFreeDay() else { throw XCTSkip("a semana ainda não tem dia livre que passou") }
+
+    toggleSuperioresDay(missed)
+    app.tabBars.buttons["hoje"].tap()
+    let week = app.descendants(matching: .any)["hoje.aderencia"]
+    XCTAssert(week.waitForExistence(timeout: 10), "o cartão da semana apareceu")
+    expectation(for: NSPredicate(format: "value CONTAINS '1 perdido'"), evaluatedWith: week)
+    waitForExpectations(timeout: 10)
+    scrollTo(week)
+    shot("80-semana-com-falta")
+
+    let card = app.descendants(matching: .any)["hoje.treino"]
+    card.press(forDuration: 1.2)
+    let late = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'superiores'")).firstMatch
+    XCTAssert(late.waitForExistence(timeout: 5), "o menu oferece o treino atrasado")
+    late.tap()
+    expectation(for: NSPredicate(format: "label BEGINSWITH 'superiores'"), evaluatedWith: card)
+    waitForExpectations(timeout: 10)
+
+    app.tabBars.buttons["treino"].tap()
+    let set = app.buttons.matching(NSPredicate(format:
+      "identifier CONTAINS '.work.' AND identifier ENDSWITH '.completion' AND label BEGINSWITH 'Concluir'")).firstMatch
+    XCTAssert(set.waitForExistence(timeout: 10), "o treino atrasado abriu com séries")
+    let id = set.identifier
+    set.tap()
+    let done = app.buttons[id]
+    expectation(for: NSPredicate(format: "label BEGINSWITH 'Desmarcar'"), evaluatedWith: done)
+    waitForExpectations(timeout: 5)
+
+    app.tabBars.buttons["hoje"].tap()
+    XCTAssert(week.waitForExistence(timeout: 10), "o cartão da semana voltou")
+    expectation(for: NSPredicate(format: "NOT (value CONTAINS 'perdido')"), evaluatedWith: week)
+    waitForExpectations(timeout: 10)
+    scrollTo(week)
+    shot("81-semana-coberta")
+
+    app.tabBars.buttons["treino"].tap()
+    XCTAssert(done.waitForExistence(timeout: 5), "a série marcada continua lá")
+    done.tap()
+    expectation(for: NSPredicate(format: "label BEGINSWITH 'Concluir'"), evaluatedWith: done)
+    waitForExpectations(timeout: 5)
+    app.tabBars.buttons["hoje"].tap()
+    card.press(forDuration: 1.2)
+    let back = app.buttons["voltar ao plano"]
+    XCTAssert(back.waitForExistence(timeout: 5), "sem série marcada, a troca pode ser desfeita")
+    back.tap()
+    expectation(for: NSPredicate(format: "NOT (label BEGINSWITH 'superiores')"), evaluatedWith: card)
+    waitForExpectations(timeout: 10)
+    toggleSuperioresDay(missed)
+  }
+
   /// Segurar o card de hoje troca o treino só nesta data, e "voltar ao plano"
-  /// devolve o que o plano marcava.
-  func testHomeTrocaDoDia() {
+  /// devolve o que o plano marcava. Roda antes de qualquer série marcada hoje,
+  /// que trava a troca.
+  func testA2TrocaDoDia() {
     launch()
     ensureWorkoutToday()
     app.tabBars.buttons["hoje"].tap()
@@ -391,9 +500,7 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(close.waitForExistence(timeout: 5), "sessão abriu")
     shot("50-sessao")
 
-    let counter = app.staticTexts.matching(
-      NSPredicate(format: "label BEGINSWITH 'de ' AND label ENDSWITH ' séries'")).firstMatch
-    XCTAssert(counter.waitForExistence(timeout: 3), "sessão mostra o total de séries")
+    XCTAssert(sessionCounter.waitForExistence(timeout: 3), "sessão mostra o total de séries")
 
     // Aquecimento e valendo têm o mesmo rótulo, e só a valendo move o contador.
     // O rótulo tem que ser "Concluir": um teste anterior pode ter deixado a
@@ -442,8 +549,9 @@ final class FluxoDrive: XCTestCase {
 
   /// O descanso sobrevive a minimizar a sessão, o campo de carga troca o número
   /// inteiro e estranha carga fora do padrão, e encerrar mostra o resumo e muda o
-  /// card para "ver o treino".
-  func testSessaoDescansoEEncerrar() {
+  /// card para "ver o treino". Roda depois dos outros testes de sessão porque,
+  /// encerrado o treino, o hero não oferece mais "começar" nem "continuar".
+  func testZZSessaoDescansoEEncerrar() {
     launch()
     ensureWorkoutToday()
     let close = openSession()
@@ -643,14 +751,17 @@ final class FluxoDrive: XCTestCase {
 
     let close = app.buttons["sessao.fechar"]
     XCTAssert(close.waitForExistence(timeout: 5), "sessão abriu")
-    // Fecha o primeiro exercício inteiro. Só o exercício aberto desenha linha de
-    // série, então o filtro já cai nele; `isHittable` continua separando a linha
-    // visível da que rolou para fora da tela.
+    // Fecha o primeiro exercício inteiro. Terminado um exercício, a sessão abre
+    // o seguinte, então o filtro fica preso ao exercício da primeira linha;
+    // `isHittable` separa a linha visível da que rolou para fora da tela.
     let abertas = NSPredicate(format:
       "identifier CONTAINS '.work.' AND identifier ENDSWITH '.completion'"
       + " AND label BEGINSWITH 'Concluir'")
-    let valendo = app.buttons.matching(abertas)
-    XCTAssert(valendo.firstMatch.waitForExistence(timeout: 5), "sessão tem série em aberto")
+    XCTAssert(app.buttons.matching(abertas).firstMatch.waitForExistence(timeout: 5), "sessão tem série em aberto")
+    let exercise = app.buttons.matching(abertas).firstMatch.identifier.components(separatedBy: ".work.")[0]
+    let valendo = app.buttons.matching(NSCompoundPredicate(andPredicateWithSubpredicates: [
+      abertas, NSPredicate(format: "identifier BEGINSWITH %@", exercise + ".work."),
+    ]))
     for _ in 0..<8 {
       guard valendo.firstMatch.isHittable else { break }
       let antes = doneCount()
@@ -666,26 +777,29 @@ final class FluxoDrive: XCTestCase {
     continuar.tap()
     XCTAssert(close.waitForExistence(timeout: 5), "sessão reabriu pelo continuar")
     shot("60-continuar-onde-parou")
+    let aberta = app.buttons.matching(abertas).firstMatch
     XCTAssert(
-      valendo.firstMatch.waitForExistence(timeout: 5) && valendo.firstMatch.isHittable,
-      "continuar abre um exercício com série em aberto, não o que já terminou")
+      aberta.waitForExistence(timeout: 5) && aberta.isHittable,
+      "continuar abre um exercício com série em aberto")
+    XCTAssertFalse(valendo.firstMatch.isHittable, "e não o que já terminou")
+  }
+
+  /// O topo da sessão, que o VoiceOver lê "N de M séries valendo".
+  var sessionCounter: XCUIElement {
+    app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label MATCHES '^[0-9]+ de [0-9]+ séries valendo$'")).firstMatch
   }
 
   /// Espera o contador da sessão chegar no valor. Ler logo depois do toque pega
   /// o número antes da transição, e o teste acusa marca perdida que não houve.
   func waitForCount(_ alvo: Int, timeout: TimeInterval = 4) {
-    let contador = app.staticTexts.matching(
-      NSPredicate(format: "label MATCHES '^[0-9]+$'")).firstMatch
     expectation(
-      for: NSPredicate(format: "label == %@", String(alvo)), evaluatedWith: contador)
+      for: NSPredicate(format: "label BEGINSWITH %@", "\(alvo) de "), evaluatedWith: sessionCounter)
     waitForExpectations(timeout: timeout)
   }
 
-  /// As séries já feitas, lidas da legenda "N de M séries" do topo da sessão.
   func doneCount() -> Int {
-    let label = app.staticTexts.matching(
-      NSPredicate(format: "label MATCHES '^[0-9]+$'")).firstMatch
-    return Int(label.label) ?? -1
+    Int(sessionCounter.label.split(separator: " ").first ?? "") ?? -1
   }
 
   /// O campo de carga do aquecimento fica à vista com o teclado aberto, e o
@@ -699,6 +813,7 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(edit.waitForExistence(timeout: 3), "menu do treino abriu")
     edit.tap()
     goToStep("exercícios")
+    expandPlanExercise()
     let field = app.textFields["plano.carga-aquecimento"].firstMatch
     XCTAssert(field.waitForExistence(timeout: 5), "editor mostra a carga do aquecimento")
     field.tap()
@@ -715,6 +830,7 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(edit.waitForExistence(timeout: 3))
     edit.tap()
     goToStep("exercícios")
+    expandPlanExercise()
     XCTAssert(field.waitForExistence(timeout: 5))
     XCTAssertEqual(field.value as? String, "12", "a carga do aquecimento foi salva")
     shot("71-plano-aquecimento-salvo")
@@ -746,7 +862,7 @@ final class FluxoDrive: XCTestCase {
     let edit = app.buttons["editar"]
     XCTAssert(edit.waitForExistence(timeout: 3))
     edit.tap()
-    XCTAssert(app.staticTexts["nome e foco"].waitForExistence(timeout: 3))
+    XCTAssert(app.staticTexts["nome"].waitForExistence(timeout: 3))
     shot("pasta-editor")
     app.buttons["fechar"].tap()
     XCTAssert(menu.waitForExistence(timeout: 3))
