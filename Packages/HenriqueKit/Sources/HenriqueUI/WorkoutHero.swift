@@ -5,51 +5,52 @@ import SwiftUI
 /// O que o hero mostra. Espelha o `heroView` do web para as duas telas
 /// decidirem o mesmo texto a partir do mesmo treino.
 enum HeroModel {
-  case rest(dateLabel: String)
-  case ready(Session)
-  case inProgress(Session)
+  case rest
+  case session(Session)
 
   struct Session {
-    let dateLabel: String
     let workout: WorkoutSummary
     let meta: String
     let actionLabel: String
   }
 
-  init(workout: WorkoutSummary?, date: CalendarDate, finished: Bool = false) {
-    let dateLabel = Self.dateLabel(date)
+  /// `duration` é o tempo real da sessão já parada. Sem ele o rodapé mostra a
+  /// estimativa que sai das séries e descansos do treino.
+  init(workout: WorkoutSummary?, finished: Bool = false, duration: TimeInterval? = nil) {
     guard let workout else {
-      self = .rest(dateLabel: dateLabel)
+      self = .rest
       return
     }
-    let meta = "\(workout.exerciseCount) exercícios · \(workout.estimatedMinutes) min"
+    let exercises = "\(workout.exerciseCount) exercícios"
+    let estimate = "\(exercises) · \(workout.estimatedMinutesComputed) min"
     if finished {
-      self = .inProgress(Session(
-        dateLabel: dateLabel, workout: workout,
-        meta: meta + " · encerrado", actionLabel: "ver o treino"))
+      // Séries marcadas todas de uma vez, depois do treino, dariam "0:00".
+      let real = duration.flatMap { $0 >= 60 ? $0 : nil }
+      let meta = real.map { "\(exercises) · \(Self.clock($0))" } ?? estimate
+      self = .session(Session(workout: workout, meta: meta, actionLabel: "ver o treino"))
     } else if workout.completionPercent > 0 {
-      self = .inProgress(Session(
-        dateLabel: dateLabel, workout: workout,
-        meta: meta + " · \(workout.completionPercent)% concluído", actionLabel: "continuar"))
+      self = .session(Session(
+        workout: workout, meta: estimate + " · \(workout.completionPercent)% concluído",
+        actionLabel: "continuar"))
     } else {
-      self = .ready(Session(dateLabel: dateLabel, workout: workout, meta: meta, actionLabel: "começar"))
+      self = .session(Session(workout: workout, meta: estimate, actionLabel: "começar"))
     }
   }
 
-  var dateLabel: String {
-    switch self {
-    case .rest(let dateLabel): dateLabel
-    case .ready(let session), .inProgress(let session): session.dateLabel
-    }
+  /// "4:43", ou "1:02:10" passando de uma hora.
+  static func clock(_ duration: TimeInterval) -> String {
+    let seconds = Int(duration)
+    return Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600
+      ? .hourMinuteSecond : .minuteSecond))
   }
 
-  /// "quarta · 23 de setembro". O "-feira" sai porque em caixa alta e espaçado
-  /// ele dobra a largura do rótulo sem dizer nada a mais.
+  /// "quarta, 23 de setembro". Só o VoiceOver lê: na tela a fita de dias acima
+  /// do cartão já marca o dia.
   static func dateLabel(_ date: CalendarDate) -> String {
     let style = Date.FormatStyle(locale: Locale(identifier: "pt_BR"), calendar: .autoupdatingCurrent)
     let day = date.date()
     let weekday = day.formatted(style.weekday(.wide)).replacingOccurrences(of: "-feira", with: "")
-    return "\(weekday) · \(day.formatted(style.day().month(.wide)))"
+    return "\(weekday), \(day.formatted(style.day().month(.wide)))"
   }
 }
 
@@ -60,23 +61,25 @@ struct WorkoutHero: View {
   let workout: WorkoutSummary?
   let date: CalendarDate
   var finished = false
+  var duration: TimeInterval?
+  /// A cor do treino no plano. Nula para um treino que não está no plano.
+  var tone: WorkoutTone?
   let notch: CGFloat
   let sessionSource: Namespace.ID
   let onStart: () -> Void
 
   var body: some View {
-    let model = HeroModel(workout: workout, date: date, finished: finished)
+    let model = HeroModel(workout: workout, finished: finished, duration: duration)
+    let dateLabel = HeroModel.dateLabel(date)
     SpreadColumn(minHeight: 408 - 44 - 24, minGap: 24) {
-      Text(model.dateLabel)
-        .font(.system(size: 11, weight: .semibold)).tracking(2.2).textCase(.uppercase)
-        .foregroundStyle(HeroInk.date)
       switch model {
       case .rest:
-        middle(
-          title: "treino leve ou descanso", size: restTitleSize,
-          body: "Sem treino programado. Mobilidade e uma caminhada curta já contam.")
-      case .ready(let session), .inProgress(let session):
-        middle(title: session.workout.name, size: titleSize, body: session.workout.focus)
+        title("descanso", size: restTitleSize, dot: nil)
+          .accessibilityLabel("\(dateLabel), descanso")
+      case .session(let session):
+        title(session.workout.name, size: titleSize, dot: tone?.top)
+          .accessibilityLabel("\(dateLabel), \(session.workout.name)")
+          .accessibilityValue(session.workout.focus)
         HStack(spacing: 12) {
           Text(session.meta)
             .font(.system(size: 14)).monospacedDigit().foregroundStyle(HeroInk.meta)
@@ -99,22 +102,28 @@ struct WorkoutHero: View {
     .shadow(color: accent.deep.opacity(0.13), radius: 30, y: 22)
   }
 
-  /// O -28 puxa o nome para perto da data, como o `margin-top` do web. O
-  /// espaço que sobra no cartão fica entre o nome e o rodapé.
-  private func middle(title: String, size: CGFloat, body: String) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      FilmTitle(text: title, size: size)
-      Text(body).font(.system(size: 15)).lineSpacing(4).foregroundStyle(HeroInk.focus)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .padding(.top, -28)
+  /// A linha exata de `size * 1.05` deixa a perna do "ç" e do "p" fora do
+  /// quadro, e o rodapé encostava nela. A folga de baixo devolve esse espaço.
+  /// O ponto na cor do treino fica pendurado na margem, na altura do meio da
+  /// primeira linha: ao lado do nome ele tirava largura e "Pernas e glúteos"
+  /// quebrava em três linhas.
+  private func title(_ text: String, size: CGFloat, dot: Color?) -> some View {
+    FilmTitle(text: text, size: size)
+      .overlay(alignment: .topLeading) {
+        if let dot {
+          Circle().fill(dot)
+            .overlay(Circle().strokeBorder(HeroInk.title.opacity(0.7), lineWidth: 1.5))
+            .frame(width: 10, height: 10)
+            .offset(x: -17, y: size * 0.525 - 5)
+        }
+      }
+      .padding(.bottom, size * 0.18)
+      .accessibilityElement(children: .ignore)
   }
 }
 
 private enum HeroInk {
-  static let date = Color(hex: 0xe7efe6)
   static let title = Color(hex: 0xf2ede4)
-  static let focus = Color(hex: 0xd8e8e0)
   static let meta = Color(hex: 0xeaf0e4)
   static let cream = Color(hex: 0xf3ede2)
 }
