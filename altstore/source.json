@@ -14,16 +14,26 @@
         "entitlements": [],
         "privacy": [
           {
-            "name": "Calendars",
-            "usageDescription": "Levar os prazos das entregas para o calendário do iPhone."
-          },
-          {
             "name": "Microphone",
             "usageDescription": "O microfone serve para repetir as frases em voz alta. Sem ele, o treino vira só escuta."
+          },
+          {
+            "name": "Calendars",
+            "usageDescription": "Levar os prazos das entregas para o calendário do iPhone."
           }
         ]
       },
       "versions": [
+        {
+          "version": "0.1",
+          "buildVersion": "42",
+          "date": "2026-09-26T09:16:07-03:00",
+          "localizedDescription": "• test(ui): follow the audit's texts and cover a week saved by a late workout\n• chore: remove comments that restate the code\n• fix: drop the set count above the session rows\n• refactor: read the Live Activity color from the shared tone lookup\n• fix: stop reading 1º aloud for a debut record\n• fix: name warm-up sets A1, A2 everywhere\n• fix: keep a trained planned day done in the training week\n• feat(setup): estimate workout minutes from the sets\n• refactor: drop the unused minutes fields and streak risk flag\n• Merge branch 'worktree-agent-a20189e431684aaa1' into academia-audit\n• fix: keep a rest-day swap from adding a planned day to the week\n• Merge branch 'worktree-agent-a106aa0457d45bbea' into academia-audit\n• build: keep the extension id apart when signing for the iPhone\n• feat: mark the next set from a Live Activity\n• Merge branch 'worktree-agent-a4a2c8d806066579d' into academia-audit\n• fix: reopen yesterday's open session on a cold launch past midnight\n• fix: match last time per set and cut repeated text in the session screen\n• feat: list each exercise and today's records in the workout recap\n• fix: shrink the rest card so it stops covering the set controls\n• fix: show the check only on done sets and mark sets to failure with a bolt\n• feat: pick the accent from color swatches\n• fix: ask before signing out with sets that never reached the server\n• feat: quiet the muscle map labels\n• feat: drop the record kind pill and draw the debut badge\n• feat: trim the home day card and color it like the plan\n• fix: list late workouts by attendance in the day swap menu\n• feat: count the home week and streak by attendance\n• fix: drop the word concluído from the hero progress line\n• Merge branch 'worktree-agent-a3e0b3dbb0b728d90' into academia-audit\n• fix: show a dash instead of \"sem medidas\" on the measurements card\n• feat: chart the featured exercise when there is no strength goal\n• fix: keep the year map anchored at this week when the card resizes\n• feat: trim the workout hero to name, color dot and real duration\n• feat(editor): collapse each exercise to a one-line summary\n• feat(editor): shorten step titles and start the week on Monday\n• feat(editor): show a compact preview row outside the color step\n• feat(editor): estimate workout minutes from the sets\n• feat(plan): show a play icon on workout folders\n• feat(plan): drop workout names from calendar days\n• fix(plan): mark missed days from the store's training week\n• fix: send unsent sets before signing out and never drop them silently\n• feat: expose the training week with loaded attendance on the store\n• fix: drop a day from attendance once it loses every set\n• fix: keep a session past midnight on the day it started\n• fix: keep the plan load at the heaviest set of the session\n• feat: name the next set and its load in the rest alert\n• fix: keep the ±15 s rest change on the current rest only\n• fix: use weekAttendance only when the dashboard is from this week\n• feat: count the training week by attendance, Monday to Sunday\n• feat: add per-set previous loads and per-exercise recap lines\n• fix: time the session from the first set and stop at the last work set\n• feat: estimate workout minutes from its sets and rests\n• feat: pick the next set after the last one done, warmups included\n• refactor: move SetKey to HenriqueCore and reuse SetKind",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-42/Henrique.ipa",
+          "size": 6396223,
+          "sha256": "e19c58d25f6807a8888024fd0f0997e8859b839c591da2481636050e3964a6ef",
+          "minOSVersion": "26.0"
+        },
         {
           "version": "0.1",
           "buildVersion": "41",
