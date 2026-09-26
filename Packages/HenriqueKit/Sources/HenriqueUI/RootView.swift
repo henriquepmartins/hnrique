@@ -129,8 +129,8 @@ public struct RootView: View {
       if let initialSection { section = initialSection }
     }
     .task {
-      estudos.onUnauthorized = { await store.signOut() }
-      idiomas.onUnauthorized = { await store.signOut() }
+      estudos.onUnauthorized = { store.expireSession() }
+      idiomas.onUnauthorized = { store.expireSession() }
       await store.start()
     }
     .onChange(of: store.isSignedIn) {
@@ -218,6 +218,7 @@ struct AcademiaTabs: View {
   @Environment(AcademiaStore.self) private var store
   @State private var showingSetup = false
   @State private var showingStreak = false
+  @State private var confirmingSignOut = false
   @State private var sessionRequested = false
   @State private var stage = InsigniaStage()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -289,6 +290,11 @@ struct AcademiaTabs: View {
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
   }
 
+  private var unsentTitle: String {
+    let count = store.unsentCount
+    return count == 1 ? "1 série ainda não subiu" : "\(count) séries ainda não subiram"
+  }
+
   private func closeInsignia() {
     guard var show = stage.show, show.closed == nil else { return }
     show.closed = .now
@@ -328,10 +334,18 @@ struct AcademiaTabs: View {
           ToolbarItem(placement: .primaryAction) {
             Menu {
               Button("sair", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                Task { await store.signOut() }
+                Task { confirmingSignOut = !(await store.signOut()) }
               }
             } label: { Image(systemName: "person.crop.circle") }
             .accessibilityLabel("sua conta")
+            .confirmationDialog(
+              unsentTitle, isPresented: $confirmingSignOut, titleVisibility: .visible
+            ) {
+              Button("sair e perder", role: .destructive) {
+                Task { await store.signOut(discardingUnsent: true) }
+              }
+              Button("cancelar", role: .cancel) {}
+            }
           }
         }
     }

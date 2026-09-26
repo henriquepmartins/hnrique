@@ -431,6 +431,12 @@ public final class AcademiaStore {
     return true
   }
 
+  /// Outro app levou 401: a sessão acabou para todos. Sai sem rede e sem
+  /// apagar a fila, que sobe no próximo login.
+  public func expireSession() {
+    handle(APIError.unauthorized)
+  }
+
   public func load() async {
     await fetchDay(selectedDate)
   }
