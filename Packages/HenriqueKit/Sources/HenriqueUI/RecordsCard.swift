@@ -52,8 +52,8 @@ struct RecordsCard: View {
   private func medal(_ record: PersonalRecord) -> some View {
     if let symbol = record.kind.badgeSymbol {
       Image(systemName: symbol).font(.system(size: badgeSize * 1.5, weight: .semibold))
-    } else {
-      Text(record.kind.badge(delta: record.delta))
+    } else if let badge = record.kind.badge(delta: record.delta) {
+      Text(badge)
         .font(.system(size: badgeSize, weight: .semibold, design: .monospaced))
         .tracking(badgeSize * 0.02)
         .multilineTextAlignment(.center)

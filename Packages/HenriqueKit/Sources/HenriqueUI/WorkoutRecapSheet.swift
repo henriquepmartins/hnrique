@@ -84,7 +84,7 @@ struct WorkoutRecapSheet: View {
       Group {
         if let symbol = record.kind.badgeSymbol {
           Image(systemName: symbol).font(.system(size: badgeSize + 3, weight: .semibold))
-        } else {
+        } else if let badge {
           Text(badge)
             .font(.system(size: badgeSize, weight: .semibold, design: .monospaced))
             .multilineTextAlignment(.center)
@@ -102,7 +102,8 @@ struct WorkoutRecapSheet: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("recorde de \(record.kind.label), \(record.exerciseName.lowercased())")
     .accessibilityValue(
-      "\(Formatting.trim(record.weightKg)) quilos por \(record.reps), \(badge.replacingOccurrences(of: "\n", with: " "))")
+      ["\(Formatting.trim(record.weightKg)) quilos por \(record.reps)", badge?.replacingOccurrences(of: "\n", with: " ")]
+        .compactMap { $0 }.joined(separator: ", "))
   }
 
   /// "puxada alta · 2/2 · 48 × 8", com a série valendo mais pesada feita.

@@ -10,13 +10,13 @@ public enum RecordKind: String, Codable, Hashable, Sendable {
   public var badgeSymbol: String? { self == .estreia ? "sparkle" : nil }
 
   /// O selo da esquerda, com o número em cima e a unidade embaixo. Em uma linha
-  /// só, "+2,5 kg" não cabe nos 42 pontos do quadrado. A estreia usa
-  /// `badgeSymbol`; o texto dela fica para quem ainda não desenha o símbolo.
-  public func badge(delta: Double) -> String {
+  /// só, "+2,5 kg" não cabe nos 42 pontos do quadrado. A estreia não tem
+  /// número e usa `badgeSymbol`.
+  public func badge(delta: Double) -> String? {
     switch self {
     case .carga: "+\(Formatting.trim(delta))\nkg"
     case .reps: "+\(Int(delta))\nrep"
-    case .estreia: "1º"
+    case .estreia: nil
     }
   }
 

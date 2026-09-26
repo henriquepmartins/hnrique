@@ -199,6 +199,7 @@ struct WorkoutAdditionsTests {
     #expect(RecordKind.estreia.badgeSymbol == "sparkle")
     #expect(RecordKind.carga.badgeSymbol == nil)
     #expect(RecordKind.carga.badge(delta: 2.5) == "+2,5\nkg")
+    #expect(RecordKind.estreia.badge(delta: 0) == nil)
     #expect(RecordKind.reps.badgeSymbol == nil)
   }
 
