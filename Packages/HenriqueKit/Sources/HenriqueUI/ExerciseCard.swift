@@ -187,11 +187,11 @@ struct TrainingSetRow: View {
     HStack(spacing: 8) {
       switch scale {
       case .list:
-        Text(kind == .prep ? "A" : "\(index)").font(.caption).frame(width: 26)
+        Text(kind == .prep ? "A\(index)" : "\(index)").font(.caption).frame(width: 26)
           .accessibilityLabel(spokenName)
       case .session:
         HStack(spacing: 2) {
-          Text(kind == .prep ? "A" : "\(index)")
+          Text(kind == .prep ? "A\(index)" : "\(index)")
             .font(.system(size: indexSize, weight: isNext ? .medium : .regular, design: .monospaced))
             .foregroundStyle(kind == .prep ? Color.orange : Color.ink)
           if failure { FailureMark() }

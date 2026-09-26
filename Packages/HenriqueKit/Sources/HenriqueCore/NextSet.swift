@@ -12,6 +12,16 @@ public struct NextSet: Equatable, Sendable {
   public let reps: Int
   public let toFailure: Bool
 
+  /// "A1" no aquecimento, "2" na valendo.
+  public var label: String { kind == .prep ? "A\(index)" : "\(index)" }
+
+  /// "puxada alta · 48 kg", ou "puxada alta · A1 · 35 kg" no aquecimento. A
+  /// valendo vai sem índice porque o descanso só precisa do peso.
+  public var summary: String {
+    let warmup = kind == .prep ? " · \(label)" : ""
+    return "\(exerciseName.lowercased())\(warmup) · \(Formatting.trim(weightKg)) kg"
+  }
+
   /// A primeira série não feita depois da última feita no exercício. Um
   /// aquecimento pulado fica para trás e não volta a ser a próxima; uma série
   /// valendo pulada volta quando não sobra nenhuma depois.
@@ -32,7 +42,6 @@ public struct NextSet: Equatable, Sendable {
     return ordered[start...].first { !$0.isDone }?.set ?? work.first { !$0.isDone }?.set
   }
 
-  /// Procura a partir de `exerciseIndex` e dá a volta no treino.
   public init?(from exerciseIndex: Int, in workout: WorkoutSummary) {
     guard workout.exercises.indices.contains(exerciseIndex) else { return nil }
     for step in 0..<workout.exercises.count {

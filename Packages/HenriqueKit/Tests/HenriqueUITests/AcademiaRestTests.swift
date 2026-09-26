@@ -136,7 +136,7 @@ struct StoreRestTests {
     let store = await lojaComPainel(alarm: alarm)
     _ = await store.record(key: workKey("supino-reto", 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
       .value
-    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · A · 10 kg")
+    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · A1 · 10 kg")
 
     _ = await store.record(key: workKey("desenvolvimento", 2), weightKg: 16.5, reps: 10, completed: false, toFailure: false)?
       .value

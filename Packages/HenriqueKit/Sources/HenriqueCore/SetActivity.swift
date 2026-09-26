@@ -43,7 +43,7 @@ public struct SetActivityState: Codable, Hashable, Sendable {
       guard open else { return nil }
       return Up(
         exerciseName: next.exerciseName.lowercased(),
-        setLabel: next.kind == .prep ? "A\(next.index)" : "\(next.index)",
+        setLabel: next.label,
         weight: "\(Formatting.trim(next.weightKg)) kg",
         reps: next.reps, toFailure: next.toFailure,
         target: SetKey(

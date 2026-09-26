@@ -10,11 +10,8 @@ protocol RestAlarm {
   func cancel()
 }
 
-/// "puxada alta · 48 kg", ou "puxada alta · A · 35 kg" no aquecimento.
 func restAlarmBody(_ next: NextSet?) -> String {
-  guard let next else { return "hora da próxima série" }
-  let warmup = next.kind == .prep ? " · A" : ""
-  return "\(next.exerciseName.lowercased())\(warmup) · \(Formatting.trim(next.weightKg)) kg"
+  next?.summary ?? "hora da próxima série"
 }
 
 /// Um aviso só, sempre com o mesmo identificador: agendar de novo substitui o

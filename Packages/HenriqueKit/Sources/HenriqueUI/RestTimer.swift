@@ -54,16 +54,13 @@ struct RestTimerBar: View {
   let onAdjust: (TimeInterval) -> Void
   let onDismiss: () -> Void
 
-  /// "puxada alta · 48 kg", ou "puxada alta · A · 35 kg" no aquecimento.
   private var nextLine: String {
-    guard let next else { return "última série do treino" }
-    let kind = next.kind == .prep ? " · A" : ""
-    return "\(next.exerciseName.lowercased())\(kind) · \(Formatting.trim(next.weightKg)) kg"
+    next?.summary ?? "última série do treino"
   }
 
   private var spokenNext: String {
     guard let next else { return "última série do treino" }
-    let kind = next.kind == .prep ? "aquecimento" : "série \(next.index)"
+    let kind = next.kind == .prep ? "aquecimento \(next.index)" : "série \(next.index)"
     return "a seguir, \(next.exerciseName.lowercased()), \(kind), \(Formatting.trim(next.weightKg)) quilos"
   }
 
