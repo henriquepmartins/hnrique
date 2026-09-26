@@ -323,7 +323,7 @@ struct WorkoutSessionScreen: View {
       Text(exercise.name.lowercased())
         .font(.system(size: nameSize, weight: .semibold)).tracking(nameSize * -0.045)
         .fixedSize(horizontal: false, vertical: true)
-      meta(exercise).padding(.top, 8)
+      restPicker(exercise).padding(.top, 8)
       header.padding(.top, 18).padding(.bottom, 8)
       VStack(spacing: 2) {
         ForEach(exercise.sets.prep) { set in
@@ -346,27 +346,6 @@ struct WorkoutSessionScreen: View {
     // embutidos, são fatias rentes à coluna de texto, então o raio de fora não
     // sai do de dentro.
     .paperCard(radius: 28)
-  }
-
-  /// O botão de descanso segue a meta na mesma linha. Em tela estreita a linha
-  /// quebra em duas em vez de cortar.
-  private func meta(_ exercise: DashboardExercise) -> some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: 8) {
-        metaText(exercise)
-        Text("·")
-        restPicker(exercise)
-      }
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(spacing: 8) { metaText(exercise) }
-        restPicker(exercise)
-      }
-    }
-    .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk)
-  }
-
-  private func metaText(_ exercise: DashboardExercise) -> some View {
-    Text("\(exercise.prescription.workSets) séries valendo")
   }
 
   private func restPicker(_ exercise: DashboardExercise) -> some View {
