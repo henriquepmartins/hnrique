@@ -85,7 +85,8 @@ struct MeasurementsLink: View {
               }
             }
           } else {
-            Text("sem medidas").font(.title3.weight(.medium))
+            Text("–").font(.system(size: 30, weight: .medium)).foregroundStyle(Color.mutedInk)
+              .accessibilityLabel("sem medidas")
           }
           if let latest {
             Text(latest.date.date(), format: .dateTime.day().month(.wide))

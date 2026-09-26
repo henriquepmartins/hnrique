@@ -38,7 +38,12 @@ public struct TodayScreen: View {
           SyncStatusLine()
           WorkoutHero(
             workout: store.dashboard?.workout, date: store.selectedDate,
-            finished: store.dashboard?.workout.map { store.finishedAt($0.id, on: store.selectedDate) != nil } ?? false,
+            finished: store.dashboard?.workout.map { store.finishedAt($0.id, on: store.selectedDate) != nil } ?? false
+              || stoppedTiming != nil,
+            duration: stoppedTiming.map { $0.elapsed(at: .now) },
+            tone: store.dashboard?.workout.flatMap { workout in
+              store.weekPlan.first { $0.id == workout.id }?.tone
+            },
             notch: notch,
             sessionSource: sessionSource,
             onStart: { showingSession = true }
@@ -97,12 +102,6 @@ public struct TodayScreen: View {
             guard !Task.isCancelled else { return }
             enteredDates.insert(data.date.iso)
           }
-        } else if store.dashboard != nil {
-          VStack(alignment: .leading, spacing: 14) {
-            Image(systemName: "dumbbell").font(.title2)
-            Text("sem exercícios").font(.title2.weight(.medium))
-            Button("abrir plano", action: onPlan).buttonStyle(.glass).controlSize(.large)
-          }.frame(maxWidth: .infinity, alignment: .leading).padding(Space.xl).paperCard()
         }
       }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 32)
     }
@@ -139,6 +138,16 @@ public struct TodayScreen: View {
     } else {
       onPlan()
     }
+  }
+
+  /// O relógio da sessão do dia, só quando já parou: no "encerrar" ou na
+  /// última série valendo. É o tempo real que substitui a estimativa no hero.
+  private var stoppedTiming: WorkoutSessionTiming? {
+    guard let workout = store.dashboard?.workout else { return nil }
+    let timing = WorkoutSessionTiming(
+      workout, anchor: store.startedAt(workout.id, on: store.selectedDate),
+      finishedAt: store.finishedAt(workout.id, on: store.selectedDate))
+    return timing?.finishedAt == nil ? nil : timing
   }
 
   /// O painel na tela é do dia escolhido, e não de um anterior ainda na troca.
