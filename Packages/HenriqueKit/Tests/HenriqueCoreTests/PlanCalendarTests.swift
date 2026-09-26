@@ -134,4 +134,16 @@ struct PlanCalendarTests {
     #expect(grid.weeks[0].cells.map { $0.date?.day } == [nil, 1, 2, 3, 4, 5, 6])
     #expect(grid.weeks[0].start.iso == "2026-08-31")
   }
+
+  @Test("a semana da store cobre o dia mesmo sem a presença no mês visível")
+  func weekFromStoreCovers() {
+    let schedule = PlanSchedule(plan: plan, swaps: [], calendar: sunday)
+    let week = TrainingWeek(
+      schedule: schedule, attended: [CalendarDate(iso: "2026-09-15")!], today: today, calendar: sunday)
+    let grid = PlanCalendar(
+      period: .month(year: 2026, month: 9), attendance: [:], weekPlan: plan, today: today,
+      calendar: sunday, week: week)
+    #expect(mark(grid, "2026-09-14") == PlanCalendar.Mark.none)
+    #expect(calendar().weeks.flatMap(\.cells).first { $0.date?.iso == "2026-09-14" }?.mark == .missed("perna"))
+  }
 }

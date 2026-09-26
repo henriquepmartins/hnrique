@@ -14,22 +14,24 @@ struct PlanCalendarCard: View {
   let attendance: [CalendarDate: AttendanceDay]
   let weekPlan: [WeekPlanItem]
   let swaps: [DaySwap]
+  let week: TrainingWeek?
   let load: (CalendarDate, CalendarDate) async -> Void
 
   init(
     attendance: [CalendarDate: AttendanceDay], weekPlan: [WeekPlanItem], swaps: [DaySwap] = [],
-    load: @escaping (CalendarDate, CalendarDate) async -> Void
+    week: TrainingWeek? = nil, load: @escaping (CalendarDate, CalendarDate) async -> Void
   ) {
     self.attendance = attendance
     self.weekPlan = weekPlan
     self.swaps = swaps
+    self.week = week
     self.load = load
   }
 
   private var calendarGrid: PlanCalendar {
     PlanCalendar(
       period: period, attendance: attendance, weekPlan: weekPlan, swaps: swaps,
-      calendar: .trainingWeek)
+      calendar: .trainingWeek, week: week)
   }
 
   private var workoutsById: [String: WeekPlanItem] {

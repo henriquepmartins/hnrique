@@ -37,14 +37,17 @@ public struct PlanCalendar: Hashable, Sendable {
 
   public let weeks: [Week]
 
+  /// `week` é a semana que a store já montou com a presença do painel. Sem ela,
+  /// a conta sai de `attendance`, que só tem o mês visível e pode não ter o
+  /// começo da semana quando ela cruza a virada do mês.
   public init(
     period: AttendancePeriod, attendance: [CalendarDate: AttendanceDay],
     weekPlan: [WeekPlanItem], swaps: [DaySwap] = [], today: CalendarDate = .today,
-    calendar: Calendar = .trainingWeek
+    calendar: Calendar = .trainingWeek, week: TrainingWeek? = nil
   ) {
     let range = period.range(in: calendar)
     let schedule = PlanSchedule(plan: weekPlan, swaps: swaps, calendar: calendar)
-    let week = TrainingWeek(
+    let week = week ?? TrainingWeek(
       schedule: schedule, attended: Set(attendance.values.filter { $0.workSets > 0 }.map(\.date)),
       today: today, calendar: calendar)
 

@@ -15,6 +15,7 @@ struct WeekScreen: View {
           attendance: store.attendance,
           weekPlan: store.weekPlan,
           swaps: store.dashboard?.daySwaps ?? [],
+          week: store.trainingWeek(),
           load: { from, to in await store.loadAttendance(from: from, to: to) })
         Button("novo treino", systemImage: "plus") {
           editorStep = .identidade
