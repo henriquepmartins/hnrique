@@ -164,7 +164,7 @@ private struct AttendanceGraph: View {
         board.padding(.vertical, Space.s)
       }
       .scrollIndicators(.hidden)
-      .defaultScrollAnchor(.trailing, for: .initialOffset)
+      .defaultScrollAnchor(.trailing)
       .onScrollGeometryChange(for: CGRect.self, of: \.visibleRect) { _, visible in
         viewport = visible
       }
