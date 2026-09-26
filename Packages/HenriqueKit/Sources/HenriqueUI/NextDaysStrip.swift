@@ -7,7 +7,6 @@ struct PlannedDay: Identifiable, Equatable {
   let date: CalendarDate
   let workout: WeekPlanItem?
   let isToday: Bool
-  let isDone: Bool
 
   var id: String { date.iso }
 
@@ -20,23 +19,21 @@ struct PlannedDay: Identifiable, Equatable {
   var title: String { workout?.name.lowercased() ?? "descanso" }
 }
 
-/// Os próximos cinco dias do plano, a partir de hoje. Responde "o que vem depois"
+/// Os próximos cinco dias do plano, a partir do dia aberto. Responde "o que vem depois"
 /// sem abrir a aba do plano, que é a pergunta seguinte a "o que eu faço agora".
-func plannedDays(from today: CalendarDate, schedule: PlanSchedule, done: Set<CalendarDate>, count: Int = 5) -> [PlannedDay] {
+func plannedDays(from today: CalendarDate, schedule: PlanSchedule, count: Int = 5) -> [PlannedDay] {
   (0..<count).map { offset in
     let date = today.adding(days: offset)
     return PlannedDay(
       date: date,
       workout: schedule.workout(on: date),
-      isToday: offset == 0,
-      isDone: done.contains(date))
+      isToday: date == .today)
   }
 }
 
 struct NextDaysStrip: View {
   @Environment(AcademiaStore.self) private var store
   let days: [PlannedDay]
-  let plan: [WeekPlanItem]
   let onPlan: () -> Void
 
   var body: some View {
@@ -98,21 +95,16 @@ struct NextDaysStrip: View {
   }
 
   /// `sessionDates` diz que houve treino completo na data, não qual. Com o dia
-  /// trocado, o treino de hoje pode ser outro, então hoje lê do próprio treino
-  /// do painel. Os dias seguintes nunca estão feitos.
+  /// trocado, o treino do dia pode ser outro, então o primeiro cartão lê do
+  /// próprio treino do painel. Os dias seguintes nunca estão feitos.
   private func isDone(_ day: PlannedDay) -> Bool {
-    guard day.isToday else { return false }
     guard let data = store.dashboard, data.date == day.date, let workout = data.workout,
       workout.id == day.workout?.id else { return false }
     return workout.workSetCount > 0 && workout.completedWorkSetCount >= workout.workSetCount
   }
 
-  /// A cor é a do treino no plano, a mesma do calendário e da aba do plano. Sem cor
-  /// escolhida, cai no tom da posição, que é o que o resto do app também faz.
+  /// A cor é a do treino no plano, a mesma do calendário e da aba do plano.
   private func dot(_ day: PlannedDay) -> Color {
-    guard let workout = day.workout else { return Color.ink.opacity(0.18) }
-    if let hex = workout.color, let tone = WorkoutTone.from(hex: hex) { return tone.top }
-    let position = plan.firstIndex { $0.id == workout.id } ?? 0
-    return WorkoutTone.at(position).top
+    day.workout?.tone.top ?? Color.ink.opacity(0.18)
   }
 }

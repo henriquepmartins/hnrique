@@ -480,16 +480,14 @@ struct OverviewScreen: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
-        GreetingHeader(date: store.selectedDate)
+        DateHeader(date: store.selectedDate)
         if let data = store.dashboard {
           DayCard(
             workout: data.workout, choices: DaySwapChoices(data), onWorkout: onWorkout,
             onPlan: onPlan, onSwap: { await store.swapDay(workoutTemplateId: $0) })
             .staggeredEntrance(index: 0, isReady: true)
           NextDaysStrip(
-            days: plannedDays(
-              from: data.date, schedule: data.schedule, done: Set(data.sessionDates ?? [])),
-            plan: data.weekPlan, onPlan: onPlan)
+            days: plannedDays(from: data.date, schedule: data.schedule), onPlan: onPlan)
             .staggeredEntrance(index: 1, isReady: true)
           if let records = data.records, !records.isEmpty {
             RecordsCard(records: records, today: data.date)
