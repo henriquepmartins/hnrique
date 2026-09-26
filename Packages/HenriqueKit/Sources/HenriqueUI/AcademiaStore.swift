@@ -982,7 +982,6 @@ extension AcademiaStore {
     scheduleRestExpiry()
   }
 
-  /// A série que vem depois, procurada a partir do exercício que abriu o descanso.
   func nextSet(after rest: RestState) -> NextSet? {
     guard let workout = dashboard?.workout else { return nil }
     let index = workout.exercises.firstIndex { $0.id == rest.exerciseId } ?? 0

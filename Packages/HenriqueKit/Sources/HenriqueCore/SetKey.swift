@@ -1,6 +1,5 @@
 import Foundation
 
-/// Uma série do dia: a data, o treino, o exercício, o tipo e o índice.
 public struct SetKey: Hashable, Sendable, Codable {
   public let date: CalendarDate
   public let templateId: String

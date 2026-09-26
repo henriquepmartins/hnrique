@@ -120,7 +120,6 @@ public struct RootView: View {
       }
     #endif
     .focoPresenceCheck(inCover: false)
-    // O toque na Live Activity abre a sessão de treino.
     .onOpenURL { url in
       guard url.scheme == "henrique", url.host() == "sessao" else { return }
       section = .academia
