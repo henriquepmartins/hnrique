@@ -42,13 +42,17 @@ struct ProgressScreen: View {
   var body: some View {
     ScrollView {
       VStack(spacing: Space.xxl) {
-        NavigationLink { MetricDetailScreen(onWorkout: onWorkout) } label: {
-          Text("detalhes").font(.subheadline).frame(minHeight: 44).contentShape(.rect)
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .subtleEntrance()
         if let dashboard = store.dashboard {
           let streakGoals = dashboard.streakGoals ?? []
+          HStack {
+            Text("metas").font(.title2.weight(.medium)).tracking(-0.8)
+            Spacer()
+            IconButton(title: "nova meta", systemImage: "plus", glass: true) {
+              editing = newGoalKind(in: dashboard)
+            }
+            .disabled(dashboard.exerciseCatalog.isEmpty)
+          }
+          .subtleEntrance()
           if let goal = dashboard.strengthGoal {
             GoalCard(
               exerciseName: goal.exerciseName, targetValue: goal.targetValue,
@@ -61,13 +65,6 @@ struct ProgressScreen: View {
             ) { editing = GoalKind(goal.kind) }
               .subtleEntrance()
           }
-
-          Button("nova meta") {
-            editing = newGoalKind(in: dashboard)
-          }
-            .buttonStyle(.glassProminent).controlSize(.large)
-            .disabled(dashboard.exerciseCatalog.isEmpty)
-            .subtleEntrance()
         }
         // Fora do painel de propósito. O mapa lê a própria frequência e carrega a
         // faixa visível sozinho, então esperar o painel só atrasaria a primeira
@@ -78,20 +75,30 @@ struct ProgressScreen: View {
         if let dashboard = store.dashboard {
           VStack(alignment: .leading, spacing: 10) {
             Text("\(dashboard.consistencyPercent)%").font(.system(size: 48, weight: .medium)).monospacedDigit()
-            Text("constância, 4 semanas").font(.subheadline)
+            Text("4 semanas").font(.subheadline)
           }
           .foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel("constância nas últimas 4 semanas")
+          .accessibilityValue("\(dashboard.consistencyPercent)%")
           .padding(Space.xl).background(accent.deep, in: .rect(cornerRadius: Radius.card))
           .subtleEntrance()
-          if dashboard.progress.isEmpty {
-            ContentUnavailableView("sem histórico", systemImage: "chart.xyaxis.line")
-              .padding(.vertical, 40)
+          if let series = dashboard.strengthSeries {
+            NavigationLink { MetricDetailScreen(onWorkout: onWorkout) } label: {
+              OneRepMaxChart(
+                title: series.exerciseName, points: series.points,
+                target: dashboard.strengthGoal?.targetValue)
+            }
+            .buttonStyle(StudyPressStyle())
+            .foregroundStyle(Color.ink)
+            .subtleEntrance()
+            VolumeChart(points: series.points)
               .subtleEntrance()
           } else {
-            OneRepMaxChart(
-              points: dashboard.progress, target: dashboard.strengthGoal?.targetValue)
-              .subtleEntrance()
-            VolumeChart(points: dashboard.progress)
+            Image(systemName: "chart.xyaxis.line")
+              .font(.system(size: 44)).foregroundStyle(Color.mutedInk)
+              .padding(.vertical, 40)
+              .accessibilityLabel("sem histórico")
               .subtleEntrance()
           }
           MeasurementsLink(latest: latest(in: dashboard))
@@ -162,6 +169,18 @@ struct StreakGoalCard: View {
   }
 }
 
+extension Dashboard {
+  /// A série de força da tela: a da meta quando existe, senão a do exercício
+  /// que o servidor destaca. Nula quando nenhuma das duas tem ponto.
+  fileprivate var strengthSeries: (exerciseName: String, points: [ProgressPoint])? {
+    if let goal = strengthGoal, !progress.isEmpty { return (goal.exerciseName, progress) }
+    if let featured = featuredProgress, !featured.points.isEmpty {
+      return (featured.exerciseName, featured.points)
+    }
+    return nil
+  }
+}
+
 /// A medida mais recente do painel. O servidor devolve a lista sem ordem
 /// garantida, então a data decide.
 private func latest(in dashboard: Dashboard) -> BodyMeasurement? {
@@ -209,11 +228,12 @@ struct GoalCard: View {
 
 struct OneRepMaxChart: View {
   @Environment(\.accent) private var accent
+  let title: String
   let points: [ProgressPoint]
   let target: Double?
 
   var body: some View {
-    ChartCard(title: "força") {
+    ChartCard(title: title.lowercased(), opens: true) {
       Chart {
         ForEach(points) { point in
           LineMark(
@@ -261,11 +281,20 @@ struct VolumeChart: View {
 
 struct ChartCard<Content: View>: View {
   let title: String
+  /// O cartão é o link para os detalhes, e o chevron é o que diz isso.
+  var opens = false
   @ViewBuilder let content: Content
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
-      Text(title).font(.headline)
+      HStack {
+        Text(title).font(.headline)
+        Spacer(minLength: 8)
+        if opens {
+          Image(systemName: "chevron.right")
+            .font(.subheadline.weight(.semibold)).foregroundStyle(Color.mutedInk)
+        }
+      }
       content
         .frame(height: 220)
     }
@@ -413,7 +442,8 @@ struct MetricDetailScreen: View {
         item.bodyFatPercent.map { (date: item.date, value: item.weightKg * (1 - $0 / 100)) }
       }.sorted { $0.date < $1.date }
     }
-    return data.progress.map { (date: $0.date, value: $0.estimatedOneRepMax) }.sorted { $0.date < $1.date }
+    return (data.strengthSeries?.points ?? []).map { (date: $0.date, value: $0.estimatedOneRepMax) }
+      .sorted { $0.date < $1.date }
   }
   private var window: [(date: CalendarDate, value: Double)] {
     guard !allHistory, let last = values.last else { return values }
@@ -432,11 +462,12 @@ struct MetricDetailScreen: View {
           Text("corpo").tag(true)
         }.pickerStyle(.segmented)
         VStack(spacing: Space.l) {
-          Text(bodyTrack ? "massa magra" : "força").font(.caption).foregroundStyle(Color.mutedInk)
           if let latest = window.last {
             Text(latest.date.date(), format: .dateTime.day().month(.wide).year()).font(.caption)
             Text(weightLabel(latest.value)).font(.system(size: 64, weight: .medium)).tracking(-3).monospacedDigit()
               .minimumScaleFactor(0.6).lineLimit(1)
+              .accessibilityLabel(bodyTrack ? "massa magra" : "força")
+              .accessibilityValue(weightLabel(latest.value))
             if let first = window.first, first.date != latest.date {
               let weeks = max(1, Int((latest.date.date().timeIntervalSince(first.date.date()) / 604800).rounded()))
               Text("\((latest.value - first.value).formatted(.number.sign(strategy: .always()).precision(.fractionLength(1)))) kg em \(weeks) sem")
@@ -471,7 +502,7 @@ struct MetricDetailScreen: View {
         }
       }.padding(16)
     }.background(Color.canvas.ignoresSafeArea())
-      .navigationTitle(bodyTrack ? "corpo" : (store.dashboard?.strengthGoal?.exerciseName.lowercased() ?? "força"))
+      .navigationTitle(bodyTrack ? "corpo" : (store.dashboard?.strengthSeries?.exerciseName.lowercased() ?? "força"))
       .toolbarTitleDisplayMode(.inline)
       .sheet(isPresented: $isAddingMeasurement) { MeasurementEditor(previous: store.dashboard?.measurements.first) }
       .sheet(isPresented: $isEditingGoal) {
