@@ -184,6 +184,7 @@ private struct DayCell: View {
   let cell: PlanCalendar.Cell
   let workoutsById: [String: WeekPlanItem]
   let paintProgress: Double
+  @State private var showsName = false
   private let radius: CGFloat = 8
 
   private var workout: WeekPlanItem? {
@@ -201,27 +202,42 @@ private struct DayCell: View {
 
   var body: some View {
     if let date = cell.date {
-      RoundedRectangle(cornerRadius: radius)
-        .fill(Color.ink.opacity(0.04))
-        .overlay {
-          background
-            .mask {
-              PlanMarkerMask(progress: paintProgress, day: cell.slot.day)
-            }
-        }
-        .overlay { content }
-        .overlay {
-          if cell.isToday {
-            RoundedRectangle(cornerRadius: Radius.concentric(radius, padding: 3))
-              .strokeBorder(Color.ink, lineWidth: 1.5)
-              .padding(-3)
+      if let workout {
+        Button { showsName = true } label: { square }
+          .buttonStyle(StudyPressStyle())
+          .popover(isPresented: $showsName) {
+            Text(workout.name.lowercased())
+              .font(.subheadline.weight(.semibold))
+              .foregroundStyle(Color.ink)
+              .padding(.horizontal, 14).padding(.vertical, 10)
+              .presentationCompactAdaptation(.popover)
           }
-        }
-        .accessibilityElement()
-        .accessibilityLabel(label(for: date))
+          .accessibilityLabel(label(for: date))
+      } else {
+        square.accessibilityElement().accessibilityLabel(label(for: date))
+      }
     } else {
       Color.clear.accessibilityHidden(true)
     }
+  }
+
+  private var square: some View {
+    RoundedRectangle(cornerRadius: radius)
+      .fill(Color.ink.opacity(0.04))
+      .overlay {
+        background
+          .mask {
+            PlanMarkerMask(progress: paintProgress, day: cell.slot.day)
+          }
+      }
+      .overlay { content }
+      .overlay {
+        if cell.isToday {
+          RoundedRectangle(cornerRadius: Radius.concentric(radius, padding: 3))
+            .strokeBorder(Color.ink, lineWidth: 1.5)
+            .padding(-3)
+        }
+      }
   }
 
   @ViewBuilder private var background: some View {
@@ -244,14 +260,8 @@ private struct DayCell: View {
   }
 
   private var content: some View {
-    VStack(spacing: 1) {
-      Text("\(cell.slot.day)").font(.system(size: 10, weight: .medium)).monospacedDigit()
-      if let word = workout?.name.split(separator: " ").first {
-        Text(word.lowercased()).font(.system(size: 8.5, weight: .semibold))
-          .lineLimit(1).minimumScaleFactor(0.7).padding(.horizontal, 2)
-      }
-    }
-    .foregroundStyle(textColor)
+    Text("\(cell.slot.day)").font(.system(size: 12, weight: .medium)).monospacedDigit()
+      .foregroundStyle(textColor)
   }
 
   private var textColor: Color {
@@ -269,7 +279,7 @@ private struct DayCell: View {
     case .none: return "\(day), sem treino"
     case .done: return "\(day), feito" + (workout.map { ", \($0.name)" } ?? "")
     case .planned: return "\(day), planejado" + (workout.map { ", \($0.name)" } ?? "")
-    case .missed: return "\(day), planejado, não treinou"
+    case .missed: return "\(day), planejado, não treinou" + (workout.map { ", \($0.name)" } ?? "")
     }
   }
 }
