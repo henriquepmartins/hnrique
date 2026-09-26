@@ -37,12 +37,14 @@ struct ExerciseCard: View {
       }.buttonStyle(StudyPressStyle()).accessibilityValue(isOpen ? "expandido" : "recolhido")
       if isOpen {
         VStack(spacing: 8) {
-          HStack {
-            Color.clear.frame(width: 34, height: 1)
+          // As mesmas colunas da linha de série, para cada rótulo ficar no meio do campo.
+          HStack(spacing: 8) {
+            Color.clear.frame(width: 26, height: 1)
             Text("kg").frame(maxWidth: .infinity)
             Text("reps").frame(maxWidth: .infinity)
-            Color.clear.frame(width: 44, height: 1)
-          }.font(.caption2).foregroundStyle(Color.mutedInk)
+            Color.clear.frame(width: SetRowScale.list.check, height: 1)
+          }.padding(.horizontal, SetRowScale.list.padding)
+          .font(.caption2).foregroundStyle(Color.mutedInk)
           .accessibilityHidden(true)
           if !exercise.sets.prep.isEmpty {
             group("aquecimento", color: .mutedInk)
