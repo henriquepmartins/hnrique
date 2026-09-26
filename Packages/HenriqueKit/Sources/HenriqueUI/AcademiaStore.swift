@@ -90,7 +90,10 @@ public final class AcademiaStore {
   /// calculado a cada leitura: cada linha de série lê o painel várias vezes
   /// por pintura.
   public private(set) var dashboard: Dashboard? {
-    didSet { noteStart() }
+    didSet {
+      noteStart()
+      refreshActivity()
+    }
   }
 
   private func projected() -> Dashboard? {
@@ -137,6 +140,7 @@ public final class AcademiaStore {
   public private(set) var rest: RestState?
   @ObservationIgnored private var restExpiry: Task<Void, Never>?
   @ObservationIgnored private let restAlarm: any RestAlarm
+  @ObservationIgnored let activity: any SessionActivity
   /// Descanso escolhido no aparelho por exercício. Vale por cima do plano e vai
   /// junto no próximo salvar do plano; some quando o servidor devolve o mesmo valor.
   private var restOverrides: [String: Int] = [:]
@@ -285,14 +289,18 @@ public final class AcademiaStore {
   }
 
   public convenience init(client: APIClient) {
-    self.init(client: client, restAlarm: AcademiaRestAlarm(), defaults: .standard)
+    self.init(
+      client: client, restAlarm: AcademiaRestAlarm(), activity: Self.makeSessionActivity(),
+      defaults: .standard)
   }
 
   init(
-    client: APIClient, restAlarm: any RestAlarm, defaults: UserDefaults, snapshotURL: URL? = AcademiaStore.defaultSnapshotURL
+    client: APIClient, restAlarm: any RestAlarm, activity: any SessionActivity = NoSessionActivity(),
+    defaults: UserDefaults, snapshotURL: URL? = AcademiaStore.defaultSnapshotURL
   ) {
     self.client = client
     self.restAlarm = restAlarm
+    self.activity = activity
     self.defaults = defaults
     self.snapshotURL = snapshotURL
     loadLocalState()
@@ -359,6 +367,7 @@ public final class AcademiaStore {
     let following = selectedDate == previous && isSignedIn
     if following, hasOpenSession(on: previous, now: now) { return }
     knownToday = today
+    if activity.current.map({ $0.date != today }) == true { endActivity(immediately: false) }
     guard following else { return }
     Task { await select(date: today) }
   }
@@ -433,6 +442,7 @@ public final class AcademiaStore {
       guard pendingSets.isEmpty else { return false }
     }
     sessionID = UUID()
+    endActivity(immediately: true)
     endRest()
     invalidateDays()
     isSignedIn = false
@@ -465,7 +475,7 @@ public final class AcademiaStore {
     await fetchDay(date)
   }
 
-  private func fetchDay(_ date: CalendarDate) async {
+  func fetchDay(_ date: CalendarDate) async {
     cancelRead()
     let requestID = readID
     if dashboard == nil { phase = .loading }
@@ -601,6 +611,7 @@ public final class AcademiaStore {
         endRest()
       }
     }
+    if completed && existingDate == nil { startActivity(for: key) }
     return send(pending)
   }
 
@@ -882,6 +893,7 @@ public final class AcademiaStore {
     switch error {
     case APIError.unauthorized:
       sessionID = UUID()
+      endActivity(immediately: true)
       endRest()
       invalidateDays()
       isSignedIn = false
@@ -953,6 +965,7 @@ extension AcademiaStore {
 
   private func saveRest(_ value: RestState?) {
     rest = value
+    refreshActivity()
     if let value, let data = try? JSONEncoder().encode(value) {
       defaults.set(data, forKey: DefaultsKey.rest)
       restAlarm.schedule(at: value.endsAt, next: nextSet(after: value))
@@ -1013,6 +1026,7 @@ extension AcademiaStore {
     finishedAt[Self.finishKey(workout.id, on: data.date)] = .now
     saveFinished()
     endRest()
+    endActivity(immediately: false)
   }
 
   /// Uma série nova depois do "encerrar" reabre o treino: ele não tinha acabado.

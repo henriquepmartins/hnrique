@@ -4,7 +4,11 @@ import SwiftUI
 
 @main
 struct HenriqueApp: App {
-  @State private var stores = AppConfiguration.makeStores()
+  private let stores = AppConfiguration.shared
+
+  init() {
+    SetActivityBridge.complete = { await AppConfiguration.shared.academia.completeFromActivity($0) }
+  }
 
   var body: some Scene {
     WindowGroup {
@@ -81,6 +85,10 @@ extension LaunchArguments {
 
 enum AppConfiguration {
   static let launch = LaunchArguments.parse(CommandLine.arguments)
+
+  /// Uma instância só por processo. O "feito" da Live Activity pode acordar o
+  /// app sem janela, e precisa marcar na mesma store que a tela usa depois.
+  @MainActor static let shared = makeStores()
 
   /// Os três apps dividem o mesmo `APIClient` para uma sessão só valer para
   /// todos e o logout de um derrubar os outros.
