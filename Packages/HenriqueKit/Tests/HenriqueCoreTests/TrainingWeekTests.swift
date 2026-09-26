@@ -153,27 +153,6 @@ struct TrainingWeekTests {
     #expect(week.slots.map(\.date) == [Self.terca])
   }
 
-  @Test("presença conta de segunda até hoje, sem o domingo anterior")
-  func presentDays() {
-    let attendance = Dictionary(
-      uniqueKeysWithValues: [(20, 4), (21, 3), (22, 0), (23, 2)].map {
-        let date = Self.day($0.0)
-        return (date, AttendanceDay(date: date, workSets: $0.1, completed: false))
-      })
-    #expect(WorkoutStreak.presentDays(in: attendance, today: Self.day(23)) == 2)
-  }
-
-  @Test("a contagem de presença troca a do servidor e o anel junto")
-  func countingPresence() {
-    let streak = WorkoutStreak(
-      attendance: StreakFigure(count: 3, target: nil), complete: StreakFigure(count: 2, target: nil),
-      weeklyCompleted: 2, weeklyPlanned: 3, days: [], isTodayDone: false, isAtRisk: false,
-      weekProgress: 2.0 / 3.0)
-    let counted = streak.counting(presentDays: 3)
-    #expect(counted.weeklyCompleted == 3)
-    #expect(counted.weekProgress == 1)
-  }
-
   @Test("o calendário de treino começa na segunda")
   func startsOnMonday() {
     #expect(Calendar.trainingWeek.firstWeekday == 2)

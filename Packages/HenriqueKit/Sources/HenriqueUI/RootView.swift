@@ -280,7 +280,7 @@ struct AcademiaTabs: View {
     .sheet(isPresented: $showingSetup) { SetupScreen() }
     .sheet(isPresented: $showingStreak) {
       if let data = store.dashboard {
-        StreakScreen(snapshot: StreakSnapshot(dashboard: data))
+        StreakScreen(dashboard: data)
       }
     }
     .onChange(of: store.dashboard?.onboardingCompleted, initial: true) {
@@ -495,9 +495,8 @@ struct OverviewScreen: View {
             RecordsCard(records: records, today: data.date)
               .staggeredEntrance(index: 2, isReady: true)
           }
-          if data.weekPlan.contains(where: { !$0.weekdays.isEmpty }) {
-            WeeklyAdherenceCard(
-              plan: data.weekPlan, done: Set(data.sessionDates ?? []), today: data.date)
+          if let week = store.trainingWeek(today: data.date), week.planned > 0 {
+            WeeklyAdherenceCard(week: week, today: data.date)
               .staggeredEntrance(index: 3, isReady: true)
           }
           if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {

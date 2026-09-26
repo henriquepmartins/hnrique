@@ -6,19 +6,13 @@ import SwiftUI
 /// fica com ela.
 private let streakTone = WorkoutTone.all[0]
 
-/// Tudo o que as duas telas do streak precisam. `week` é nulo quando o servidor
-/// não mandou `sessionDates`. Aí nenhum dia sairia como feito e a fita
-/// desenharia uma semana perdida que talvez nunca tenha existido. Some sem
-/// aviso; o resto dos números vem de campos próprios e continua honesto.
-struct StreakSnapshot: Equatable {
-  var streak: WorkoutStreak
-  var week: [StreakDay]?
-
-  init(dashboard: Dashboard, today: CalendarDate = .today) {
-    let streak = WorkoutStreak(dashboard: dashboard, today: today)
-    self.streak = streak
-    self.week = dashboard.sessionDates == nil ? nil : streak.days
-  }
+/// O dia em que a sequência zera se ninguém treinar até lá. O servidor corta a
+/// sequência com mais de 5 dias entre dois treinos, então é o último treino mais
+/// 6. Nulo com treino hoje ou com a sequência já zerada.
+func streakResetDay(lastAttended: CalendarDate?, today: CalendarDate) -> CalendarDate? {
+  guard let last = lastAttended, last < today else { return nil }
+  let reset = last.adding(days: 6)
+  return reset > today ? reset : nil
 }
 
 let streakGradient = LinearGradient(
@@ -79,39 +73,58 @@ struct StreakCounter: View {
 struct StreakScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// Os dias de presença da semana, quando a frequência dela chegou. Sem rede
-  /// fica nulo e a linha cai na contagem do servidor.
-  @State private var presentDays: Int?
+  /// A frequência da semana já veio. Antes disso, sem `weekAttendance`, a
+  /// conta cai em `sessionDates`, que só tem treino completo.
+  @State private var weekLoaded = false
   @State private var weekChecked = false
   @Environment(\.dismiss) private var dismiss
   @State private var entered = false
   @State private var celebrating = false
-  let snapshot: StreakSnapshot
+  let dashboard: Dashboard
+
+  private var today: CalendarDate { .today }
 
   private var streak: WorkoutStreak {
-    presentDays.map { snapshot.streak.counting(presentDays: $0) } ?? snapshot.streak
+    WorkoutStreak(dashboard: dashboard, today: today, fallback: weekLoaded ? store.attendance : nil)
+  }
+
+  /// Sem nenhuma fonte de presença nenhum dia sairia feito, e a fita desenharia
+  /// uma semana perdida que talvez nunca tenha existido. Some sem aviso.
+  private var hasWeek: Bool {
+    dashboard.weekAttendance != nil || weekLoaded || dashboard.sessionDates != nil
+  }
+
+  private func resetDay(_ streak: WorkoutStreak) -> CalendarDate? {
+    guard !streak.isTodayDone else { return nil }
+    let last = store.attendance.values.filter { $0.workSets > 0 && $0.date < today }.map(\.date).max()
+    return streakResetDay(lastAttended: last, today: today)
   }
 
   var body: some View {
+    let streak = streak
     NavigationStack {
       ScrollView {
         VStack(spacing: Space.xxl) {
           StreakRing(streak: streak, entered: entered, celebrating: celebrating)
-          if let week = snapshot.week {
-            StreakRibbon(days: week, entered: entered)
+          if hasWeek {
+            StreakRibbon(days: streak.days, today: today, entered: entered)
           }
           if let tenure = store.tenure, let tier = tenure.tier {
             InsigniaRow(tier: tier, months: tenure.months)
           }
           Text("\(streak.weeklyCompleted)/\(streak.weeklyPlanned) na semana")
             .font(.subheadline).monospacedDigit().foregroundStyle(Color.mutedInk)
-            .opacity(weekChecked ? 1 : 0)
+            .opacity(weekChecked || dashboard.weekAttendance != nil ? 1 : 0)
             .animation(.smooth(duration: 0.2), value: weekChecked)
-          Text("até 5 dias entre treinos")
-            .font(.subheadline).foregroundStyle(Color.mutedInk)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Space.xl)
-            .paperCard()
+          if let reset = resetDay(streak) {
+            Text("zera \(dayLabel(reset))")
+              .font(.subheadline).foregroundStyle(Color.mutedInk)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(Space.xl)
+              .paperCard()
+              .accessibilityLabel(
+                "sem treino até \(dayLabel(reset.adding(days: -1))), a sequência zera \(dayLabel(reset))")
+          }
         }
         .padding(Space.l)
         .padding(.top, Space.s)
@@ -131,11 +144,10 @@ struct StreakScreen: View {
     }
     .presentationDragIndicator(.visible)
     .task {
-      let today = CalendarDate.today
-      let monday = today.adding(days: -((today.weekday(in: .trainingWeek) + 6) % 7))
-      if await store.loadAttendance(from: monday, to: today) {
-        presentDays = WorkoutStreak.presentDays(in: store.attendance, today: today)
-      }
+      // Seis dias para trás alcançam o último treino que ainda segura a
+      // sequência, mesmo quando ele foi na semana anterior.
+      let from = min(today.trainingWeekStart(), today.adding(days: -6))
+      weekLoaded = await store.loadAttendance(from: from, to: today)
       weekChecked = true
     }
     .task {
@@ -145,6 +157,12 @@ struct StreakScreen: View {
       try? await Task.sleep(for: .seconds(Entrance.sparkle))
       celebrating = true
     }
+  }
+
+  private func dayLabel(_ day: CalendarDate) -> String {
+    if day == today { return "hoje" }
+    if day == today.adding(days: 1) { return "amanhã" }
+    return planWeekdays[day.weekday()]
   }
 }
 
@@ -425,6 +443,7 @@ private struct StreakRibbon: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let days: [StreakDay]
+  let today: CalendarDate
   let entered: Bool
 
   var body: some View {
@@ -437,7 +456,7 @@ private struct StreakRibbon: View {
             .font(.caption2).foregroundStyle(Color.mutedInk)
             .textCase(.lowercase)
           DayMarker(
-            day: day, isToday: index == days.count - 1, size: 32, accent: accent)
+            day: day, isToday: day.date == today, size: 32, accent: accent)
         }
         .frame(maxWidth: .infinity)
         .scaleEffect(shown ? 1 : 0.7)
