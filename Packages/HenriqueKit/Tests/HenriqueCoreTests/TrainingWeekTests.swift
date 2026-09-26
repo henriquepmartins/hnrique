@@ -53,6 +53,21 @@ struct TrainingWeekTests {
     #expect(week.slots.map(\.state) == [.done, .done, .done])
   }
 
+  @Test("segunda perdida e quarta feita, hoje quinta: a quarta fica feita e a segunda perdida")
+  func plannedDayKeepsItsOwnWorkout() {
+    let week = week(attended: [16], today: 17)
+    #expect(week.done == 1)
+    #expect(
+      states(week) == ["2026-09-14": .missed, "2026-09-16": .done, "2026-09-18": .upcoming])
+  }
+
+  @Test("segunda perdida, hoje quarta com treino: hoje fica feito e a segunda perdida")
+  func todayDoneLeavesMondayMissed() {
+    let week = week(attended: [16], today: 16)
+    #expect(
+      states(week) == ["2026-09-14": .missed, "2026-09-16": .done, "2026-09-18": .upcoming])
+  }
+
   @Test("sábado extra não passa de 3 de 3")
   func extraDayIsCapped() {
     let week = week(attended: [15, 17, 18, 19], today: 19)

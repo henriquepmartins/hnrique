@@ -1,7 +1,8 @@
 import Foundation
 
 /// A semana de treino do app, de segunda a domingo. A semana conta presença,
-/// não o treino exato do dia: os `done` primeiros dias do plano ficam feitos,
+/// não o treino exato do dia: o dia planejado com treino fica feito, e cada
+/// treino num dia fora do plano cobre o primeiro dia planejado ainda aberto,
 /// então um treino na terça cobre a segunda que ficou para trás. Home,
 /// sequência e calendário leem a mesma conta.
 public struct TrainingWeek: Equatable, Sendable {
@@ -34,16 +35,22 @@ public struct TrainingWeek: Equatable, Sendable {
     let days = (0..<7).map { monday.adding(days: $0, in: calendar) }
     let attended = days.filter { $0 <= today && attended.contains($0) }
     let planned = days.compactMap { date in schedule.plannedWorkout(on: date).map { (date, $0) } }
-    let done = min(planned.count, attended.count)
+    let attendedSet = Set(attended)
+    let onPlannedDay = planned.count { attendedSet.contains($0.0) }
+    var covering = min(planned.count, attended.count) - onPlannedDay
     self.monday = monday
     self.attended = attended
-    slots = planned.enumerated().map { position, entry in
-      let state: State =
-        if position < done { .done }
-        else if entry.0 < today { .missed }
-        else if entry.0 == today { .today }
-        else { .upcoming }
-      return Slot(date: entry.0, workout: entry.1, state: state)
+    slots = planned.map { date, workout in
+      let state: State
+      if attendedSet.contains(date) {
+        state = .done
+      } else if covering > 0 {
+        covering -= 1
+        state = .done
+      } else {
+        state = date < today ? .missed : date == today ? .today : .upcoming
+      }
+      return Slot(date: date, workout: workout, state: state)
     }
   }
 
