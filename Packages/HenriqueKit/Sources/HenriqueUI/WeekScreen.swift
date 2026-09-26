@@ -286,47 +286,56 @@ private struct WorkoutWave: Shape {
   }
 }
 
+/// Um exercício do plano. Fechado é uma linha só, "2 + 2 × 6–10 · 1:30"; o
+/// toque abre os controles. Sem `onToggle` fica sempre aberto.
 struct PlanExerciseRow: View {
+  @Environment(\.accent) private var accent
   @Binding var exercise: PlanExercise
   let name: String
   let subtitle: String?
   let imageUrl: String?
   let isOrganizing: Bool
+  let isExpanded: Bool
+  let onToggle: (() -> Void)?
   let onRemove: (() -> Void)?
 
   init(
     exercise: Binding<PlanExercise>, name: String, subtitle: String? = nil,
-    imageUrl: String? = nil, isOrganizing: Bool = false, onRemove: (() -> Void)? = nil
+    imageUrl: String? = nil, isOrganizing: Bool = false, isExpanded: Bool = true,
+    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil
   ) {
     _exercise = exercise
     self.name = name
     self.subtitle = subtitle
     self.imageUrl = imageUrl
     self.isOrganizing = isOrganizing
+    self.isExpanded = isExpanded
+    self.onToggle = onToggle
     self.onRemove = onRemove
   }
+
+  private var showsControls: Bool { !isOrganizing && (isExpanded || onToggle == nil) }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       HStack(spacing: 12) {
-        ExerciseThumb(imageUrl: imageUrl, size: 48)
-        VStack(alignment: .leading, spacing: 3) {
-          Text(name.lowercased()).font(.headline.weight(.semibold))
-          if isOrganizing {
-            Text("\(exercise.workSets) × \(exercise.repsMin)-\(exercise.repsMax)")
-              .font(.caption).foregroundStyle(Color.mutedInk).monospacedDigit()
-          } else if let subtitle {
-            Text(subtitle).font(.caption).foregroundStyle(Color.mutedInk)
-          }
+        if let onToggle, !isOrganizing {
+          Button(action: onToggle) { header.contentShape(.rect) }
+            .buttonStyle(StudyPressStyle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(name.lowercased())
+            .accessibilityValue(spokenSummary)
+            .accessibilityHint(isExpanded ? "fechar ajustes" : "abrir ajustes")
+        } else {
+          header
         }
-        Spacer(minLength: 0)
-        if !isOrganizing, let onRemove {
+        if showsControls, let onRemove {
           IconButton(title: "Remover \(name) do treino", systemImage: "trash", size: 17, action: onRemove)
             .tint(.red)
         }
       }
-      .padding(.top, isOrganizing ? 0 : 6)
-      if !isOrganizing {
+      .padding(.top, showsControls ? 6 : 0)
+      if showsControls {
         Divider()
         ExerciseStepperRow(label: "aquecimento", value: $exercise.prepSets, range: Limits.prepSets)
         Divider()
@@ -347,7 +356,55 @@ struct PlanExerciseRow: View {
           .frame(minHeight: 48)
       }
     }
-    .padding(.vertical, 10)
+    .padding(.vertical, showsControls ? 10 : 4)
+  }
+
+  private var header: some View {
+    HStack(spacing: 12) {
+      ExerciseThumb(imageUrl: imageUrl, size: 48)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(name.lowercased()).font(.headline.weight(.semibold)).foregroundStyle(Color.ink)
+        if onToggle != nil || isOrganizing {
+          HStack(spacing: 4) {
+            Text(exercise.summary).monospacedDigit()
+            if exercise.workToFailure {
+              Image(systemName: "bolt.fill").imageScale(.small).foregroundStyle(accent.base)
+            }
+          }
+          .font(.caption).foregroundStyle(Color.mutedInk)
+        } else if let subtitle {
+          Text(subtitle).font(.caption).foregroundStyle(Color.mutedInk)
+        }
+      }
+      Spacer(minLength: 0)
+      if onToggle != nil, !isOrganizing, !isExpanded {
+        Image(systemName: "chevron.down")
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(Color.mutedInk)
+          .frame(width: 44, height: 44)
+      }
+    }
+  }
+
+  private var spokenSummary: String {
+    var parts: [String] = []
+    if exercise.prepSets > 0 { parts.append("\(exercise.prepSets) de aquecimento") }
+    let reps = exercise.repsMin == exercise.repsMax
+      ? "\(exercise.repsMin) repetições" : "de \(exercise.repsMin) a \(exercise.repsMax) repetições"
+    parts.append("\(exercise.workSets) valendo, \(reps)")
+    parts.append("descanso \(restClock(TimeInterval(exercise.restSeconds ?? defaultRestSeconds)))")
+    if exercise.workToFailure { parts.append("até a falha") }
+    return parts.joined(separator: ", ")
+  }
+}
+
+extension PlanExercise {
+  /// "2 + 2 × 6–10 · 1:30": aquecimento + valendo, a faixa de repetições e o
+  /// descanso. Sem aquecimento, "2 × 6–10 · 1:30".
+  var summary: String {
+    let sets = prepSets > 0 ? "\(prepSets) + \(workSets)" : "\(workSets)"
+    let reps = repsMin == repsMax ? "\(repsMin)" : "\(repsMin)–\(repsMax)"
+    return "\(sets) × \(reps) · \(restClock(TimeInterval(restSeconds ?? defaultRestSeconds)))"
   }
 }
 

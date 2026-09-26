@@ -316,6 +316,8 @@ private struct ExercisesStep: View {
   #endif
   @State private var isPickingExercise = false
   @State private var confirmDelete = false
+  /// Só um exercício aberto por vez; os outros ficam na linha resumida.
+  @State private var openExercise: String?
   @Binding var exercises: [PlanExercise]
   @Binding var exerciseInfo: [String: ExerciseCatalogItem]
   let catalog: [ExerciseCatalogItem]
@@ -346,6 +348,12 @@ private struct ExercisesStep: View {
             exercise: $exercise, name: info?.name ?? exercise.exerciseId,
             subtitle: info.map { "\($0.muscleGroup.lowercased()) · \($0.equipment.lowercased())" },
             imageUrl: info?.imageUrl, isOrganizing: isOrganizing,
+            isExpanded: openExercise == exerciseId,
+            onToggle: {
+              withAnimation(editAnimation) {
+                openExercise = openExercise == exerciseId ? nil : exerciseId
+              }
+            },
             onRemove: {
               withAnimation(editAnimation) {
                 exercises.removeAll { $0.exerciseId == exerciseId }
@@ -411,6 +419,7 @@ private struct ExercisesStep: View {
       ExercisePicker(catalog: catalog, chosen: Set(exercises.map(\.exerciseId))) { item in
         let known = catalog.contains(where: { $0.id == item.id })
         exerciseInfo[item.id] = item
+        openExercise = item.id
         exercises.append(
           PlanExercise(
             exerciseId: item.id, prepSets: 2, workSets: 2, repsMin: 8, repsMax: 12,
