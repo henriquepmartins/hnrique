@@ -30,7 +30,7 @@ enum HeroModel {
       self = .session(Session(workout: workout, meta: meta, actionLabel: "ver o treino"))
     } else if workout.completionPercent > 0 {
       self = .session(Session(
-        workout: workout, meta: estimate + " · \(workout.completionPercent)% concluído",
+        workout: workout, meta: estimate + " · \(workout.completionPercent)%",
         actionLabel: "continuar"))
     } else {
       self = .session(Session(workout: workout, meta: estimate, actionLabel: "começar"))
