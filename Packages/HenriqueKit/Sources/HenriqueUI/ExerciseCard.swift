@@ -253,22 +253,22 @@ struct TrainingSetRow: View {
         }
       }
       cell {
-        TextField("0", value: $weightDraft, format: .number.precision(.fractionLength(0...2)))
-          #if os(iOS)
-          .keyboardType(.decimalPad)
-          #endif
-          .focused($focused, equals: .weight)
+        TypedNumberField(
+          placeholder: "0", value: $weightDraft, focus: $focused, field: .weight,
+          parse: parseDecimal, format: formatPrepWeight)
+          .decimalInput()
           .submitLabel(.done)
           .font(valueFont)
           .accessibilityIdentifier(fieldID + ".weight")
           .accessibilityLabel("Peso \(kind == .prep ? "do" : "da") \(spokenName)")
       }
       cell {
-        TextField("0", value: $repsDraft, format: .number)
+        TypedNumberField(
+          placeholder: "0", value: $repsDraft, focus: $focused, field: .reps,
+          parse: { Int($0.trimmingCharacters(in: .whitespaces)) }, format: String.init)
           #if os(iOS)
           .keyboardType(.numberPad)
           #endif
-          .focused($focused, equals: .reps)
           .submitLabel(.done)
           .font(valueFont)
           .accessibilityIdentifier(fieldID + ".reps")

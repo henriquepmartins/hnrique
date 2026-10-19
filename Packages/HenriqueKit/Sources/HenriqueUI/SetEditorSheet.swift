@@ -30,31 +30,50 @@ struct WeightStepper: View {
   }
 }
 
-/// Número com vírgula ou ponto, gravado a cada tecla. Com `value:format:` o
-/// número só chegava ao valor quando o campo perdia o foco, e tocar em
-/// "concluir" ou "continuar" com o teclado aberto saía sem ele.
+/// Número com vírgula ou ponto, gravado a cada tecla.
 struct DecimalField: View {
   let placeholder: String
   @Binding var value: Double?
+  @FocusState private var focused: Bool?
+
+  var body: some View {
+    TypedNumberField(
+      placeholder: placeholder, value: $value, focus: $focused, field: true,
+      parse: parseDecimal, format: formatPrepWeight
+    )
+    .decimalInput()
+  }
+}
+
+/// Um número digitado como texto e lido a cada tecla. Com `value:format:` o
+/// número só chegava ao valor quando o campo perdia o foco, e tocar em
+/// "concluir", "feito" ou no visto com o teclado aberto saía sem ele.
+struct TypedNumberField<Value: Equatable, Focus: Hashable>: View {
+  let placeholder: String
+  @Binding var value: Value?
+  let focus: FocusState<Focus?>.Binding
+  let field: Focus
+  let parse: (String) -> Value?
+  let format: (Value) -> String
   @State private var text = ""
-  @FocusState private var focused: Bool
+
+  private var focused: Bool { focus.wrappedValue == field }
 
   var body: some View {
     TextField(placeholder, text: $text)
-      .focused($focused)
-      .decimalInput()
+      .focused(focus, equals: field)
       // Com o campo em foco o texto só segue o valor quando ele mudou por
       // fora, pelo stepper ao lado ou pelo teto da faixa. Senão apagar o
       // campo para digitar de novo faria o "0" voltar.
       .onChange(of: value, initial: true) { _, new in
-        let typed = parseDecimal(text)
+        let typed = parse(text)
         if !focused || (new != nil && typed != nil && typed != new) {
-          text = new.map(formatPrepWeight) ?? ""
+          text = new.map(format) ?? ""
         }
       }
-      .onChange(of: text) { _, new in value = parseDecimal(new) }
+      .onChange(of: text) { _, new in value = parse(new) }
       .onChange(of: focused) { _, isFocused in
-        if !isFocused { text = value.map(formatPrepWeight) ?? "" }
+        if !isFocused { text = value.map(format) ?? "" }
       }
   }
 }
