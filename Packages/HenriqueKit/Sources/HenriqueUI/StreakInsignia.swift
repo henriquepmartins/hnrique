@@ -301,8 +301,12 @@ struct InsigniaBadge: View {
           .opacity(pose.layers[2].opacity)
       }
     }
-    .hueRotation(.degrees(style.shiftsHue ? time * 50 : 0))
+    // As sombras e o neon das camadas viram uma textura só, num quadro com folga
+    // para nenhuma sombra ser cortada. Sem isso cada quadro da comemoração refazia
+    // o desfoque de cada sombra.
     .frame(width: size * 1.2, height: size * 1.2)
+    .drawingGroup()
+    .hueRotation(.degrees(style.shiftsHue ? time * 50 : 0))
   }
 
   private func plate(_ layer: BadgeLayer) -> some View {
@@ -464,18 +468,28 @@ enum InsigniaBeat {
 /// desde o fechar, lidos de um `TimelineView` só.
 struct InsigniaLayer: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var settled = false
   let show: InsigniaShow
   let onClose: () -> Void
 
   var body: some View {
     GeometryReader { proxy in
-      TimelineView(.animation) { context in
+      TimelineView(.animation(minimumInterval: nil, paused: settled && show.closed == nil)) { context in
         scene(
           at: context.date, size: proxy.size, origin: localOrigin(proxy),
           layerOrigin: proxy.frame(in: .global).origin)
       }
     }
     .ignoresSafeArea()
+    .task(id: show.opened) {
+      // Sem movimento reduzido os brilhos e os raios nunca param, e o relógio
+      // corre até fechar. Com ele tudo é um fade de 0,3 s, e depois disso só o
+      // surreal ainda troca de matiz.
+      settled = false
+      guard reduceMotion, !show.tier.style.shiftsHue else { return }
+      guard (try? await Task.sleep(for: .seconds(0.4))) != nil else { return }
+      settled = true
+    }
     .contentShape(.rect)
     .onTapGesture(perform: onClose)
     .accessibilityElement(children: .ignore)

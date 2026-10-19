@@ -218,7 +218,8 @@ public struct FocusSessionScreen: View {
       case .done: doneSection
       }
     }
-    .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: state.phase)
+    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: state.phase)
+    .sensoryFeedback(.success, trigger: state.phase) { _, phase in phase == .done }
   }
 
   private var idleSection: some View {
@@ -277,7 +278,7 @@ public struct FocusSessionScreen: View {
   }
 
   private var timingSection: some View {
-    FocusSessionTicker(running: state.isRunning) { now in
+    FocusSessionTicker(since: tickAnchor) { now in
       timingReadout(now: now)
     }
     .transition(.opacity)
@@ -472,6 +473,13 @@ public struct FocusSessionScreen: View {
   // MARK: Valores derivados
 
   private var isPaused: Bool { state.phase == .timing && !state.isRunning }
+
+  /// Um instante já passado em que o corrido tinha meio segundo quebrado. O
+  /// relógio arredonda o que falta, então é nesse meio que o dígito troca.
+  private var tickAnchor: Date? {
+    guard case .running(_, _, _, let since, let before) = state else { return nil }
+    return since.addingTimeInterval((0.5 - before).truncatingRemainder(dividingBy: 1) - 1)
+  }
 
   private var subjectName: String? {
     guard let id = state.subjectId else { return nil }
@@ -675,15 +683,17 @@ private let focusSessionGreen = LinearGradient(
   colors: [.studyGreen, .studyLightGreen], startPoint: .topLeading, endPoint: .bottomTrailing)
 
 /// O tick só existe enquanto o bloco corre. Parado, o tempo já está guardado no
-/// estado e redesenhar quatro vezes por segundo não mudaria nada na tela.
+/// estado e redesenhar a cada segundo não mudaria nada na tela. Um tick por
+/// segundo, ancorado em `since`, onde o dígito troca. A leitura vem 10 ms
+/// depois do tick para o arredondamento não cair em cima do meio exato.
 private struct FocusSessionTicker<Content: View>: View {
-  let running: Bool
+  let since: Date?
   @ViewBuilder let content: (Date) -> Content
 
   var body: some View {
-    if running {
-      TimelineView(.periodic(from: .now, by: 0.25)) { context in
-        content(context.date)
+    if let since {
+      TimelineView(.periodic(from: since, by: 1)) { context in
+        content(context.date.addingTimeInterval(0.01))
       }
     } else {
       content(.now)

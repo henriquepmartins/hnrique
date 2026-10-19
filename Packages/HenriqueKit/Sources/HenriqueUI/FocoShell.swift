@@ -40,7 +40,7 @@ private struct FocoAccessoryLabel: View {
     if let run = foco.ledger.running {
       // O botão inteiro mora dentro do tick: o rótulo falado lia o tempo do
       // último desenho completo e ficava minutos atrás do relógio.
-      FocoTicker(running: !run.isPaused) { now in
+      FocoTicker(since: run.tickAnchor) { now in
         Button {
           foco.isShowingRun = true
         } label: {
@@ -56,7 +56,7 @@ private struct FocoAccessoryLabel: View {
           .padding(.horizontal, 16)
           .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressScaleStyle(scale: 0.98))
         .accessibilityLabel("foco em \(run.track.name)")
         .accessibilityValue(run.isPaused ? "pausado" : FocoFormat.spoken(run.seconds(at: now)))
         .accessibilityHint("abre o cronômetro")

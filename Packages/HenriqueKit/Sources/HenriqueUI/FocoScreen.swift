@@ -34,19 +34,32 @@ enum FocoFormat {
 }
 
 /// O tick só existe enquanto uma corrida roda. Parado, o total já está no
-/// registro e redesenhar a cada segundo não mudaria nada.
+/// registro e redesenhar a cada segundo não mudaria nada. `since` é um instante
+/// em que o relógio da corrida virou segundo cheio: ancorado nele, o tick cai
+/// quando o dígito troca, e não até um segundo depois. A leitura vem 10 ms
+/// depois do tick para o arredondamento para baixo não cair em cima do segundo
+/// exato e pular um dígito.
 struct FocoTicker<Content: View>: View {
-  let running: Bool
+  let since: Date?
+  var every: TimeInterval = 1
   @ViewBuilder let content: (Date) -> Content
 
   var body: some View {
-    if running {
-      TimelineView(.periodic(from: .now, by: 1)) { context in
-        content(context.date)
+    if let since {
+      TimelineView(.periodic(from: since, by: every)) { context in
+        content(context.date.addingTimeInterval(0.01))
       }
     } else {
       content(.now)
     }
+  }
+}
+
+extension FocoRun {
+  /// Onde o tick da corrida se ancora, nulo pausada. Os trechos já fechados
+  /// deixam um pedaço de segundo, e o relógio vira quando ele completa.
+  var tickAnchor: Date? {
+    runningSince.map { $0 - seconds(at: $0).truncatingRemainder(dividingBy: 1) }
   }
 }
 
@@ -67,25 +80,37 @@ public struct FocoScreen: View {
 
   private var calendar: Calendar { StudyFormat.calendar }
 
+  private var tickingSince: Date? { foco.ledger.running?.tickAnchor }
+
   public var body: some View {
     ScrollView {
-      FocoTicker(running: foco.isRunning) { now in
-        let today = CalendarDate(now, in: calendar)
-        let ledger = foco.ledger
-        VStack(alignment: .leading, spacing: 20) {
-          StudyHeading(title: "foco")
-            .staggeredEntrance(index: 0, isReady: true)
-          clockCard(ledger: ledger, today: today, now: now)
-            .staggeredEntrance(index: 1, isReady: true)
-          streakRow(ledger.streak(now: now, calendar: calendar), ledger: ledger, today: today, now: now)
-            .staggeredEntrance(index: 2, isReady: true)
-          tracksSection(ledger: ledger, today: today, now: now)
-            .staggeredEntrance(index: 3, isReady: true)
-          FocoGrid(days: ledger.days(endingOn: today, count: 84, now: now, calendar: calendar), today: today)
-            .staggeredEntrance(index: 4, isReady: true)
-          todaySection(ledger.entries(on: today, calendar: calendar))
-            .staggeredEntrance(index: 5, isReady: true)
+      // Cada tick redesenha só o que mostra segundos. A grade muda no máximo a
+      // cada minuto, e o título e a lista de hoje só quando o registro muda.
+      VStack(alignment: .leading, spacing: 20) {
+        StudyHeading(title: "foco")
+          .staggeredEntrance(index: 0, isReady: true)
+        FocoTicker(since: tickingSince) { now in
+          clockCard(ledger: foco.ledger, today: CalendarDate(now, in: calendar), now: now)
         }
+        .staggeredEntrance(index: 1, isReady: true)
+        FocoTicker(since: tickingSince) { now in
+          let ledger = foco.ledger
+          streakRow(
+            ledger.streak(now: now, calendar: calendar), ledger: ledger,
+            today: CalendarDate(now, in: calendar), now: now)
+        }
+        .staggeredEntrance(index: 2, isReady: true)
+        FocoTicker(since: tickingSince) { now in
+          tracksSection(ledger: foco.ledger, today: CalendarDate(now, in: calendar), now: now)
+        }
+        .staggeredEntrance(index: 3, isReady: true)
+        FocoTicker(since: tickingSince, every: 60) { now in
+          let today = CalendarDate(now, in: calendar)
+          FocoGrid(days: foco.ledger.days(endingOn: today, count: 84, now: now, calendar: calendar), today: today)
+        }
+        .staggeredEntrance(index: 4, isReady: true)
+        todaySection(foco.ledger.entries(on: CalendarDate(.now, in: calendar), calendar: calendar))
+          .staggeredEntrance(index: 5, isReady: true)
       }
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
@@ -123,7 +148,7 @@ public struct FocoScreen: View {
           .font(.system(size: clockSize, weight: .semibold).leading(.tight))
           .tracking(-clockSize * 0.03)
           .contentTransition(.numericText())
-          .animation(reduceMotion ? nil : Motion.crossfade, value: Int(seconds))
+          .animation(reduceMotion ? nil : Motion.roll, value: Int(seconds))
           .lineLimit(1)
           .minimumScaleFactor(0.5)
           .offset(x: -2)
@@ -369,18 +394,21 @@ struct FocoTrackRow: View {
   }
 }
 
-/// O anel em volta do botão que roda. Cresce e some em ciclo, e a fase sai do
-/// relógio para o anel não reiniciar toda vez que o segundo troca.
+/// O anel em volta do botão que roda. Cresce de 40 a 56 pontos e some em
+/// ciclo. É escala e opacidade num quadro fixo, então o tick de cada segundo
+/// redesenha a linha sem reiniciar o ciclo nem medir o anel de novo.
 struct FocoPulseRing: View {
+  @State private var expanded = false
   let color: Color
 
   var body: some View {
-    TimelineView(.animation) { context in
-      let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6
-      Circle()
-        .strokeBorder(color.opacity(0.6 * (1 - phase)), lineWidth: 2)
-        .frame(width: 40 + 16 * phase, height: 40 + 16 * phase)
-    }
+    Circle()
+      .strokeBorder(color, lineWidth: 2)
+      .frame(width: 56, height: 56)
+      .scaleEffect(expanded ? 1 : 40.0 / 56)
+      .opacity(expanded ? 0 : 0.6)
+      .animation(.linear(duration: 1.6).repeatForever(autoreverses: false), value: expanded)
+      .onAppear { expanded = true }
   }
 }
 
@@ -408,7 +436,8 @@ struct FocoGrid: View {
             }
             .opacity(shown || reduceMotion ? 1 : 0)
             .animation(
-              reduceMotion ? nil : Motion.entrance.delay(0.04 * Double(column)), value: shown)
+              reduceMotion ? nil : Motion.entrance.delay(0.2 * Double(column) / Double(columns - 1)),
+              value: shown)
           }
         }
         .frame(maxWidth: .infinity)
@@ -453,44 +482,45 @@ struct FocoTodayCard: View {
   private var calendar: Calendar { StudyFormat.calendar }
 
   var body: some View {
-    FocoTicker(running: foco.isRunning) { now in
-      let ledger = foco.ledger
-      let today = CalendarDate(now, in: calendar)
-      let seconds = ledger.seconds(on: today, now: now, calendar: calendar)
-      let streak = ledger.streak(now: now, calendar: calendar)
-      StudyCard {
-        VStack(alignment: .leading, spacing: 12) {
-          HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text.clock(FocoFormat.clock(seconds))
-              .font(.system(size: clockSize, weight: .semibold).leading(.tight))
-              .tracking(-clockSize * 0.03)
-              .contentTransition(.numericText())
-              .animation(reduceMotion ? nil : Motion.crossfade, value: Int(seconds))
-              .accessibilityLabel("\(FocoFormat.spoken(seconds)) hoje")
-            Spacer(minLength: 0)
-            HStack(spacing: 4) {
-              Image(systemName: "flame.fill")
-                .foregroundStyle(streak.isTodayDone ? Color.studyCoral : Color.studyInk20)
-                .symbolEffect(.bounce, value: streak.current)
-              Text("\(streak.current)")
-                .monospacedDigit()
+    StudyCard {
+      VStack(alignment: .leading, spacing: 12) {
+        FocoTicker(since: foco.ledger.running?.tickAnchor) { now in
+          let ledger = foco.ledger
+          let seconds = ledger.seconds(on: CalendarDate(now, in: calendar), now: now, calendar: calendar)
+          let streak = ledger.streak(now: now, calendar: calendar)
+          VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+              Text.clock(FocoFormat.clock(seconds))
+                .font(.system(size: clockSize, weight: .semibold).leading(.tight))
+                .tracking(-clockSize * 0.03)
                 .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : Motion.roll, value: Int(seconds))
+                .accessibilityLabel("\(FocoFormat.spoken(seconds)) hoje")
+              Spacer(minLength: 0)
+              HStack(spacing: 4) {
+                Image(systemName: "flame.fill")
+                  .foregroundStyle(streak.isTodayDone ? Color.studyCoral : Color.studyInk20)
+                  .symbolEffect(.bounce, value: streak.current)
+                Text("\(streak.current)")
+                  .monospacedDigit()
+                  .contentTransition(.numericText())
+              }
+              .font(.headline)
+              .accessibilityElement(children: .combine)
+              .accessibilityLabel("\(FocoFormat.count(streak.current, "dia seguido", "dias seguidos"))")
             }
-            .font(.headline)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(FocoFormat.count(streak.current, "dia seguido", "dias seguidos"))")
+            FocoGoalBar(fraction: min(1, seconds / (Double(ledger.dailyGoalMinutes) * 60)), color: .studyBlue)
           }
-          FocoGoalBar(fraction: min(1, seconds / (Double(ledger.dailyGoalMinutes) * 60)), color: .studyBlue)
-          NavigationLink {
-            FocoScreen(leading: .estudos)
-          } label: {
-            Label(foco.isRunning ? "voltar ao foco" : "focar", systemImage: "timer")
-          }
-          .buttonStyle(.glassProminent)
-          .controlSize(.large)
-          .tint(.studyBlue)
-          .padding(.top, 4)
         }
+        NavigationLink {
+          FocoScreen(leading: .estudos)
+        } label: {
+          Label(foco.isRunning ? "voltar ao foco" : "focar", systemImage: "timer")
+        }
+        .buttonStyle(.glassProminent)
+        .controlSize(.large)
+        .tint(.studyBlue)
+        .padding(.top, 4)
       }
     }
     .task { await foco.syncIfStale() }

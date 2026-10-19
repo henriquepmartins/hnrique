@@ -109,7 +109,7 @@ private struct AttendanceCount: View {
       .font(.title2.weight(.medium)).monospacedDigit().foregroundStyle(Color.ink)
       .contentTransition(.numericText(value: Double(total)))
       .opacity(answered || total > 0 ? 1 : 0)
-      .animation(reduceMotion ? nil : .default, value: total)
+      .animation(reduceMotion ? nil : Motion.roll, value: total)
   }
 
   private var text: String {
@@ -143,6 +143,7 @@ private struct GraphFocus: Equatable {
 /// o balão que corre de casa em casa.
 private struct AttendanceGraph: View {
   @Environment(\.locale) private var locale
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var focus: GraphFocus?
   @State private var scrubbed = false
   /// O trecho da fita do ano que está na tela, em coordenadas da grade.
@@ -174,20 +175,17 @@ private struct AttendanceGraph: View {
   }
 
   private var board: some View {
-    HStack(alignment: .top, spacing: GraphMetrics.gap) {
-      ForEach(Array(weeks.enumerated()), id: \.element.id) { week, column in
-        VStack(spacing: GraphMetrics.gap) {
-          ForEach(Array(column.cells.enumerated()), id: \.element.id) { day, cell in
-            GraphCell(
-              cell: cell, week: week, day: day, ready: ready,
-              glow: glow(week: week, day: day)
-            )
-          }
-        }
+    // Na fita do ano só as semanas na tela existem; as de janeiro, fora da
+    // tela, não cintilam nem pulsam à toa. No mês tudo cabe e a pilha é comum.
+    Group {
+      if scrolls {
+        LazyHStack(alignment: .top, spacing: GraphMetrics.gap) { columns }
+      } else {
+        HStack(alignment: .top, spacing: GraphMetrics.gap) { columns }
       }
     }
     .overlay(alignment: .topLeading) {
-      tooltip.animation(.easeOut(duration: 0.12), value: focus == nil)
+      tooltip.animation(Motion.swap, value: focus == nil)
     }
     .contentShape(Rectangle())
     // Um toque abre ou fecha a casa. Segurar e arrastar percorre as casas, e
@@ -206,6 +204,22 @@ private struct AttendanceGraph: View {
     .simultaneousGesture(scrub)
     .sensoryFeedback(.selection, trigger: focus) { _, new in new != nil }
     .accessibilityElement(children: .contain)
+  }
+
+  private var columns: some View {
+    // A onda atravessa a grade inteira em 0,25 s, seja um mês ou um ano.
+    let span = Double(max(weeks.count - 1, 1) + 6)
+    return ForEach(Array(weeks.enumerated()), id: \.element.id) { week, column in
+      VStack(spacing: GraphMetrics.gap) {
+        ForEach(Array(column.cells.enumerated()), id: \.element.id) { day, cell in
+          GraphCell(
+            cell: cell, week: week, day: day, ready: ready,
+            delay: 0.25 * Double(week + day) / span,
+            glow: glow(week: week, day: day)
+          )
+        }
+      }
+    }
   }
 
   private var scrub: some Gesture {
@@ -260,7 +274,7 @@ private struct AttendanceGraph: View {
         // Um quadro de tamanho zero com o balão alinhado pela base (ou pelo
         // topo) põe a ponta do balão exatamente em (x, y).
         .frame(width: 0, height: 0, alignment: above ? .bottom : .top)
-        .animation(.interpolatingSpring(mass: 1, stiffness: 620, damping: 42)) {
+        .animation(reduceMotion ? nil : Motion.tap) {
           $0.offset(x: x, y: y)
         }
         .allowsHitTesting(false)
@@ -279,9 +293,9 @@ private struct AttendanceGraph: View {
   }
 }
 
-/// Uma casa. Três camadas de movimento, cada uma com a sua curva, como no
-/// componente: a entrada em onda (opacidade, subida de 4 pontos e escala de
-/// 0.35), a cintilação que não para e o brilho da onda de toque.
+/// Uma casa. Três camadas de movimento: a entrada em onda, a cintilação que não
+/// para e o brilho da onda de toque. São centenas de casas na tela, então cada
+/// camada mexe só em opacidade, escala ou na cor do preenchimento.
 private struct GraphCell: View {
   @Environment(\.accent) private var accent
   @Environment(\.locale) private var locale
@@ -292,6 +306,7 @@ private struct GraphCell: View {
   let week: Int
   let day: Int
   let ready: Bool
+  let delay: Double
   let glow: Double
 
   var body: some View {
@@ -318,25 +333,19 @@ private struct GraphCell: View {
 
   private var square: some View {
     let visible = shown || reduceMotion
-    let delay = Double(week) * 0.026 + Double(day) * 0.016
+    // O brilho da onda de toque entra na própria cor, clareando o preenchimento;
+    // um filtro de brilho em cada casa custava uma passada a mais por casa.
     return RoundedRectangle(cornerRadius: GraphMetrics.radius)
-      .fill(AttendanceFill.color(level: cell.level, accent: accent))
+      .fill(AttendanceFill.color(level: cell.level, accent: accent).mix(with: .white, by: 0.2 * glow))
       .animation(reduceMotion ? nil : Motion.crossfade, value: cell.level)
+      .animation(Motion.swap, value: glow)
       // Cintilação do componente com a intensidade padrão de 0.65: a casa perde
-      // até 22% da opacidade e 5% do tamanho num ciclo de 2 a 3,4 segundos. A
-      // semente espalha o ciclo para as casas vizinhas não piscarem juntas.
+      // até 22% da opacidade num ciclo de 2 a 3,4 segundos. A semente espalha o
+      // ciclo para as casas vizinhas não piscarem juntas.
       .opacity(twinkling ? 1 - 0.34 * 0.65 : 1)
-      .scaleEffect(twinkling ? 1 - 0.08 * 0.65 : 1)
       .animation(twinkle(after: delay), value: twinkling)
-      .brightness(0.2 * glow)
-      .saturation(1 + 0.2 * glow)
-      .animation(.easeOut(duration: 0.08), value: glow)
-      .animation(.linear(duration: 0.14).delay(delay)) { $0.opacity(visible ? 1 : 0) }
-      .animation(.interpolatingSpring(mass: 1, stiffness: 520, damping: 28).delay(delay)) {
-        $0.offset(y: visible ? 0 : 4)
-      }
-      .animation(.interpolatingSpring(mass: 1, stiffness: 900, damping: 32)) {
-        $0.scaleEffect(visible ? 1 : 0.35)
+      .animation(Motion.entrance.delay(delay)) {
+        $0.opacity(visible ? 1 : 0).scaleEffect(visible ? 1 : 0.95)
       }
       .onAppear {
         guard !reduceMotion else { return }
