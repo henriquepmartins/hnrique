@@ -14,6 +14,16 @@ final class FluxoDrive: XCTestCase {
     try? FileManager.default.createDirectory(atPath: shots, withIntermediateDirectories: true)
   }
 
+  /// Falhou, a tela e a árvore de acessibilidade do momento vão para as
+  /// capturas, porque o `shot` seguinte à asserção nunca chega a rodar.
+  override func tearDown() {
+    guard (testRun?.totalFailureCount ?? 0) > 0 else { return }
+    let name = "falha-" + self.name.split(separator: " ").last!.dropLast()
+    shot(name)
+    FileManager.default.createFile(
+      atPath: "\(shots)/\(name).txt", contents: Data(app.debugDescription.utf8))
+  }
+
   func shot(_ name: String) {
     let data = XCUIScreen.main.screenshot().pngRepresentation
     FileManager.default.createFile(atPath: "\(shots)/\(name).png", contents: data)
