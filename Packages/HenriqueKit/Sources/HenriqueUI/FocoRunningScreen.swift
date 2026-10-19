@@ -31,7 +31,10 @@ struct FocoRunningScreen: View {
     .foregroundStyle(Color.studyCream)
     .tint(Color.studyCream)
     .preferredColorScheme(.dark)
-    .onAppear { keepScreenAwake(true) }
+    .sensoryFeedback(.stop, trigger: foco.result != nil) { _, shown in shown }
+    .onChange(of: foco.ledger.running.map { !$0.isPaused } ?? false, initial: true) { _, counting in
+      keepScreenAwake(counting)
+    }
     .onDisappear { keepScreenAwake(false) }
   }
 
@@ -66,9 +69,24 @@ private struct FocoTimerView: View {
       }
       .padding(.leading, 16)
       .padding(.trailing, 3)
+      if let switched = foco.switched {
+        StudyPill(
+          tone: .cream, systemImage: "checkmark",
+          text: "\(switched.track.name) +\(FocoFormat.short(minutes: Int(switched.seconds / 60)))"
+        )
+        .padding(.top, 16)
+        .transition(.opacity)
+        .task {
+          try? await Task.sleep(for: .seconds(2))
+          foco.clearSwitched()
+        }
+      }
       Spacer(minLength: 0)
       FocoTicker(since: foco.ledger.tickAnchor { run.seconds(at: $0) }) { now in
         let seconds = run.seconds(at: now)
+        // O bloco conta para baixo. Arredondar para cima mostra 25:00 no
+        // começo e vira junto com o tick, que cai no segundo cheio do corrido.
+        let shown = run.remaining(at: now)?.rounded(.up) ?? seconds
         // O que veio antes da corrida entra arredondado ao segundo mais próximo,
         // para o total de hoje virar junto com o relógio grande. Para baixo, um
         // zero que o ponto flutuante deixa em -0,0000001 perderia 1 s.
@@ -77,21 +95,23 @@ private struct FocoTimerView: View {
           calendar: StudyFormat.calendar) - seconds
         let today = before.rounded() + seconds
         VStack(spacing: 12) {
-          Text(FocoFormat.clock(seconds))
+          Text.clock(FocoFormat.clock(shown))
             .font(.system(size: timerSize, weight: .semibold).leading(.tight))
-            .monospacedDigit()
             .tracking(-timerSize * 0.011)
             .lineLimit(1)
             .minimumScaleFactor(0.4)
-            .offset(x: -1.5)
             .contentTransition(.numericText())
-            .animation(reduceMotion ? nil : Motion.roll, value: Int(seconds))
+            .animation(reduceMotion ? nil : Motion.roll, value: Int(shown))
             .opacity(run.isPaused ? 0.45 : 1)
-            .accessibilityLabel("\(FocoFormat.spoken(seconds)) nesta sessão")
+            .accessibilityLabel(
+              run.target == nil
+                ? "\(FocoFormat.spoken(seconds)) nesta sessão" : "faltam \(FocoFormat.spoken(shown))")
+            .accessibilityValue(run.isPaused ? "pausado" : "")
           Text(run.isPaused ? "pausado · hoje \(FocoFormat.clock(today))" : "hoje \(FocoFormat.clock(today))")
             .font(.subheadline)
             .monospacedDigit()
             .contentTransition(.numericText())
+            .animation(reduceMotion ? nil : Motion.roll, value: Int(today))
             .foregroundStyle(Color.studyCream50)
         }
         .padding(.horizontal, 24)
@@ -107,8 +127,12 @@ private struct FocoTimerView: View {
             systemImage: run.isPaused ? "play.fill" : "pause.fill")
         }
         .buttonStyle(.glass)
+        .sensoryFeedback(.impact(weight: .light), trigger: run.isPaused)
         Button(action: stop) {
+          // O rótulo branco some numa matéria clara; a tinta da linha da
+          // matéria já resolve o contraste para qualquer cor.
           Label("parar", systemImage: "stop.fill").padding(.leading, -1.5)
+            .foregroundStyle(Color.subjectInk(for: run.track.color))
         }
         .buttonStyle(.glassProminent)
         .tint(color)
@@ -118,8 +142,8 @@ private struct FocoTimerView: View {
       .padding(.bottom, 32)
     }
     .padding(.top, 8)
+    .animation(reduceMotion ? nil : Motion.crossfade, value: foco.switched == nil)
   }
-
 }
 
 /// Uma mancha na cor da trilha que respira devagar atrás do número, num ciclo
@@ -222,7 +246,7 @@ private struct FocoResultView: View {
           .foregroundStyle(Color.studyCream50)
       }
       Spacer(minLength: 0)
-      Button("fechar", action: close)
+      Button("fechar", systemImage: "xmark", action: close)
         .buttonStyle(.glass)
         .controlSize(.large)
         .font(.headline)
@@ -249,27 +273,16 @@ private struct FocoResultView: View {
       .font(.system(size: 64))
       .foregroundStyle(Color.studyCoral)
       .keyframeAnimator(
-        initialValue: FlamePose(scale: reduceMotion ? 1 : 0.3, rotation: 0), trigger: celebrate
-      ) { view, pose in
-        view.scaleEffect(pose.scale).rotationEffect(.degrees(pose.rotation))
+        initialValue: reduceMotion ? 1.0 : 0.3, trigger: celebrate
+      ) { view, scale in
+        view.scaleEffect(scale)
       } keyframes: { _ in
-        KeyframeTrack(\.scale) {
-          SpringKeyframe(reduceMotion ? 1 : 1.2, duration: 0.3)
-          SpringKeyframe(1, duration: 0.3)
-        }
-        KeyframeTrack(\.rotation) {
-          CubicKeyframe(reduceMotion ? 0 : -8, duration: 0.15)
-          CubicKeyframe(reduceMotion ? 0 : 8, duration: 0.2)
-          CubicKeyframe(0, duration: 0.25)
+        KeyframeTrack {
+          SpringKeyframe(1, duration: 0.4, spring: .init(duration: 0.4, bounce: 0))
         }
       }
       .accessibilityHidden(true)
   }
-}
-
-private struct FlamePose {
-  var scale: Double
-  var rotation: Double
 }
 
 /// Catorze pontinhos que saem do centro e somem. O raio de cada um é fixo pelo
