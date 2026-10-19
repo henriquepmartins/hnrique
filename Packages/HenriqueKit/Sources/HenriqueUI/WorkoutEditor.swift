@@ -336,7 +336,10 @@ struct WorkoutEditor: View {
         muscleGroups: draft.exercises.compactMap { exerciseInfo[$0.exerciseId]?.muscleGroup ?? $0.muscleGroup },
         name: draft.trimmedName),
       estimatedMinutes: draft.estimatedMinutes,
-      color: draft.color.hex, exercises: draft.exercises)
+      color: draft.color.hex,
+      exercises: draft.exercises.keepingCurrentLoads(untouchedSince: original?.exercises ?? []) {
+        store.dashboard?.loadKg(exerciseId: $0)
+      })
     isSaving = true
     saveError = nil
     Task {

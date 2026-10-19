@@ -776,3 +776,22 @@ public func estimateOneRepMax(weightKg: Double, reps: Int) -> Double {
 public func workVolumeKg(_ work: [WorkSet]) -> Double {
   work.reduce(0) { $0 + ($1.isDone ? $1.weightKg * Double($1.reps) : 0) }
 }
+
+extension Array where Element == PlanExercise {
+  /// O editor pode ter ficado aberto enquanto uma série mais pesada mudava a
+  /// carga. O servidor grava toda carga diferente da atual, então a carga que
+  /// o dono não mexeu desde que abriu segue a de agora em vez de desfazê-la.
+  public func keepingCurrentLoads(
+    untouchedSince opened: [PlanExercise], current: (String) -> Double?
+  ) -> [PlanExercise] {
+    let openedLoads = Dictionary(
+      opened.map { ($0.exerciseId, $0.startingWeightKg) }, uniquingKeysWith: { first, _ in first })
+    return map { exercise in
+      guard openedLoads[exercise.exerciseId] == exercise.startingWeightKg,
+        let load = current(exercise.exerciseId), load > 0 else { return exercise }
+      var copy = exercise
+      copy.startingWeightKg = load
+      return copy
+    }
+  }
+}

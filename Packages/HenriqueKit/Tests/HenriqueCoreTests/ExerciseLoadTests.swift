@@ -79,3 +79,23 @@ struct ExerciseLoadTests {
     #expect(scaled.applyingLoad(40).sets.prep.map(\.weightKg) == [20, 30])
   }
 }
+
+@Suite("O editor salvando a carga")
+struct EditorLoadTests {
+  private func plan(_ id: String, _ kilograms: Double) -> PlanExercise {
+    PlanExercise(
+      exerciseId: id, prepSets: 1, workSets: 2, repsMin: 6, repsMax: 10, workToFailure: false,
+      startingWeightKg: kilograms)
+  }
+
+  @Test("carga intocada segue a atual e a editada vence")
+  func staleDraftKeepsNewerLoad() {
+    let opened = [plan("supino", 50), plan("remada", 40)]
+    let edited = [plan("supino", 50), plan("remada", 45), plan("rosca", 12)]
+    let current = ["supino": 55.0, "remada": 42.5, "rosca": 14.0]
+
+    let saved = edited.keepingCurrentLoads(untouchedSince: opened) { current[$0] }
+
+    #expect(saved.map(\.startingWeightKg) == [55, 45, 12])
+  }
+}
