@@ -26,17 +26,20 @@ private struct SaturationBrightnessPad: View {
         LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
       }
       .clipShape(.rect(cornerRadius: 16))
-      // A alça fica fora do recorte para não ser cortada ao meio nas bordas.
+      // A alça anda meio diâmetro para dentro de cada borda, então nas pontas
+      // ela fica inteira dentro do quadro em vez de metade para fora.
       .overlay {
         ColorThumb(fill: color.tone.top)
-          .position(x: color.saturation * size.width, y: (1 - color.brightness) * size.height)
+          .position(
+            x: ColorThumb.inset(color.saturation, in: size.width),
+            y: ColorThumb.inset(1 - color.brightness, in: size.height))
       }
       .contentShape(.rect)
       .gesture(
         DragGesture(minimumDistance: 0)
           .onChanged { drag in
-            color.saturation = min(1, max(0, drag.location.x / size.width))
-            color.brightness = min(1, max(0, 1 - drag.location.y / size.height))
+            color.saturation = ColorThumb.fraction(drag.location.x, in: size.width)
+            color.brightness = 1 - ColorThumb.fraction(drag.location.y, in: size.height)
           })
     }
     .frame(height: 260)
@@ -72,13 +75,13 @@ private struct HueBar: View {
         .clipShape(.capsule)
         .overlay {
           ColorThumb(fill: Color(hue: color.hue, saturation: 1, brightness: 1))
-            .position(x: color.hue * width, y: proxy.size.height / 2)
+            .position(x: ColorThumb.inset(color.hue, in: width), y: proxy.size.height / 2)
         }
         .contentShape(.rect)
         .gesture(
           DragGesture(minimumDistance: 0)
             .onChanged { drag in
-              color.hue = min(1, max(0, drag.location.x / width))
+              color.hue = ColorThumb.fraction(drag.location.x, in: width)
             })
     }
     .frame(height: 44)
@@ -97,13 +100,28 @@ private struct HueBar: View {
 }
 
 private struct ColorThumb: View {
+  static let size: CGFloat = 28
   let fill: Color
 
+  /// Onde fica o centro da alça para a fração `value` de um trilho de
+  /// `length`, com meio diâmetro de folga em cada ponta.
+  static func inset(_ value: Double, in length: CGFloat) -> CGFloat {
+    size / 2 + value * max(0, length - size)
+  }
+
+  /// O inverso de `inset`: a fração para o ponto onde o dedo está.
+  static func fraction(_ position: CGFloat, in length: CGFloat) -> Double {
+    guard length > size else { return 0 }
+    return min(1, max(0, (position - size / 2) / (length - size)))
+  }
+
+  /// O anel escuro de fora separa a alça de um fundo branco ou da mesma cor.
   var body: some View {
     Circle()
       .fill(fill)
-      .frame(width: 28, height: 28)
+      .frame(width: Self.size, height: Self.size)
       .overlay(Circle().strokeBorder(.white, lineWidth: 3))
+      .overlay(Circle().strokeBorder(.black.opacity(0.2), lineWidth: 1).padding(-1))
       .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
       .allowsHitTesting(false)
   }
