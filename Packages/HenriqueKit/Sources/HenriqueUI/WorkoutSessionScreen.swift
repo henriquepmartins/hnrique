@@ -283,8 +283,10 @@ struct WorkoutSessionScreen: View {
           Text(exercise.name.lowercased())
             .font(.system(size: collapsedNameSize, weight: .medium)).tracking(collapsedNameSize * -0.015)
             .foregroundStyle(Color.ink).lineLimit(1)
-          if let top = previousTop(exercise.previous) {
-            Text("\(Formatting.trim(top.weightKg)) × \(top.reps)")
+          // A carga de hoje, a mesma do cartão de hoje. A última vez fica na
+          // coluna "anterior" do cartão aberto e no VoiceOver.
+          if exercise.prescription.startingWeightKg > 0 {
+            Text(weightLabel(exercise.prescription.startingWeightKg))
               .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk).lineLimit(1)
           }
         }
@@ -308,7 +310,9 @@ struct WorkoutSessionScreen: View {
   }
 
   private func spokenSummary(_ exercise: DashboardExercise) -> String {
+    let load = exercise.prescription.startingWeightKg
     let count = "\(exercise.sets.completedWorkCount) de \(exercise.prescription.workSets) séries"
+      + (load > 0 ? ", \(Formatting.trim(load)) quilos" : "")
     guard let top = previousTop(exercise.previous) else { return count }
     return "\(count), \(Formatting.trim(top.weightKg)) quilos por \(top.reps) da última vez"
   }
