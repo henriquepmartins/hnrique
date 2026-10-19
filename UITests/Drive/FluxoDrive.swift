@@ -619,7 +619,7 @@ final class FluxoDrive: XCTestCase {
 
     check.tap()
     XCTAssert(app.buttons["pular"].waitForExistence(timeout: 3), "marcar série valendo abre o descanso")
-    app.buttons["+15s"].tap()
+    app.buttons["descanso.mais15"].tap()
     shot("61-sessao-descanso")
 
     close.tap()

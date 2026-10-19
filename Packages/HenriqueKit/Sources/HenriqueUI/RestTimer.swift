@@ -99,8 +99,8 @@ struct RestTimerBar: View {
           .accessibilityLabel(spokenNext)
       }
       WeightedRow(weights: [1, 1, 1.3], spacing: 8) {
-        step("−15s", spoken: "menos 15 segundos") { onAdjust(-15) }
-        step("+15s", spoken: "mais 15 segundos") { onAdjust(15) }
+        step("−15s", spoken: "menos 15 segundos", id: "descanso.menos15") { onAdjust(-15) }
+        step("+15s", spoken: "mais 15 segundos", id: "descanso.mais15") { onAdjust(15) }
         Button(action: onDismiss) {
           Text(over ? "fechar" : "pular")
             .font(.system(size: buttonSize, weight: .semibold)).foregroundStyle(accent.deep)
@@ -161,7 +161,7 @@ struct RestTimerBar: View {
     }
   }
 
-  private func step(_ title: String, spoken: String, action: @escaping () -> Void) -> some View {
+  private func step(_ title: String, spoken: String, id: String, action: @escaping () -> Void) -> some View {
     Button {
       action()
       adjustments += 1
@@ -174,6 +174,7 @@ struct RestTimerBar: View {
     }
     .buttonStyle(StudyPressStyle())
     .accessibilityLabel(spoken)
+    .accessibilityIdentifier(id)
   }
 }
 
