@@ -11,8 +11,11 @@ struct ExerciseHistoryTarget: Identifiable, Hashable {
 }
 
 extension View {
-  func exerciseHistorySheet(item: Binding<ExerciseHistoryTarget?>) -> some View {
-    sheet(item: item) { ExerciseHistorySheet(target: $0) }
+  /// Com `choices`, a folha ganha o menu para trocar de exercício sem fechar.
+  func exerciseHistorySheet(
+    item: Binding<ExerciseHistoryTarget?>, choices: [ExerciseHistoryTarget] = []
+  ) -> some View {
+    sheet(item: item) { ExerciseHistorySheet(target: $0, choices: choices) }
       .sensoryFeedback(.selection, trigger: item.wrappedValue) { _, new in new != nil }
   }
 }
@@ -40,7 +43,13 @@ struct ExerciseHistorySheet: View {
   @State private var phase: Phase = .loading
   @State private var attempt = 0
   @State private var selectedDate: Date?
-  let target: ExerciseHistoryTarget
+  @State private var target: ExerciseHistoryTarget
+  let choices: [ExerciseHistoryTarget]
+
+  init(target: ExerciseHistoryTarget, choices: [ExerciseHistoryTarget] = []) {
+    _target = State(initialValue: target)
+    self.choices = choices
+  }
 
   private enum Phase: Equatable {
     case loading
@@ -64,13 +73,28 @@ struct ExerciseHistorySheet: View {
       .navigationTitle(target.name.lowercased())
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
+        if choices.count > 1 {
+          ToolbarItem(placement: .topBarLeading) {
+            Menu("exercício", systemImage: "list.bullet") {
+              Picker("exercício", selection: $target) {
+                ForEach(choices) { choice in
+                  Text(choice.name.lowercased()).tag(choice)
+                }
+              }
+            }
+          }
+        }
         ToolbarItem(placement: .topBarTrailing) {
           Button(role: .close) { dismiss() }
         }
       }
     }
     .presentationDetents([.medium, .large])
-    .task(id: attempt) { await load() }
+    .task(id: "\(target.id)#\(attempt)") { await load() }
+    .onChange(of: target) {
+      phase = .loading
+      selectedDate = nil
+    }
   }
 
   @ViewBuilder private var content: some View {
@@ -83,7 +107,11 @@ struct ExerciseHistorySheet: View {
       if history.entries.isEmpty {
         emptyView
       } else {
-        LoadChart(entries: history.entries, selectedDate: $selectedDate)
+        // Um ponto só não é curva: o eixo virava horas de um dia e o ponto
+        // ficava sem data. A carga atual em cima e a linha da sessão bastam.
+        if history.entries.count > 1 {
+          LoadChart(entries: history.entries, selectedDate: $selectedDate)
+        }
         VStack(spacing: 0) {
           ForEach(history.entries) { entry in
             sessionRow(
@@ -141,7 +169,7 @@ struct ExerciseHistorySheet: View {
     date: CalendarDate, sets: String, workout: String?, highlighted: Bool, onTap: (() -> Void)?
   ) -> some View {
     let row = HStack(alignment: .firstTextBaseline, spacing: Space.m) {
-      Text(shortDate(date))
+      Text(Formatting.shortDate(date))
         .font(.subheadline).foregroundStyle(Color.mutedInk)
         .frame(minWidth: 52, alignment: .leading)
       VStack(alignment: .leading, spacing: 2) {
@@ -251,7 +279,7 @@ private struct LoadChart: View, AXChartDescriptorRepresentable {
             overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
           ) {
             VStack(alignment: .leading, spacing: 1) {
-              Text(shortDate(selected.date)).foregroundStyle(Color.mutedInk)
+              Text(Formatting.shortDate(selected.date)).foregroundStyle(Color.mutedInk)
               Text(setsText(selected)).fontWeight(.medium).monospacedDigit()
             }
             .font(.caption)
@@ -263,6 +291,14 @@ private struct LoadChart: View, AXChartDescriptorRepresentable {
     }
     .chartYScale(domain: .automatic(includesZero: false))
     .chartYAxisLabel("kg")
+    .chartXAxis {
+      AxisMarks(values: .automatic(desiredCount: 4)) { value in
+        AxisGridLine()
+        AxisValueLabel {
+          if let date = value.as(Date.self) { Text(Formatting.shortDate(CalendarDate(date))) }
+        }
+      }
+    }
     .chartXSelection(value: $selectedDate)
     .sensoryFeedback(.selection, trigger: selected?.id)
     .frame(height: 200)
@@ -297,14 +333,6 @@ private struct LoadChart: View, AXChartDescriptorRepresentable {
       summary: "de \(Formatting.trim(low)) a \(Formatting.trim(high)) quilos em \(sessions)",
       xAxis: xAxis, yAxis: yAxis, additionalAxes: [], series: [series])
   }
-}
-
-private let monthNames = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
-
-/// "12 out", e com o ano quando não é o ano corrente.
-private func shortDate(_ date: CalendarDate) -> String {
-  let base = "\(date.day) \(monthNames[date.month - 1])"
-  return date.year == CalendarDate.today.year ? base : "\(base) \(date.year)"
 }
 
 private func spokenDate(_ date: CalendarDate) -> String {

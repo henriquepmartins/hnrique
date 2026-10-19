@@ -67,22 +67,31 @@ public struct TodayScreen: View {
         }
         if let data = store.dashboard, let workout = data.workout {
           VStack(spacing: Space.m) {
-            HStack {
-              SectionHeading(title: "exercícios", systemImage: "dumbbell", font: .title2.weight(.medium), tracking: -0.8)
-              Spacer()
-              Picker("Modo de exibição", selection: $compact) {
-                Image(systemName: "list.bullet").tag(true).accessibilityLabel("lista")
-                Image(systemName: "rectangle.grid.1x2").tag(false).accessibilityLabel("cartões")
-              }.pickerStyle(.segmented).frame(width: 96)
-              .onChange(of: compact) { openIds = defaultOpenIds() }
-            }
-            HStack {
-              IconButton(title: "progresso", systemImage: "chart.xyaxis.line", glass: true, nudge: CGSize(width: 0.5, height: -0.5), action: onProgress)
-              Spacer()
-              IconButton(title: "editar plano", systemImage: "square.and.pencil", glass: true, nudge: CGSize(width: -0.5, height: -0.75)) {
-                editPlan(workoutId: workout.id)
+            // Os dois atalhos moravam numa linha só deles, com o meio vazio, e
+            // empurravam a lista 60 pontos. Sobem para a linha do título e só
+            // descem quando o texto grande não deixa caber.
+            ViewThatFits(in: .horizontal) {
+              HStack(spacing: Space.xs) {
+                exercisesHeading.fixedSize()
+                Spacer(minLength: Space.s)
+                progressButton
+                editButton(workoutId: workout.id)
+                modePicker
+              }
+              VStack(spacing: Space.m) {
+                HStack {
+                  exercisesHeading
+                  Spacer()
+                  modePicker
+                }
+                HStack {
+                  progressButton
+                  Spacer()
+                  editButton(workoutId: workout.id)
+                }
               }
             }
+            .onChange(of: compact) { openIds = defaultOpenIds() }
             .firstEntrance(index: 2, settled: enteredDates.contains(data.date.iso))
             ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
               ExerciseCard(exercise: exercise, date: data.date, templateId: workout.id, isOpen: openIds.contains(exercise.id)) {
@@ -129,6 +138,32 @@ public struct TodayScreen: View {
         catalog: store.dashboard?.exerciseCatalog ?? [], startingAt: .exercicios)
     }
     .animation(Motion.tap, value: store.rest == nil)
+  }
+
+  private var exercisesHeading: some View {
+    SectionHeading(title: "exercícios", systemImage: "dumbbell", font: .title2.weight(.medium), tracking: -0.8)
+  }
+
+  private var modePicker: some View {
+    Picker("Modo de exibição", selection: $compact) {
+      Image(systemName: "list.bullet").tag(true).accessibilityLabel("lista")
+      Image(systemName: "rectangle.grid.1x2").tag(false).accessibilityLabel("cartões")
+    }.pickerStyle(.segmented).frame(width: 96)
+  }
+
+  private var progressButton: some View {
+    IconButton(
+      title: "progresso", systemImage: "chart.xyaxis.line", glass: true,
+      nudge: CGSize(width: 0.5, height: -0.5), action: onProgress)
+  }
+
+  private func editButton(workoutId: String) -> some View {
+    IconButton(
+      title: "editar plano", systemImage: "square.and.pencil", glass: true,
+      nudge: CGSize(width: -0.5, height: -0.75)
+    ) {
+      editPlan(workoutId: workoutId)
+    }
   }
 
   /// O treino do dia abre direto no editor, nos exercícios. Um treino que só

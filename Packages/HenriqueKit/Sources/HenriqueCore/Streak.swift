@@ -40,7 +40,6 @@ public struct WorkoutStreak: Sendable, Hashable {
   public var weeklyPlanned: Int
   public var days: [StreakDay]
   public var isTodayDone: Bool
-  public var weekProgress: Double
 }
 
 extension WorkoutStreak {
@@ -75,6 +74,33 @@ extension WorkoutStreak {
     self.weeklyPlanned = week.planned
     self.days = days
     self.isTodayDone = attended.contains(today)
-    self.weekProgress = week.planned > 0 ? Double(week.done) / Double(week.planned) : 0
+  }
+}
+
+extension Dashboard {
+  /// O dia em que a sequência de presença zera se ninguém treinar até lá. Nulo
+  /// com a sequência em 0 ou já zerando hoje.
+  ///
+  /// Vale o `streakResetsOn` do servidor. Sem ele, a mesma conta feita aqui: o
+  /// servidor corta a sequência com mais de 5 dias entre dois treinos (o
+  /// último treino mais 6) e na falta do plano, o dia planejado que passa sem
+  /// treino e sem cobertura. Sem treinar mais, todo dia planejado de hoje em
+  /// diante fica sem cobertura e vira falta no dia seguinte.
+  public func streakResetDay(
+    lastAttended: CalendarDate?, today: CalendarDate,
+    fallback: [CalendarDate: AttendanceDay]? = nil
+  ) -> CalendarDate? {
+    if let streakResetsOn { return streakResetsOn > today ? streakResetsOn : nil }
+    guard streak(.attendance) > 0, let last = lastAttended, last < today else { return nil }
+    let gap = last.adding(days: 6)
+    let week = trainingWeek(today: today, fallback: fallback)
+    let sunday = week.monday.adding(days: 6)
+    let openThisWeek = week.slots.first { $0.state == .today || $0.state == .upcoming }?.date
+    let plannedAfter = sequence(first: sunday.adding(days: 1)) { $0.adding(days: 1) }
+      .prefix(while: { $0 < gap })
+      .first { schedule.plannedWorkout(on: $0) != nil }
+    let miss = (openThisWeek ?? plannedAfter).map { $0.adding(days: 1) }
+    let reset = min(gap, miss ?? gap)
+    return reset > today ? reset : nil
   }
 }
