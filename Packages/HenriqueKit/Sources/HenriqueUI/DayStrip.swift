@@ -69,12 +69,14 @@ struct DayStrip: View {
                   moveTo(day)
                 }
                 .frame(maxWidth: .infinity)
-                .onGeometryChange(for: SelectedDayPosition.self) { geometry in
-                  SelectedDayPosition(midpoint: geometry.frame(in: .named("days")).midX, selected: day == selected)
-                } action: { oldPosition, position in
-                  guard position.selected else { return }
-                  let animation = !oldPosition.selected && !reduceMotion ? selectionAnimation : nil
-                  withAnimation(animation) { updateNotch(midpoint: position.midpoint) }
+                // Só a casa escolhida informa a posição. As outras devolvem nil,
+                // que nunca muda, e rolar a fita não chama a ação de 189 casas.
+                .onGeometryChange(for: CGFloat?.self) { geometry in
+                  day == selected ? geometry.frame(in: .named("days")).midX : nil
+                } action: { old, midpoint in
+                  guard let midpoint else { return }
+                  let animation = old == nil && !reduceMotion ? selectionAnimation : nil
+                  withAnimation(animation) { updateNotch(midpoint: midpoint) }
                 }
               }
             }
@@ -83,7 +85,7 @@ struct DayStrip: View {
           }
         }
         .scrollTargetLayout()
-        .animation(reduceMotion ? .easeOut(duration: 0.16) : selectionAnimation, value: selected)
+        .animation(reduceMotion ? nil : selectionAnimation, value: selected)
         .sensoryFeedback(.selection, trigger: selected)
       }
       .coordinateSpace(.named("days"))
@@ -170,7 +172,3 @@ struct DayChip: View {
   }
 }
 
-private struct SelectedDayPosition: Equatable {
-  let midpoint: CGFloat
-  let selected: Bool
-}
