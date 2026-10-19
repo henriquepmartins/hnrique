@@ -585,7 +585,9 @@ private struct ExercisesStep: View {
     .sensoryFeedback(.impact(weight: .light), trigger: drops)
     .sensoryFeedback(.impact(weight: .light), trigger: exercises.count) { old, new in new < old }
     .sheet(isPresented: $isPickingExercise, onDismiss: revealPicked) {
-      ExercisePicker(catalog: catalog, chosen: Set(exercises.map(\.exerciseId))) { item in
+      ExercisePicker(
+        catalog: catalog, chosen: Set(exercises.map(\.exerciseId)),
+        onPick: { item in
         let known = catalog.contains(where: { $0.id == item.id })
         exerciseInfo[item.id] = item
         exercises.append(
@@ -596,7 +598,8 @@ private struct ExercisesStep: View {
             muscleGroup: known ? nil : item.muscleGroup,
             equipment: known ? nil : item.equipment,
             imageUrl: known ? nil : item.imageUrl))
-      }
+        },
+        onUnpick: { id in exercises.removeAll { $0.exerciseId == id } })
     }
   }
 

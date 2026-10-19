@@ -246,7 +246,7 @@ extension FluxoDrive {
     }
     shot("pior-00-seletor-cheio")
     app.buttons["seletor.fechar"].tap()
-    shot("pior-00-editor-13-exercicios")
+    shot("pior-00-editor-12-exercicios")
     app.buttons["concluir"].tap()
     XCTAssert(app.buttons["concluir"].waitForNonExistence(timeout: 10), "treino longo salvo")
   }

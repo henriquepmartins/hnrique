@@ -787,6 +787,10 @@ struct ExercisePicker: View {
   @State private var remotePhase: RemotePhase = .idle
   @State private var lookup: Task<Void, Never>?
   @State private var pickedHere = 0
+  /// Os escolhidos nesta abertura. Só eles saem com um toque; os que já
+  /// estavam no treino ficam travados para não apagar ajuste sem querer.
+  @State private var pickedIds: Set<String> = []
+  @State private var refusals = 0
   /// Liga na primeira tecla. Daí em diante as linhas que voltam à lista
   /// aparecem sem a cascata, que a cada letra fazia a lista piscar.
   @State private var settled = false
@@ -794,7 +798,10 @@ struct ExercisePicker: View {
   let catalog: [ExerciseCatalogItem]
   let chosen: Set<String>
   let onPick: (ExerciseCatalogItem) -> Void
-  @State private var wger = WgerClient()
+  var onUnpick: ((String) -> Void)?
+  private let wger = WgerClient.shared
+
+  private var isFull: Bool { chosen.count >= Limits.exerciseCount.upperBound }
 
   private enum RemotePhase: Equatable {
     case idle, loading, done, failed
@@ -824,14 +831,16 @@ struct ExercisePicker: View {
         LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
           Section {
             if local.isEmpty, remote.isEmpty, remotePhase == .idle || remotePhase == .done, !search.isEmpty {
-              ContentUnavailableView.search(text: search)
+              // Sem resultado, a ação que resolve vem primeiro, acima do
+              // teclado.
+              if canCreate { createRow }
+              ContentUnavailableView(
+                "sem \"\(search.trimmingCharacters(in: .whitespaces))\" no catálogo",
+                systemImage: "magnifyingglass")
             } else {
               ForEach(Array(local.enumerated()), id: \.element.id) { index, item in
-                ExercisePickerRow(
-                  item: item, picked: chosen.contains(item.id),
-                  action: { pick(item) }
-                )
-                .firstEntrance(index: index, settled: settled)
+                row(item)
+                  .firstEntrance(index: index, settled: settled)
                 Divider().padding(.leading, 76).opacity(0.6)
               }
               if !remote.isEmpty {
@@ -842,11 +851,8 @@ struct ExercisePicker: View {
                 }
                 .padding(.horizontal, Space.l).padding(.top, 18).padding(.bottom, Space.xs)
                 ForEach(Array(remote.enumerated()), id: \.element.id) { index, item in
-                  ExercisePickerRow(
-                    item: item, picked: chosen.contains(item.id),
-                    action: { pick(item) }
-                  )
-                  .staggeredEntrance(index: index, isReady: remotePhase == .done)
+                  row(item)
+                    .staggeredEntrance(index: index, isReady: remotePhase == .done)
                   Divider().padding(.leading, 76).opacity(0.6)
                 }
                 Text("fotos wger.de, CC-BY-SA")
@@ -870,25 +876,9 @@ struct ExercisePicker: View {
                 .font(.subheadline).foregroundStyle(Color.mutedInk)
                 .padding(.horizontal, Space.l).padding(.vertical, Space.xs)
               }
-            }
-            // Fora do vazio, porque é justo quando a busca não acha nada que
-            // dá vontade de criar.
-            if canCreate {
-              Button { createCustom() } label: {
-                HStack(spacing: Space.m) {
-                  RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
-                    .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
-                  VStack(alignment: .leading, spacing: 2) {
-                    Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
-                      .font(.body.weight(.medium)).foregroundStyle(Color.ink)
-                    Text(muscle ?? "geral")
-                      .font(.caption).foregroundStyle(Color.mutedInk)
-                  }
-                  Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Space.l).padding(.vertical, Space.s)
-                .contentShape(.rect)
-              }.buttonStyle(StudyPressStyle())
+              // Fora do vazio também, porque achar parecido não quer dizer
+              // achar o que se procura.
+              if canCreate { createRow }
             }
           } header: {
             VStack(spacing: 10) {
@@ -924,6 +914,13 @@ struct ExercisePicker: View {
                   }
                 }.padding(.horizontal, Space.l).padding(.vertical, 2)
               }
+              if isFull {
+                Label("limite de \(Limits.exerciseCount.upperBound) exercícios", systemImage: "exclamationmark.circle")
+                  .font(.footnote).foregroundStyle(Color.mutedInk)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .padding(.horizontal, Space.l)
+                  .transition(.opacity)
+              }
             }
             .padding(.top, Space.s).padding(.bottom, 6)
             .background(Color.canvas)
@@ -931,7 +928,8 @@ struct ExercisePicker: View {
         }
       }
       .background(Color.canvas)
-      .navigationTitle("exercícios")
+      .animation(Motion.resolve(Motion.subtleEntrance, reduceMotion), value: isFull)
+      .navigationTitle(isFull ? "\(chosen.count) de \(Limits.exerciseCount.upperBound)" : "exercícios")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -949,6 +947,7 @@ struct ExercisePicker: View {
       .onAppear { searchFocused = true }
       .task { await wger.prefetch() }
       .sensoryFeedback(.success, trigger: pickedHere)
+      .sensoryFeedback(.warning, trigger: refusals)
       .onChange(of: search) {
         settled = true
         scheduleRemote()
@@ -960,12 +959,59 @@ struct ExercisePicker: View {
     }
   }
 
+  private var createRow: some View {
+    Button { createCustom() } label: {
+      HStack(spacing: Space.m) {
+        RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
+          .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
+        VStack(alignment: .leading, spacing: 2) {
+          Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
+            .font(.body.weight(.medium)).foregroundStyle(Color.ink)
+          Text(muscle?.lowercased() ?? "geral")
+            .font(.caption).foregroundStyle(Color.mutedInk)
+        }
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, Space.l).padding(.vertical, Space.s)
+      .contentShape(.rect)
+      .opacity(isFull ? 0.55 : 1)
+    }.buttonStyle(StudyPressStyle())
+  }
+
+  private func row(_ item: ExerciseCatalogItem) -> ExercisePickerRow {
+    let picked = chosen.contains(item.id)
+    let canUnpick = picked && onUnpick != nil && pickedIds.contains(item.id)
+    return ExercisePickerRow(
+      item: item, picked: picked, isFull: isFull,
+      action: { pick(item) },
+      onUnpick: canUnpick ? { unpick(item.id) } : nil)
+  }
+
   /// A folha fica aberta para montar o treino de uma vez. A linha passa a "no
-  /// treino" porque `chosen` chega de novo de quem abriu.
+  /// treino" porque `chosen` chega de novo de quem abriu. Cheio, o toque não
+  /// entra e avisa na hora, em vez de deixar o editor reclamar no "concluir".
   private func pick(_ item: ExerciseCatalogItem) {
     guard !chosen.contains(item.id) else { return }
+    guard !isFull else { return refuse() }
     onPick(item)
+    pickedIds.insert(item.id)
     pickedHere += 1
+    if chosen.count + 1 >= Limits.exerciseCount.upperBound { announceLimit() }
+  }
+
+  private func unpick(_ id: String) {
+    onUnpick?(id)
+    pickedIds.remove(id)
+    pickedHere -= 1
+  }
+
+  private func refuse() {
+    refusals += 1
+    announceLimit()
+  }
+
+  private func announceLimit() {
+    AccessibilityNotification.Announcement("limite de \(Limits.exerciseCount.upperBound) exercícios").post()
   }
 
   private func createCustom() {
@@ -975,7 +1021,9 @@ struct ExercisePicker: View {
       id: ExerciseLibrary.slug(name), name: name,
       muscleGroup: muscle ?? "Geral", equipment: "Livre", imageUrl: nil)
     guard !chosen.contains(item.id) else { return }
+    guard !isFull else { return refuse() }
     onPick(item)
+    pickedIds.insert(item.id)
     pickedHere += 1
     search = ""
   }
@@ -986,6 +1034,7 @@ struct ExercisePicker: View {
     remotePhase = .idle
     let term = search.trimmingCharacters(in: .whitespaces)
     let scope = library
+    let group = muscle
     let client = wger
     let animated = !reduceMotion
     guard term.count >= 3, local.count < 8 else { return }
@@ -994,7 +1043,7 @@ struct ExercisePicker: View {
       try? await Task.sleep(for: .milliseconds(500))
       guard !Task.isCancelled else { return }
       do {
-        let found = try await client.search(term, excluding: scope)
+        let found = try await client.search(term, muscle: group, excluding: scope)
         guard !Task.isCancelled else { return }
         withAnimation(animated ? Motion.subtleEntrance : nil) {
           remote = found
@@ -1030,12 +1079,18 @@ private struct MuscleChip: View {
 }
 
 struct ExercisePickerRow: View {
+  @Environment(\.accent) private var accent
   let item: ExerciseCatalogItem
   let picked: Bool
+  /// O treino chegou ao limite: o "+" apaga, mas o toque continua chegando
+  /// para o seletor avisar.
+  var isFull = false
   let action: () -> Void
+  /// Presente só nos escolhidos nesta abertura do seletor: tocar de novo tira.
+  var onUnpick: (() -> Void)?
 
   var body: some View {
-    Button(action: action) {
+    Button(action: onUnpick ?? action) {
       HStack(spacing: Space.m) {
         ExerciseThumb(imageUrl: item.imageUrl, size: 56)
         VStack(alignment: .leading, spacing: 3) {
@@ -1048,25 +1103,38 @@ struct ExercisePickerRow: View {
         }
         Spacer(minLength: 8)
         if picked {
-          Text("no treino").font(.caption2.weight(.medium))
-            .foregroundStyle(Color.mutedInk)
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(Color.surfaceMuted, in: .capsule)
-            .accessibilityLabel("\(item.name) já está no treino")
+          HStack(spacing: 4) {
+            if onUnpick != nil {
+              Image(systemName: "checkmark.circle.fill").foregroundStyle(accent.base)
+            }
+            Text("no treino")
+          }
+          .font(.caption2.weight(.medium))
+          .foregroundStyle(Color.mutedInk)
+          .padding(.horizontal, 10).padding(.vertical, 6)
+          .background(Color.surfaceMuted, in: .capsule)
         } else {
           Image(systemName: "plus.circle.fill")
-            .font(.title2).foregroundStyle(Color.ink.opacity(0.75))
+            .font(.title2).foregroundStyle(Color.ink.opacity(isFull ? 0.25 : 0.75))
             .frame(width: 44, height: 44)
             .contentShape(.rect)
-            .accessibilityLabel("Adicionar \(item.name)")
         }
       }
       .padding(.horizontal, Space.l).padding(.vertical, Space.s)
       .contentShape(.rect)
-      .opacity(picked ? 0.55 : 1)
+      .opacity(picked && onUnpick == nil ? 0.55 : 1)
     }
     .buttonStyle(StudyPressStyle())
-    .disabled(picked)
+    .disabled(picked && onUnpick == nil)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(accessibilityLabel)
+  }
+
+  private var accessibilityLabel: String {
+    if picked {
+      return onUnpick == nil ? "\(item.name) já está no treino" : "Tirar \(item.name) do treino"
+    }
+    return "Adicionar \(item.name)"
   }
 }
 
