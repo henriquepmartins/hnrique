@@ -10,6 +10,7 @@ struct WorkoutRecapSheet: View {
   @ScaledMetric(relativeTo: .caption) private var badgeSize = 11.0
   @ScaledMetric(relativeTo: .caption) private var medalSize = 36.0
   @State private var shown = false
+  @State private var history: ExerciseHistoryTarget?
   let recap: WorkoutRecap
 
   var body: some View {
@@ -26,8 +27,13 @@ struct WorkoutRecapSheet: View {
           if !recap.records.isEmpty {
             VStack(spacing: Space.s) {
               ForEach(Array(recap.records.enumerated()), id: \.element.id) { index, item in
-                record(for: item, index: index + 1)
-                  .revealEntrance(index: index + 1, shown: shown)
+                Button {
+                  history = ExerciseHistoryTarget(id: item.exerciseId, name: item.exerciseName)
+                } label: {
+                  record(for: item, index: index + 1)
+                }
+                .buttonStyle(StudyPressStyle()).foregroundStyle(Color.ink)
+                .revealEntrance(index: index + 1, shown: shown)
               }
             }
           }
@@ -50,6 +56,7 @@ struct WorkoutRecapSheet: View {
     }
     .background(Color.canvas.ignoresSafeArea())
     .presentationDetents([.medium, .large])
+    .exerciseHistorySheet(item: $history)
     // Os números entram depois de a folha parar de subir; junto com a subida,
     // a cascata corria por baixo do movimento e ninguém via.
     .task {
@@ -120,7 +127,9 @@ struct WorkoutRecapSheet: View {
       Spacer(minLength: Space.s)
       Text("\(Formatting.trim(record.weightKg)) × \(record.reps)")
         .font(.callout).monospacedDigit().foregroundStyle(Color.mutedInk)
+      HistoryGlyph()
     }
+    .contentShape(.rect)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("recorde de \(record.kind.label), \(record.exerciseName.lowercased())")
     .accessibilityValue(

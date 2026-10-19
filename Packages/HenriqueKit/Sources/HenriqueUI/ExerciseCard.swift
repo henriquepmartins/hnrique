@@ -12,6 +12,7 @@ struct ExerciseCard: View {
   let templateId: String
   let isOpen: Bool
   let onToggle: () -> Void
+  @State private var history: ExerciseHistoryTarget?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -35,6 +36,11 @@ struct ExerciseCard: View {
           Image(systemName: isOpen ? "chevron.up" : "chevron.down").font(.caption2)
         }.padding(16).frame(minHeight: 92).contentShape(.rect)
       }.buttonStyle(StudyPressStyle()).accessibilityValue(isOpen ? "expandido" : "recolhido")
+      .contextMenu {
+        Button("histórico", systemImage: "chart.line.uptrend.xyaxis") {
+          history = ExerciseHistoryTarget(id: exercise.id, name: exercise.name)
+        }
+      }
       if isOpen {
         VStack(spacing: 8) {
           // As mesmas colunas da linha de série, para cada rótulo ficar no meio do campo.
@@ -65,6 +71,7 @@ struct ExerciseCard: View {
       }
     }
     .paperCard(radius: Radius.concentric(24, padding: 6), fill: .surfaceMuted)
+    .exerciseHistorySheet(item: $history)
   }
 
   /// "2 × 6–10" e o raio quando as séries valendo vão à falha.

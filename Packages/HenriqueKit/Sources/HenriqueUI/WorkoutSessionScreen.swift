@@ -75,6 +75,7 @@ struct WorkoutSessionScreen: View {
   /// digitado; salvo, a fonte volta a ser o painel.
   @State private var noteDrafts: [String: String] = [:]
   @FocusState private var noteFocus: String?
+  @State private var history: ExerciseHistoryTarget?
   let onClose: () -> Void
 
   private var hairline: Color { Color.ink.opacity(0.08) }
@@ -182,6 +183,7 @@ struct WorkoutSessionScreen: View {
       }
     }
     .task { if store.dashboard?.workout == nil { onClose() } }
+    .exerciseHistorySheet(item: $history)
   }
 
   private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
@@ -324,9 +326,18 @@ struct WorkoutSessionScreen: View {
         onlyTodayChip(exercise: exercise, date: date, templateId: templateId)
           .padding(.bottom, 12)
       }
-      Text(exercise.name.lowercased())
-        .font(.system(size: nameSize, weight: .semibold)).tracking(nameSize * -0.045)
-        .fixedSize(horizontal: false, vertical: true)
+      HStack(alignment: .top, spacing: Space.s) {
+        Text(exercise.name.lowercased())
+          .font(.system(size: nameSize, weight: .semibold)).tracking(nameSize * -0.045)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        IconButton(title: "histórico", systemImage: "chart.line.uptrend.xyaxis") {
+          history = ExerciseHistoryTarget(id: exercise.id, name: exercise.name)
+        }
+        .tint(Color.mutedInk)
+        .padding(.top, -6).padding(.trailing, -10)
+        .accessibilityIdentifier("sessao.historico.\(exercise.id)")
+      }
       restPicker(exercise).padding(.top, 8)
       header.padding(.top, 18).padding(.bottom, 8)
       VStack(spacing: 2) {

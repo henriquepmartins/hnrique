@@ -11,15 +11,24 @@ struct RecordsCard: View {
   @ScaledMetric(relativeTo: .caption) private var medalSize = 42.0
   let records: [PersonalRecord]
   let today: CalendarDate
+  @State private var history: ExerciseHistoryTarget?
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
       Text("recordes").font(.title3.weight(.medium)).tracking(-0.6)
       VStack(spacing: Space.s) {
-        ForEach(records) { record in row(record) }
+        ForEach(records) { record in
+          Button {
+            history = ExerciseHistoryTarget(id: record.exerciseId, name: record.exerciseName)
+          } label: {
+            row(record)
+          }
+          .buttonStyle(StudyPressStyle()).foregroundStyle(Color.ink)
+        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+    .exerciseHistorySheet(item: $history)
   }
 
   private func row(_ record: PersonalRecord) -> some View {
@@ -39,6 +48,7 @@ struct RecordsCard: View {
           .font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk)
       }
       Spacer(minLength: 0)
+      HistoryGlyph()
     }
     .padding(.horizontal, Space.l).padding(.vertical, 14)
     .frame(maxWidth: .infinity, alignment: .leading)
