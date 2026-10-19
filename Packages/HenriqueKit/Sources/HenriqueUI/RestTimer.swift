@@ -58,10 +58,13 @@ struct RestTimerBar: View {
     next?.summary ?? "última série do treino"
   }
 
+  private var changesExercise: Bool { next.map { $0.exerciseId != rest.exerciseId } ?? false }
+
   private var spokenNext: String {
     guard let next else { return "última série do treino" }
     let kind = next.kind == .prep ? "aquecimento \(next.index)" : "série \(next.index)"
-    return "a seguir, \(next.exerciseName.lowercased()), \(kind), \(Formatting.trim(next.weightKg)) quilos"
+    let load = next.weightKg > 0 ? "\(Formatting.trim(next.weightKg)) quilos por \(next.reps)" : "\(next.reps) repetições"
+    return "a seguir, \(changesExercise ? "outro exercício, " : "")\(next.exerciseName.lowercased()), \(kind), \(load)"
   }
 
   /// O fim de descanso que já passou. Guardar o fim, e não um "acabou", impede
@@ -92,10 +95,17 @@ struct RestTimerBar: View {
           .frame(width: 36, height: 36)
           .accessibilityHidden(true)
         digits
-        Text(nextLine)
+        // A seta marca a troca de aparelho: é a hora de ir até o próximo.
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+          if changesExercise {
+            Image(systemName: "arrow.turn.down.right").fontWeight(.semibold)
+          }
+          Text(nextLine).lineLimit(2)
+        }
           .font(.system(size: nextSize)).monospacedDigit()
-          .foregroundStyle(Color.white.opacity(0.62)).lineLimit(2)
+          .foregroundStyle(Color.white.opacity(0.62))
           .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityElement(children: .ignore)
           .accessibilityLabel(spokenNext)
       }
       WeightedRow(weights: [1, 1, 1.3], spacing: 8) {
