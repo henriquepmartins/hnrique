@@ -568,6 +568,7 @@ struct StudyEmptyState: View {
 }
 
 struct StudyMetric: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .title2) private var valueSize = 24.0
   let value: String
   let caption: String
@@ -578,7 +579,7 @@ struct StudyMetric: View {
         .font(.system(size: valueSize, weight: .semibold))
         .tracking(-valueSize * 0.02)
         .contentTransition(.numericText())
-        .animation(Motion.crossfade, value: value)
+        .animation(reduceMotion ? nil : Motion.crossfade, value: value)
       Text(caption)
         .font(.caption)
         .foregroundStyle(Color.studyInk60)

@@ -80,9 +80,7 @@ struct DayCard: View {
         DaySwapMenu(choices: choices, choose: choose)
       }
     }
-    .animation(
-      reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.35, bounce: 0.15),
-      value: workout?.id)
+    .animation(Motion.resolve(Motion.confirm, reduceMotion), value: workout?.id)
     .sensoryFeedback(.selection, trigger: swaps)
   }
 

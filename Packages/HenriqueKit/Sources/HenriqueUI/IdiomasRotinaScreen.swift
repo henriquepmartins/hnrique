@@ -44,7 +44,7 @@ public struct IdiomasRotinaScreen: View {
           }
         }
       }
-      .animation(.easeOut(duration: 0.25), value: store.routine.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.routine.phase)
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }
@@ -339,7 +339,7 @@ public struct IdiomasRotinaScreen: View {
   private func advance(drills: [LanguageDrill], drill: LanguageDrill) {
     reduce(.advance(total: drills.count), drill: drill, drills: drills)
     if case .drill(let index, _, _, _, _) = session {
-      withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+      withAnimation(reduceMotion ? nil : Motion.entrance) {
         selection = index
       }
     }

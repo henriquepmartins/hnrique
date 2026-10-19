@@ -41,6 +41,7 @@ private enum IdiomasReviewState {
 
 public struct IdiomasRevisarScreen: View {
   @Environment(IdiomasStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   @State private var deck: LanguageReviewQueue?
   @State private var state: IdiomasReviewState = .empty
@@ -62,7 +63,7 @@ public struct IdiomasRevisarScreen: View {
           ready.transition(.opacity)
         }
       }
-      .animation(.easeOut(duration: 0.25), value: store.queue.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.queue.phase)
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }

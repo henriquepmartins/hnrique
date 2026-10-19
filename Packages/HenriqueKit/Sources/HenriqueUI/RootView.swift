@@ -209,6 +209,7 @@ public struct RootView: View {
 /// se a espera passar de meio segundo. O fundo é o da raiz, que já veste a cor
 /// do app escolhido, e é o mesmo da tela de lançamento.
 private struct LaunchCurtain: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var slow = false
 
   var body: some View {
@@ -219,7 +220,7 @@ private struct LaunchCurtain: View {
           ProgressView().controlSize(.large).transition(.opacity)
         }
       }
-      .animation(Motion.crossfade, value: slow)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: slow)
       .task {
         try? await Task.sleep(for: .milliseconds(500))
         slow = true
@@ -440,10 +441,13 @@ private struct AppSwitcher: ViewModifier {
           }
           .padding(.trailing, 14)
           .padding(.bottom, 72)
-          .transition(.scale(scale: 0.88, anchor: .bottomTrailing).combined(with: .opacity))
+          .transition(
+            reduceMotion
+              ? .opacity
+              : .scale(scale: 0.88, anchor: .bottomTrailing).combined(with: .opacity))
         }
       }
-      .animation(reduceMotion ? nil : .snappy(duration: 0.3, extraBounce: 0.2), value: isPresented)
+      .animation(Motion.resolve(Motion.expand, reduceMotion), value: isPresented)
   }
 }
 
