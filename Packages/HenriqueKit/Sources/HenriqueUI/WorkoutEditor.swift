@@ -56,6 +56,7 @@ struct WorkoutEditor: View {
   @Environment(\.accent) private var accent
   @State private var draft: WorkoutDraft
   @State private var step: EditorStep
+  @State private var forward = true
   @State private var isSaving = false
   @State private var appliedRestOverrides = false
   /// O catálogo por id, montado uma vez. Cada tecla no nome roda o body de novo
@@ -79,7 +80,17 @@ struct WorkoutEditor: View {
   }
 
   private var stepAnimation: Animation {
-    reduceMotion ? Motion.plain : Motion.subtleEntrance
+    Motion.resolve(Motion.confirm, reduceMotion)
+  }
+
+  /// O passo novo entra pelo lado para onde se anda. O que sai só apaga: ele
+  /// guarda a transição do último desenho, e na volta deslizaria para o lado
+  /// errado.
+  private var stepTransition: AnyTransition {
+    guard !reduceMotion else { return .opacity }
+    return .asymmetric(
+      insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
+      removal: .opacity)
   }
 
   var body: some View {
@@ -162,18 +173,18 @@ struct WorkoutEditor: View {
       ZStack {
         switch step {
         case .identidade:
-          IdentityStep(draft: $draft).transition(.opacity)
+          IdentityStep(draft: $draft).transition(stepTransition)
         case .cor:
-          WorkoutColorPicker(color: $draft.color).padding(16).transition(.opacity)
+          WorkoutColorPicker(color: $draft.color).padding(16).transition(stepTransition)
         case .dias:
           WorkoutDaysSection(selection: $draft.weekdays, workoutId: workoutId)
-            .padding(16).transition(.opacity)
+            .padding(16).transition(stepTransition)
         case .exercicios:
           ExercisesStep(
             exercises: $draft.exercises, exerciseInfo: $exerciseInfo, catalog: catalog,
             workoutId: workoutId, workoutName: draft.trimmedName, isSaving: isSaving, onDelete: remove
           )
-          .transition(.opacity)
+          .transition(stepTransition)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -199,6 +210,7 @@ struct WorkoutEditor: View {
   private func go(to target: EditorStep?) {
     guard let target else { return }
     dismissKeyboard()
+    forward = target.rawValue > step.rawValue
     withAnimation(stepAnimation) { step = target }
   }
 
@@ -333,7 +345,7 @@ private struct ExercisesStep: View {
   }
 
   private var editAnimation: Animation? {
-    reduceMotion ? nil : .spring(duration: 0.25, bounce: 0)
+    reduceMotion ? nil : Motion.confirm
   }
 
   var body: some View {
