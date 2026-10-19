@@ -21,6 +21,26 @@ public struct AssignmentDayMark: Hashable, Sendable {
   public var isComplete: Bool { total > 0 && pending == 0 }
 }
 
+/// O quanto o prazo aperta, para o cartão escolher cor e ícone. "Perto" cobre
+/// hoje e amanhã: até 48 h do instante atual.
+public enum AssignmentUrgency: Hashable, Sendable {
+  case done, overdue, near, later
+}
+
+extension StudyAssignment {
+  /// Vence no instante do prazo, e não no fim do dia: uma entrega das 10:00
+  /// ainda está em dia às 7:00 e já está atrasada às 10:01.
+  public func isOverdue(at now: Date) -> Bool {
+    status != .done && dueAt < now
+  }
+
+  public func urgency(at now: Date) -> AssignmentUrgency {
+    if status == .done { return .done }
+    if dueAt < now { return .overdue }
+    return dueAt.timeIntervalSince(now) <= 48 * 3600 ? .near : .later
+  }
+}
+
 /// A grade mensal das entregas, resolvida a partir da lista inteira. O mês é o
 /// que a view navega. O prazo cai no dia do fuso que o chamador passa, porque
 /// o vencimento é o que o professor marcou em Fortaleza, e não no fuso do
@@ -54,7 +74,7 @@ public struct AssignmentCalendar: Hashable, Sendable {
     let grouped = Dictionary(grouping: assignments) { CalendarDate($0.dueAt, in: calendar) }
     for (date, items) in grouped {
       let done = items.count { $0.status == .done }
-      let overdue = items.count { $0.status != .done && $0.dueAt < now }
+      let overdue = items.count { $0.isOverdue(at: now) }
       marks[date] = AssignmentDayMark(
         date: date, total: items.count, pending: items.count - done, overdue: overdue, done: done)
     }

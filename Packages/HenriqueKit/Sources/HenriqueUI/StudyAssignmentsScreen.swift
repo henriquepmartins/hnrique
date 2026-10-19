@@ -28,8 +28,8 @@ public struct StudyAssignmentsScreen: View {
       .padding(.bottom, 32)
     }
     .studyPage()
-    // O overview manda no relógio da tela. Abrir direto nesta aba, sem passar
-    // pela home, deixaria "atrasada" contando pela data do aparelho.
+    // O overview manda no dia dos rótulos. Abrir direto nesta aba, sem passar
+    // pela home, deixaria "hoje" e "amanhã" contando pela data do aparelho.
     .task {
       async let list: Void = store.loadAssignments()
       async let day: Void = store.loadOverview()
@@ -42,15 +42,15 @@ public struct StudyAssignmentsScreen: View {
     }
   }
 
-  /// O relógio da tela é o meio-dia do dia que o overview trouxe, e não o
-  /// instante do desenho, para "atrasada" não mudar de resposta no meio da tela.
+  /// O dia dos rótulos "hoje" e "amanhã". O atraso não sai daqui: ele compara
+  /// o prazo com o instante atual, e não com o meio-dia deste dia.
   private var today: CalendarDate {
     store.overview.value?.date ?? CalendarDate(Date(), in: StudyFormat.calendar)
   }
 
   @ViewBuilder
   private func content(_ groups: [AssignmentGroup]) -> some View {
-    let now = today.date(in: StudyFormat.calendar)
+    let now = Date()
     let all = groups.flatMap(\.items)
 
     StudyHeading(title: "entregas")
@@ -185,7 +185,7 @@ enum AssignmentFilter: String, Hashable, CaseIterable, Identifiable {
   func matches(_ assignment: StudyAssignment, now: Date) -> Bool {
     switch self {
     case .todas: true
-    case .atrasadas: assignment.status != .done && assignment.dueAt < now
+    case .atrasadas: assignment.isOverdue(at: now)
     case .semana: assignment.status != .done && assignment.dueAt <= now.addingDays(7)
     case .mes: assignment.status != .done && assignment.dueAt <= now.addingDays(30)
     case .feitas: assignment.status == .done
