@@ -312,7 +312,8 @@ public struct IdiomasRotinaScreen: View {
         Button {
           Task {
             await completeAndAdvance(
-              drill: drill, drills: drills, text: texts[drill.id] ?? "", micUsed: false)
+              drill: drill, drills: drills, text: texts[drill.id] ?? "", micUsed: false,
+              rating: rating)
           }
         } label: {
           VStack(spacing: 2) {
@@ -339,12 +340,13 @@ public struct IdiomasRotinaScreen: View {
     session = session.reduce(action, kind: drill.kind, total: drills.count)
   }
 
-  private func completeAndAdvance(drill: LanguageDrill, drills: [LanguageDrill], text: String, micUsed: Bool)
-    async
-  {
+  private func completeAndAdvance(
+    drill: LanguageDrill, drills: [LanguageDrill], text: String, micUsed: Bool,
+    rating: FlashcardRating? = nil
+  ) async {
     completingIds.insert(drill.id)
     defer { completingIds.remove(drill.id) }
-    let saved = await store.complete(drill: drill, text: text, micUsed: micUsed)
+    let saved = await store.complete(drill: drill, text: text, micUsed: micUsed, rating: rating)
     if saved {
       advance(drills: drills, drill: drill)
     } else if !store.conflictDrillIds.contains(drill.id) {

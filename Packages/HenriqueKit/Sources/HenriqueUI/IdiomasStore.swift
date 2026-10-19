@@ -122,9 +122,10 @@ public final class IdiomasStore {
   /// grava duas vezes. Sem repetição do lado do aparelho: falhou, quem tenta de
   /// novo é quem está treinando, no botão da tela.
   @discardableResult
-  public func complete(drill: LanguageDrill, text: String, micUsed: Bool, attemptId: UUID = UUID())
-    async -> Bool
-  {
+  public func complete(
+    drill: LanguageDrill, text: String, micUsed: Bool, rating: FlashcardRating? = nil,
+    attemptId: UUID = UUID()
+  ) async -> Bool {
     if let running = tailsByAttempt[attemptId] { return await running.value }
     completedDrillIds.insert(drill.id)
     conflictDrillIds.remove(drill.id)
@@ -135,7 +136,8 @@ public final class IdiomasStore {
       guard self.sessionID == generation, !Task.isCancelled else { return false }
       do {
         _ = try await self.client.completeLanguageDrill(
-          LanguageCompleteInput(attemptId: attemptId, drillId: drill.id, text: text, micUsed: micUsed))
+          LanguageCompleteInput(
+            attemptId: attemptId, drillId: drill.id, text: text, micUsed: micUsed, rating: rating))
         guard self.sessionID == generation, !Task.isCancelled else { return false }
         self.finishedDrillIds.append(drill.id)
         self.banner = nil

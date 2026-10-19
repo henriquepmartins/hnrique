@@ -256,8 +256,9 @@ public struct LanguageCompleteInput: Hashable, Sendable, Encodable {
   public var drillId: String
   public var text: String
   public var micUsed: Bool
-  /// Só a revisão manda nota; a rotina manda texto e microfone. Ausente sai do
-  /// corpo em vez de ir nulo, como o resto das entradas do app.
+  /// A revisão manda nota. A rotina manda texto e microfone, e a nota só
+  /// quando a correção da IA não veio. Ausente sai do corpo em vez de ir nulo,
+  /// como o resto das entradas do app.
   public var rating: FlashcardRating?
   /// O dia do aparelho. O servidor contava pelo dia em UTC, e o treino feito
   /// às 22 h de Fortaleza caía no dia seguinte.
