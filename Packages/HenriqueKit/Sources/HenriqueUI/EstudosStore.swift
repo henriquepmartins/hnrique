@@ -175,7 +175,7 @@ public final class EstudosStore {
       return detail
     } catch {
       guard generation == sessionID, !(error is CancellationError) else { return nil }
-      await handle(error)
+      await handle(error, reportsInline: true)
       return nil
     }
   }
@@ -210,6 +210,7 @@ public final class EstudosStore {
       guard generation == sessionID else { return }
       apply(saved)
       banner = nil
+      persistSnapshot()
     } catch {
       guard generation == sessionID else { return }
       apply(assignment)
@@ -228,14 +229,16 @@ public final class EstudosStore {
       return page
     } catch {
       guard generation == sessionID, !(error is CancellationError) else { return nil }
-      await handle(error)
+      await handle(error, reportsInline: true)
       return nil
     }
   }
 
   @discardableResult
   public func saveNotebookPage(_ input: SaveNotebookPageInput) async throws -> NotebookPage {
-    let page = try await mutate { try await self.client.saveNotebookPage(input) }
+    let page = try await mutate(reportsInline: true) {
+      try await self.client.saveNotebookPage(input)
+    }
     remember(page)
     return page
   }
@@ -276,13 +279,13 @@ public final class EstudosStore {
 
   @discardableResult
   public func saveNote(_ input: SaveNoteInput) async throws -> StudyNote {
-    try await mutate { try await self.client.saveStudyNote(input) }
+    try await mutate(reportsInline: true) { try await self.client.saveStudyNote(input) }
   }
 
   /// `expectedDueAt` leva o vencimento que a tela mostrou. Se o cartão já mudou
   /// em outro aparelho, o servidor responde 409 em vez de reagendar duas vezes.
   public func grade(card: Flashcard, rating: FlashcardRating) async throws -> GradeResult {
-    let result = try await mutate {
+    let result = try await mutate(reportsInline: true) {
       try await self.client.gradeFlashcard(
         GradeFlashcardInput(id: card.id, rating: rating, expectedDueAt: card.dueAt))
     }
@@ -303,6 +306,7 @@ public final class EstudosStore {
       pending.bySubject.removeAll { $0.count == 0 }
       queue = .ready(pending)
     }
+    persistSnapshot()
     return result
   }
 
@@ -394,14 +398,20 @@ public final class EstudosStore {
     }
   }
 
-  private func mutate<Value: Sendable>(_ work: () async throws -> Value) async throws -> Value {
+  /// `reportsInline` é para quem já mostra a falha na própria tela. O alerta
+  /// por cima repetiria o mesmo aviso; só a sessão caída continua tratada aqui.
+  private func mutate<Value: Sendable>(
+    reportsInline: Bool = false, _ work: () async throws -> Value
+  ) async throws -> Value {
     let generation = sessionID
     do {
       let value = try await work()
       if generation == sessionID { banner = nil }
       return value
     } catch {
-      if generation == sessionID, !(error is CancellationError) { await handle(error) }
+      if generation == sessionID, !(error is CancellationError) {
+        await handle(error, reportsInline: reportsInline)
+      }
       throw error
     }
   }
@@ -449,14 +459,14 @@ public final class EstudosStore {
     notebooks = .ready(list)
   }
 
-  private func handle(_ error: any Error) async {
+  private func handle(_ error: any Error, reportsInline: Bool = false) async {
     if case APIError.unauthorized = error {
       reset()
       banner = "sessão expirou"
       await onUnauthorized?()
       return
     }
-    banner = Self.message(for: error)
+    if !reportsInline { banner = Self.message(for: error) }
   }
 
   private static func message(for error: any Error) -> String {
