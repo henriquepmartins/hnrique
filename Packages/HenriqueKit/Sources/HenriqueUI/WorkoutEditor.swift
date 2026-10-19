@@ -18,20 +18,33 @@ enum EditorStep: Int, CaseIterable, Hashable {
   var previous: EditorStep? { EditorStep(rawValue: rawValue - 1) }
   var next: EditorStep? { EditorStep(rawValue: rawValue + 1) }
 
-  /// O que o passo exige antes de salvar. Cor e dias aceitam qualquer valor:
-  /// a cor sempre existe e treino sem dia é permitido.
-  func isSatisfied(by draft: WorkoutDraft) -> Bool {
+  /// O que falta para o passo valer, na frase que a tela mostra. Nulo quando
+  /// não falta nada. Cor e dias aceitam qualquer valor: a cor sempre existe e
+  /// treino sem dia é permitido. O foco pode ficar vazio, porque o salvar
+  /// preenche com os grupos dos exercícios.
+  func missing(in draft: WorkoutDraft) -> String? {
     switch self {
     case .identidade:
-      Limits.workoutNameLength.contains(draft.trimmedName.count)
-        && Limits.workoutFocusLength.contains(draft.trimmedFocus.count)
+      if !Limits.workoutNameLength.contains(draft.trimmedName.count) { return "nome com 2 letras ou mais" }
+      if !draft.trimmedFocus.isEmpty, !Limits.workoutFocusLength.contains(draft.trimmedFocus.count) {
+        return "foco com 2 letras ou mais"
+      }
+      return nil
     case .cor, .dias:
-      true
+      return nil
     case .exercicios:
-      Limits.exerciseCount.contains(draft.exercises.count)
-        && draft.exercises.allSatisfy { $0.repsMin <= $0.repsMax && $0.startingWeightKg >= 0 }
+      if draft.exercises.isEmpty { return "adicione um exercício" }
+      if !Limits.exerciseCount.contains(draft.exercises.count) {
+        return "até \(Limits.exerciseCount.upperBound) exercícios"
+      }
+      if !draft.exercises.allSatisfy({ $0.repsMin <= $0.repsMax && $0.startingWeightKg >= 0 }) {
+        return "confira as repetições"
+      }
+      return nil
     }
   }
+
+  func isSatisfied(by draft: WorkoutDraft) -> Bool { missing(in: draft) == nil }
 }
 
 /// O treino em edição, antes de virar `SaveWorkoutInput`.
@@ -46,7 +59,6 @@ struct WorkoutDraft: Hashable {
   var trimmedFocus: String { focus.trimmingCharacters(in: .whitespaces) }
   /// O servidor exige o campo; ele sai das séries em vez de ser digitado.
   var estimatedMinutes: Int { WorkoutEstimate.minutes(plan: exercises) }
-  var canSave: Bool { EditorStep.allCases.allSatisfy { $0.isSatisfied(by: self) } }
 }
 
 struct WorkoutEditor: View {
@@ -59,6 +71,13 @@ struct WorkoutEditor: View {
   @State private var forward = true
   @State private var isSaving = false
   @State private var appliedRestOverrides = false
+  /// O rascunho como abriu. Diferente do atual, fechar pede confirmação.
+  @State private var original: WorkoutDraft?
+  @State private var confirmDiscard = false
+  /// Liga depois de um toque em "avançar" ou "concluir" que não pôde seguir.
+  @State private var showsMissing = false
+  @State private var blocked = 0
+  @State private var saveError: String?
   #if os(iOS)
   /// Mora aqui, e não na lista, para o botão de organizar ficar fixo no topo
   /// enquanto a lista rola embaixo dele.
@@ -107,9 +126,12 @@ struct WorkoutEditor: View {
         .keyboardDone()
     }
     .disabled(isSaving)
-    .interactiveDismissDisabled(isSaving)
+    .interactiveDismissDisabled(isSaving || isDirty)
+    .sensoryFeedback(.error, trigger: blocked)
     .onAppear(perform: applyRestOverrides)
   }
+
+  private var isDirty: Bool { original.map { $0 != draft } ?? false }
 
   /// O descanso ajustado na sessão mora no aparelho até o próximo salvar. O
   /// editor mostra esse valor e manda ele junto.
@@ -121,6 +143,7 @@ struct WorkoutEditor: View {
         draft.exercises[index].restSeconds = chosen
       }
     }
+    original = draft
   }
 
   private var flow: some View {
@@ -129,15 +152,19 @@ struct WorkoutEditor: View {
         // Um x, e não uma seta: a seta de voltar o passo fica logo abaixo, e as
         // duas setas liam como dois botões de voltar.
         RoundButton(systemImage: "xmark", fill: Color.surfaceMuted, ink: Color.ink, label: "fechar") {
-          dismiss()
+          if isDirty { confirmDiscard = true } else { dismiss() }
         }
         .disabled(isSaving)
+        .confirmationDialog("descartar alterações?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+          Button("descartar", role: .destructive) { dismiss() }
+          Button("continuar editando", role: .cancel) {}
+        }
         Spacer()
-        Button("concluir") { save() }
+        Button("concluir", action: attemptSave)
           .buttonStyle(.glassProminent)
           .controlSize(.large)
           .tint(accent.deep)
-          .disabled(!draft.canSave || isSaving)
+          .disabled(isSaving)
       }
       .padding(.horizontal, Space.l)
       .padding(.top, Space.m)
@@ -197,6 +224,22 @@ struct WorkoutEditor: View {
       .padding(.horizontal, 16)
       .padding(.vertical, 12)
 
+      if let saveError {
+        Label(saveError, systemImage: "exclamationmark.triangle.fill")
+          .font(.footnote)
+          .foregroundStyle(.red)
+          .padding(.horizontal, 16)
+          .padding(.bottom, 8)
+          .transition(.opacity)
+      } else if showsMissing, let missing = step.missing(in: draft) {
+        Text(missing)
+          .font(.footnote)
+          .foregroundStyle(Color.mutedInk)
+          .padding(.horizontal, 16)
+          .padding(.bottom, 8)
+          .transition(.opacity)
+      }
+
       ZStack {
         switch step {
         case .identidade:
@@ -226,12 +269,14 @@ struct WorkoutEditor: View {
     .background(Color.canvas)
     .safeAreaInset(edge: .bottom) {
       if let next = step.next {
-        Button("avançar") { go(to: next) }
+        Button("avançar") {
+          if step.isSatisfied(by: draft) { go(to: next) } else { block(at: step) }
+        }
           .buttonStyle(.glass)
           .controlSize(.large)
           .frame(maxWidth: .infinity)
           .padding(16)
-          .disabled(!step.isSatisfied(by: draft) || isSaving)
+          .disabled(isSaving)
       }
     }
   }
@@ -260,6 +305,23 @@ struct WorkoutEditor: View {
     }
   }
 
+  /// "concluir" fica sempre ativo. Faltando algo, leva ao primeiro passo que
+  /// não vale e diz o que falta, em vez de ficar apagado sem explicar.
+  private func attemptSave() {
+    if let target = EditorStep.allCases.first(where: { !$0.isSatisfied(by: draft) }) {
+      block(at: target)
+    } else {
+      save()
+    }
+  }
+
+  private func block(at target: EditorStep) {
+    withAnimation(Motion.resolve(Motion.subtleEntrance, reduceMotion)) { showsMissing = true }
+    blocked += 1
+    if let missing = target.missing(in: draft) { AccessibilityNotification.Announcement(missing).post() }
+    if target != step { go(to: target) }
+  }
+
   private func save() {
     // O valor salvo passa a ser o do aparelho também. Com o servidor antigo,
     // que não guarda descanso, é ele que continua valendo.
@@ -268,13 +330,29 @@ struct WorkoutEditor: View {
     }
     let input = SaveWorkoutInput(
       date: store.selectedDate, workoutTemplateId: workoutId, weekdays: draft.weekdays.sorted(),
-      name: draft.trimmedName, focus: draft.trimmedFocus, estimatedMinutes: draft.estimatedMinutes,
+      name: draft.trimmedName,
+      focus: SaveWorkoutInput.focus(
+        typed: draft.trimmedFocus,
+        muscleGroups: draft.exercises.compactMap { exerciseInfo[$0.exerciseId]?.muscleGroup ?? $0.muscleGroup },
+        name: draft.trimmedName),
+      estimatedMinutes: draft.estimatedMinutes,
       color: draft.color.hex, exercises: draft.exercises)
     isSaving = true
+    saveError = nil
     Task {
       let saved = await store.saveWorkout(input)
       isSaving = false
-      if saved { dismiss() }
+      if saved {
+        dismiss()
+        return
+      }
+      // O alerta do app fica embaixo da folha e não sobe enquanto ela está
+      // aberta, então o erro aparece aqui e sai do banner.
+      let message = store.banner ?? "não deu para salvar"
+      store.banner = nil
+      withAnimation(Motion.resolve(Motion.subtleEntrance, reduceMotion)) { saveError = message }
+      blocked += 1
+      AccessibilityNotification.Announcement(message).post()
     }
   }
 
@@ -337,32 +415,61 @@ private struct WorkoutPreviewRow: View {
 }
 
 private struct IdentityStep: View {
+  private enum Field { case name, focus }
   @Binding var draft: WorkoutDraft
+  @FocusState private var focused: Field?
 
   var body: some View {
     VStack(spacing: 12) {
-      EditorField {
-        TextField("nome", text: $draft.name).submitLabel(.done)
+      EditorField(label: "nome", isFilled: !draft.name.isEmpty) {
+        TextField("nome", text: $draft.name)
+          .focused($focused, equals: .name)
+          .submitLabel(.next)
+          .onSubmit { focused = .focus }
       }
-      EditorField {
-        TextField("foco", text: $draft.focus).submitLabel(.done)
+      EditorField(label: "foco", isFilled: !draft.focus.isEmpty) {
+        TextField("foco", text: $draft.focus)
+          .focused($focused, equals: .focus)
+          .submitLabel(.done)
       }
     }
     .padding(16)
+    .onChange(of: draft.name) { _, new in
+      let cut = new.cut(to: Limits.workoutNameLength)
+      if cut != new { draft.name = cut }
+    }
+    .onChange(of: draft.focus) { _, new in
+      let cut = new.cut(to: Limits.workoutFocusLength)
+      if cut != new { draft.focus = cut }
+    }
+    .task { if draft.name.isEmpty { focused = .name } }
   }
 }
 
 /// O campo branco de canto redondo que o resto do app usa fora do `Form`.
+/// Preenchido, o placeholder some, e o rótulo pequeno em cima diz qual é o
+/// campo.
 private struct EditorField<Content: View>: View {
+  let label: String
+  let isFilled: Bool
   @ViewBuilder let content: Content
 
   var body: some View {
-    content
-      .font(.body)
-      .padding(.horizontal, 16)
-      .frame(minHeight: 52)
-      .background(.white, in: .rect(cornerRadius: 18))
-      .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+    VStack(alignment: .leading, spacing: 2) {
+      if isFilled {
+        Text(label)
+          .font(.caption)
+          .foregroundStyle(Color.mutedInk)
+          .accessibilityHidden(true)
+      }
+      content
+    }
+    .font(.body)
+    .padding(.horizontal, 16)
+    .padding(.vertical, isFilled ? 6 : 0)
+    .frame(minHeight: 52, alignment: .leading)
+    .background(.white, in: .rect(cornerRadius: 18))
+    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
   }
 }
 
@@ -436,9 +543,19 @@ private struct ExercisesStep: View {
           drops += 1
         }
 
-        if !isOrganizing {
+        if exercises.isEmpty {
+          ContentUnavailableView {
+            Label("sem exercícios", systemImage: "dumbbell")
+          } actions: {
+            Button("adicionar", systemImage: "plus", action: pickExercises)
+              .buttonStyle(.glassProminent)
+          }
+          .listRowBackground(Color.clear)
+        } else if !isOrganizing {
+          let isFull = exercises.count >= Limits.exerciseCount.upperBound
           Button("adicionar", systemImage: "plus", action: pickExercises)
-            .disabled(exercises.count >= Limits.exerciseCount.upperBound)
+            .disabled(isFull)
+            .accessibilityHint(isFull ? "limite de \(Limits.exerciseCount.upperBound) exercícios" : "")
         }
       }
 

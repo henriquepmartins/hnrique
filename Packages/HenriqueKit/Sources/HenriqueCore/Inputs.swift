@@ -113,6 +113,18 @@ public struct SaveWorkoutInput: Hashable, Sendable, Encodable {
   }
 }
 
+extension SaveWorkoutInput {
+  /// O foco é opcional para quem digita e obrigatório para o servidor. Vazio,
+  /// vira os grupos musculares dos exercícios. Sem grupo que caiba na faixa,
+  /// vira o nome do treino, que já tem pelo menos dois caracteres.
+  public static func focus(typed: String, muscleGroups: [String], name: String) -> String {
+    let typed = typed.trimmingCharacters(in: .whitespaces)
+    if !typed.isEmpty { return typed }
+    let joined = Set(muscleGroups).sorted().joined(separator: ", ")
+    return Limits.workoutFocusLength.contains(joined.count) ? joined : name.trimmingCharacters(in: .whitespaces)
+  }
+}
+
 extension PlanExercise {
   /// O mesmo exercício com cada campo dentro da faixa do servidor. O topo das
   /// repetições sobe até a base quando ficou abaixo dela, porque o servidor

@@ -166,4 +166,13 @@ struct LimitsTests {
     let none = SetExerciseNoteInput(date: Self.date, workoutTemplateId: "t", exerciseId: "e", note: nil)
     #expect(none.note == nil)
   }
+
+  @Test("foco vazio vira os grupos dos exercícios, e sem grupo vira o nome")
+  func focusFallsBack() {
+    #expect(SaveWorkoutInput.focus(typed: " ombro ", muscleGroups: ["Peito"], name: "A") == "ombro")
+    #expect(
+      SaveWorkoutInput.focus(typed: "", muscleGroups: ["Tríceps", "Peito", "Peito"], name: "A")
+        == "Peito, Tríceps")
+    #expect(SaveWorkoutInput.focus(typed: "  ", muscleGroups: [], name: "pernas ") == "pernas")
+  }
 }
