@@ -104,7 +104,11 @@ public final class FocoStore {
       switched = nil
     }
     if target != nil {
-      Task { await FocoBlockAlarm.requestPermission() }
+      // O aviso agendado antes da permissão no primeiro bloco falhava calado.
+      Task {
+        await FocoBlockAlarm.requestPermission()
+        updateAlarm()
+      }
     }
     guard track.source == .estudos, let subjectId = track.subjectId, let estudos else { return }
     let startedAt = ledger.running?.startedAt
