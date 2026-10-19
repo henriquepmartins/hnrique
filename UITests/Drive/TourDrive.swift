@@ -62,7 +62,12 @@ extension FluxoDrive {
       }
       pages("\(p)-03-editor-4-exercicios", count: 4)
       let add = app.buttons["adicionar"]
-      if found(add, "\(p)-seletor") {
+      // No teto de 12 o editor troca o "adicionar" pelo aviso do limite.
+      let limit = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'limite de'")).firstMatch
+      if limit.exists {
+        scrollToSoft(limit)
+        shot("\(p)-04-editor-limite")
+      } else if found(add, "\(p)-seletor") {
         scrollToSoft(add)
         add.tap()
         settle()

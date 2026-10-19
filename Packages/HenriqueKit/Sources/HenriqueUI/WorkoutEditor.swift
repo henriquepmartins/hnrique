@@ -632,11 +632,12 @@ private struct ExercisesStep: View {
               .buttonStyle(.glassProminent)
           }
           .listRowBackground(Color.clear)
+        } else if !isOrganizing, exercises.count >= Limits.exerciseCount.upperBound {
+          // Desligado, o "adicionar" não dizia por que o toque não fazia nada.
+          Label("limite de \(Limits.exerciseCount.upperBound) exercícios", systemImage: "exclamationmark.circle")
+            .foregroundStyle(Color.mutedInk)
         } else if !isOrganizing {
-          let isFull = exercises.count >= Limits.exerciseCount.upperBound
           Button("adicionar", systemImage: "plus", action: pickExercises)
-            .disabled(isFull)
-            .accessibilityHint(isFull ? "limite de \(Limits.exerciseCount.upperBound) exercícios" : "")
         }
       }
 
