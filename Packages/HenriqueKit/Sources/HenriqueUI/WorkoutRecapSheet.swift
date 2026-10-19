@@ -56,7 +56,7 @@ struct WorkoutRecapSheet: View {
         .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      Button("fechar") { dismiss() }
+      Button("fechar", systemImage: "checkmark") { dismiss() }
         .buttonStyle(.glassProminent).tint(accent.deep).controlSize(.large)
         .frame(maxWidth: .infinity)
         .accessibilityIdentifier("resumo.fechar")

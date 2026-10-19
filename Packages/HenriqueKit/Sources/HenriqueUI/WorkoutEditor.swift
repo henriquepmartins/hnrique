@@ -160,7 +160,7 @@ struct WorkoutEditor: View {
           Button("continuar editando", role: .cancel) {}
         }
         Spacer()
-        Button("concluir", action: attemptSave)
+        Button("concluir", systemImage: "checkmark", action: attemptSave)
           .buttonStyle(.glassProminent)
           .controlSize(.large)
           .tint(accent.deep)
@@ -269,7 +269,7 @@ struct WorkoutEditor: View {
     .background(Color.canvas)
     .safeAreaInset(edge: .bottom) {
       if let next = step.next {
-        Button("avançar") {
+        Button("avançar", systemImage: "arrow.right") {
           if step.isSatisfied(by: draft) { go(to: next) } else { block(at: step) }
         }
           .buttonStyle(.glass)

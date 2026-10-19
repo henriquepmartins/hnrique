@@ -197,7 +197,7 @@ public struct WriteScreen: View {
           StudyCallout(
             icon: "arrow.triangle.2.circlepath", tone: .yellow,
             title: "nota não salva")
-          Button("tentar de novo") { Task { _ = await savePending() } }
+          Button("tentar de novo", systemImage: "arrow.clockwise") { Task { _ = await savePending() } }
             .buttonStyle(.glass)
             .controlSize(.large)
             .tint(Color.studyInk)
