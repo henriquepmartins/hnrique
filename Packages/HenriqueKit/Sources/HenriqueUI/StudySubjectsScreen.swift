@@ -263,16 +263,28 @@ public struct StudySubjectScreen: View {
         icon: "checkmark.circle", title: "sem entregas",
         detail: "as do moodle entram sozinhas na próxima sincronização.")
     } else {
-      StudyDbList {
+      VStack(spacing: 8) {
         ForEach(Array(assignments.enumerated()), id: \.element.id) { index, assignment in
-          StudyDbRow(
-            icon: "checkmark.circle", title: assignment.title,
-            detail: "\(assignment.source) · \(StudyFormat.due(assignment.dueAt, now: now))",
-            end: { StudyPill(tone: assignment.status.pillTone, text: assignment.status.label) }
-          )
+          StudyTaskCard(assignment: assignment, now: now) { next in
+            setStatus(of: assignment, to: next)
+          }
           .firstEntrance(index: index, settled: switched)
         }
       }
+    }
+  }
+
+  /// O detalhe da tela é uma cópia do cache do store. O quadradinho marca aqui
+  /// na hora e relê o cache quando o servidor responde, acertado ou desfeito.
+  private func setStatus(of assignment: StudyAssignment, to status: AssignmentStatus) {
+    guard case .ready(var detail) = state else { return }
+    for index in detail.assignments.indices where detail.assignments[index].id == assignment.id {
+      detail.assignments[index].status = status
+    }
+    state = .ready(detail)
+    Task {
+      await store.setStatus(of: assignment, to: status)
+      if let fresh = await store.subjectDetail(id: id) { state = .ready(fresh) }
     }
   }
 
