@@ -128,15 +128,24 @@ extension PendingSetQueueTests {
       #expect(planWeight(store) == [45, 45])
     }
 
-    @Test("a resposta do servidor antigo também fica com a série mais pesada")
-    func acceptedDashboardKeepsTheTopSet() async {
+    @Test("num dia passado a série mais pesada não mexe no plano")
+    func pastDayLeavesThePlan() async {
       let store = await lojaComPainel()
+      let yesterday = CalendarDate.today.adding(days: -1)
+      let ontem = dashboardDeHoje().replacingOccurrences(of: CalendarDate.today.iso, with: yesterday.iso)
       FakeNetwork.offline = false
-      let outcome = await store.record(
-        key: workKey("supino-reto", 2), weightKg: 38, reps: 10, completed: true, toFailure: true)?
-        .value
-      #expect(outcome == .applied)
-      #expect(planWeight(store) == [42.5, 42.5])
+      FakeNetwork.bodies[.dashboard] = ontem
+      await store.select(date: yesterday)
+      FakeNetwork.offline = true
+      let key = SetKey(
+        date: yesterday, templateId: "tpl-terca", exerciseId: "supino-reto", kind: .work, index: 2)
+      _ = await store.record(key: key, weightKg: 60, reps: 8, completed: true, toFailure: true)?.value
+      #expect(planWeight(store) == [40, 40])
+
+      FakeNetwork.offline = false
+      FakeNetwork.bodies[.recordSet] = ontem
+      #expect(await store.resend())
+      #expect(planWeight(store) == [40, 40])
     }
   }
 }

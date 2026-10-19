@@ -120,7 +120,9 @@ public final class AcademiaStore {
       workout.completionPercent = workout.workSetCount == 0 ? 0
         : Int((Double(workout.completedWorkSetCount) / Double(workout.workSetCount) * 100).rounded())
       value.workout = workout
-      if key.kind == .work, draft.completed {
+      // Só hoje: num dia passado pode existir sessão mais nova, e aí o servidor
+      // não mexe no plano.
+      if key.kind == .work, draft.completed, key.date == .today {
         value = value.applyingTopWorkWeight(exerciseId: key.exerciseId)
       }
     }
@@ -631,9 +633,7 @@ public final class AcademiaStore {
     let input: RecordSetInput = key.kind == .prep
       ? .prep(fields) : .work(fields, toFailure: draft.toFailure)
     return enqueue(pending: pending, affecting: key.date) {
-      let received = try await self.client.recordSet(input)
-      guard key.kind == .work, draft.completed else { return received }
-      return received.applyingTopWorkWeight(exerciseId: key.exerciseId)
+      try await self.client.recordSet(input)
     }
   }
 
