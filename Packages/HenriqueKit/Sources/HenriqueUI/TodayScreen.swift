@@ -163,31 +163,6 @@ public struct TodayScreen: View {
   }
 }
 
-/// O aviso cobre a tela enquanto não há painel. A troca para o conteúdo é só
-/// opacidade, então ele mesmo guarda o `isEmpty` que a anima nos dois usos.
-struct TodayPlaceholder: View {
-  let phase: AcademiaStore.Phase
-  let isEmpty: Bool
-
-  var body: some View {
-    ZStack {
-      if isEmpty {
-        switch phase {
-        case .loading:
-          TodaySkeleton().transition(.opacity)
-        case .failed(let message):
-          ContentUnavailableView(
-            "não carregou", systemImage: "wifi.exclamationmark", description: Text(message))
-            .transition(.opacity)
-        case .idle, .ready:
-          EmptyView()
-        }
-      }
-    }
-    .animation(Motion.crossfade, value: isEmpty)
-  }
-}
-
 /// Esqueleto da primeira pintura: hero e fileiras no formato do conteúdo. O
 /// spinner era a primeira coisa que o dono via; o esqueleto ocupa o mesmo
 /// espaço do que vai entrar, então a troca é só opacidade.
