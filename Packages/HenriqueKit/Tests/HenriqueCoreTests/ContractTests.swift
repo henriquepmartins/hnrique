@@ -277,6 +277,38 @@ struct ContractTests {
     #expect(loaded.set(3) == nil)
   }
 
+  @Test("o histórico do exercício decodifica com a carga e as séries de cada sessão")
+  func decodesExerciseHistory() throws {
+    let json = #"""
+      {"exerciseId": "supino-reto", "exerciseName": "Supino reto",
+       "load": {"exerciseId": "supino-reto", "workWeightKg": 55, "prepWeightKg": null},
+       "entries": [
+         {"date": "2026-10-12", "workoutTemplateId": "tpl-terca", "workoutName": "Empurrar A",
+          "sets": [{"index": 1, "weightKg": 55, "reps": 8}, {"index": 2, "weightKg": 55, "reps": 7}],
+          "topWeightKg": 55, "topReps": 8, "estimatedOneRepMax": 69.67, "volumeKg": 825}]}
+      """#
+    let history = try JSONDecoder.henrique().decode(ExerciseHistory.self, from: Data(json.utf8))
+    #expect(history.load.workWeightKg == 55)
+    #expect(history.load.prepWeightKg == nil)
+    let entry = try #require(history.entries.first)
+    #expect(entry.date == CalendarDate(iso: "2026-10-12"))
+    #expect(entry.workoutName == "Empurrar A")
+    #expect(entry.sets.map(\.reps) == [8, 7])
+    #expect(entry.topWeightKg == 55)
+
+    let point = #"{"date": "2026-10-12", "estimatedOneRepMax": 69.67, "volumeKg": 825, "topWeightKg": 55}"#
+    #expect(try JSONDecoder.henrique().decode(ProgressPoint.self, from: Data(point.utf8)).topWeightKg == 55)
+    #expect(try Self.dashboard().progress.first?.topWeightKg == nil)
+  }
+
+  @Test("o pedido de histórico manda só o exercício")
+  func exerciseHistoryEncodesKeys() throws {
+    let json = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(ExerciseHistoryInput(exerciseId: "supino-reto")))
+        as? [String: Any])
+    #expect(json as NSDictionary == ["exerciseId": "supino-reto"])
+  }
+
   @Test("formato inesperado na carga anterior por série não derruba o exercício")
   func malformedPreviousSets() throws {
     let json = #"{"date": "2026-09-01", "weightKg": 42.5, "reps": [9, 7], "volumeKg": 680, "sets": [1, 2]}"#

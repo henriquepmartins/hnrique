@@ -337,8 +337,51 @@ public struct ProgressPoint: Codable, Hashable, Sendable, Identifiable {
   public var date: CalendarDate
   public var estimatedOneRepMax: Double
   public var volumeKg: Double
+  /// A série valendo mais pesada do dia. Nula no servidor antigo.
+  public var topWeightKg: Double? = nil
 
   public var id: CalendarDate { date }
+}
+
+extension ProgressPoint {
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    date = try container.decode(CalendarDate.self, forKey: .date)
+    estimatedOneRepMax = try container.decode(Double.self, forKey: .estimatedOneRepMax)
+    volumeKg = try container.decode(Double.self, forKey: .volumeKg)
+    topWeightKg = (try? container.decodeIfPresent(Double.self, forKey: .topWeightKg)) ?? nil
+  }
+}
+
+/// A carga do exercício, uma só para todos os treinos que o têm.
+public struct ExerciseLoad: Codable, Hashable, Sendable {
+  public var exerciseId: String
+  public var workWeightKg: Double
+  /// Nulo quando o aquecimento não foi fixado.
+  public var prepWeightKg: Double?
+}
+
+/// Cada sessão em que o exercício teve série valendo feita, em qualquer treino.
+public struct ExerciseHistory: Codable, Hashable, Sendable {
+  public struct Entry: Codable, Hashable, Sendable, Identifiable {
+    public var date: CalendarDate
+    public var workoutTemplateId: String
+    public var workoutName: String
+    /// As valendo feitas, pelo índice.
+    public var sets: [PreviousPrepSets.Set]
+    public var topWeightKg: Double
+    public var topReps: Int
+    public var estimatedOneRepMax: Double
+    public var volumeKg: Double
+
+    public var id: String { "\(date.iso).\(workoutTemplateId)" }
+  }
+
+  public var exerciseId: String
+  public var exerciseName: String
+  public var load: ExerciseLoad
+  /// A mais nova primeiro.
+  public var entries: [Entry]
 }
 
 public struct BodyMeasurement: Codable, Hashable, Sendable, Identifiable {

@@ -174,6 +174,11 @@ public struct DateInput: Hashable, Sendable, Encodable {
   public init(date: CalendarDate) { self.date = date }
 }
 
+public struct ExerciseHistoryInput: Hashable, Sendable, Encodable {
+  public var exerciseId: String
+  public init(exerciseId: String) { self.exerciseId = exerciseId }
+}
+
 public struct DeleteWorkoutInput: Hashable, Sendable, Encodable {
   public var date: CalendarDate
   public var workoutTemplateId: String

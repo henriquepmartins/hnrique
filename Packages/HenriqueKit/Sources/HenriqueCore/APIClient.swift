@@ -54,6 +54,7 @@ public enum Route: String, Sendable {
   case setStreakGoal = "/api/v1/goal/set-streak"
   case addMeasurement = "/api/v1/measurement/add"
   case attendance = "/api/v1/training/attendance"
+  case exerciseHistory = "/api/v1/exercise/history"
   case signIn = "/api/auth/sign-in/username"
   case signOut = "/api/auth/sign-out"
   case studyOverview = "/api/v1/estudos/overview/get"
@@ -188,6 +189,11 @@ public actor APIClient {
     }
     let response: Response = try await call(.attendance, body: input)
     return response.days
+  }
+
+  /// O servidor antigo não tem a rota e responde 404.
+  public func exerciseHistory(exerciseId: String) async throws -> ExerciseHistory {
+    try await call(.exerciseHistory, body: ExerciseHistoryInput(exerciseId: exerciseId))
   }
 
   public func completeOnboarding() async throws {

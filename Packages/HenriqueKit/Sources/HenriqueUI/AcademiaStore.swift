@@ -161,6 +161,11 @@ public final class AcademiaStore {
     let storedAt: Date
   }
   @ObservationIgnored private var dayCache: [CalendarDate: CachedDay] = [:]
+  /// O histórico de cada exercício já buscado. Uma escrita que muda o
+  /// exercício apaga a entrada, e `historyRevision` descarta a busca que
+  /// estava no ar durante a escrita.
+  @ObservationIgnored private var histories: [String: ExerciseHistory] = [:]
+  @ObservationIgnored private var historyRevision = 0
   public private(set) var attendance: [CalendarDate: AttendanceDay] = [:]
   @ObservationIgnored private var attendanceRanges: [ClosedRange<CalendarDate>] = []
   /// Os intervalos que já vieram do servidor nesta sessão. Ao contrário de
@@ -179,6 +184,7 @@ public final class AcademiaStore {
 
   private func invalidateDays() {
     dayCache.removeAll()
+    forgetHistories()
     cancelRead()
   }
 
@@ -191,9 +197,25 @@ public final class AcademiaStore {
 
   private func invalidateAll() {
     dayCache.removeAll()
+    forgetHistories()
     // a escrita muda a frequência; o mapa fica na tela e o próximo mês
     // visitado busca de novo.
     attendanceRanges.removeAll()
+  }
+
+  private func forgetHistories(of exerciseId: String? = nil) {
+    if let exerciseId { histories.removeValue(forKey: exerciseId) } else { histories.removeAll() }
+    historyRevision += 1
+  }
+
+  public func cachedHistory(of exerciseId: String) -> ExerciseHistory? { histories[exerciseId] }
+
+  public func history(of exerciseId: String) async throws -> ExerciseHistory {
+    if let cached = histories[exerciseId] { return cached }
+    let revision = historyRevision
+    let history = try await client.exerciseHistory(exerciseId: exerciseId)
+    if revision == historyRevision { histories[exerciseId] = history }
+    return history
   }
 
   private func remember(_ value: Dashboard) {
@@ -611,6 +633,7 @@ public final class AcademiaStore {
     let pending = PendingSet(key: key, draft: draft, revision: revision, failed: false)
     pendingSets[key] = pending
     saveQueue()
+    forgetHistories(of: key.exerciseId)
     if key.kind == .work {
       if completed && existingDate == nil {
         reopen(workout.id, on: key.date)
@@ -792,6 +815,7 @@ public final class AcademiaStore {
         guard sessionID == mutationSession, !Task.isCancelled else { return .offline }
         forget(pending)
         if let date { invalidate(from: date) } else { invalidateAll() }
+        if let pending { forgetHistories(of: pending.key.exerciseId) }
         if pending != nil { noteAttendance(from: received) }
         remember(received)
         if received.date == selectedDate {
