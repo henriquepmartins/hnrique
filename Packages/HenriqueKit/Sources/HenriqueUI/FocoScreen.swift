@@ -282,7 +282,7 @@ public struct FocoScreen: View {
 
   private func tracksSection(ledger: FocoLedger, today: CalendarDate, now: Date) -> some View {
     VStack(alignment: .leading, spacing: 0) {
-      StudySectionHeading(title: "matérias")
+      StudySectionHeading(title: "matérias", systemImage: "books.vertical")
       StudyDbList {
         ForEach(tracks) { track in
           FocoTrackRow(
@@ -325,7 +325,7 @@ public struct FocoScreen: View {
   private func daySection(_ day: CalendarDate) -> some View {
     let entries = foco.ledger.entries(on: day, calendar: calendar)
     return VStack(alignment: .leading, spacing: 0) {
-      StudySectionHeading(title: dayTitle(day))
+      StudySectionHeading(title: dayTitle(day), systemImage: "list.bullet")
       if entries.isEmpty {
         StudyEmptyState(icon: "timer", title: "nenhuma sessão")
       } else {
@@ -499,7 +499,7 @@ struct FocoGrid: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      StudySectionHeading(title: "últimas 12 semanas")
+      StudySectionHeading(title: "últimas 12 semanas", systemImage: "square.grid.3x3")
       StudyCard {
         HStack(spacing: Space.xs) {
           ForEach(weeks.indices, id: \.self) { column in

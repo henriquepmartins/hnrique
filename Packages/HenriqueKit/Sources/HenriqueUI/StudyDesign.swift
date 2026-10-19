@@ -255,17 +255,26 @@ extension StudyHeading where Trailing == EmptyView {
 
 struct StudySectionHeading: View {
   let title: String
+  let systemImage: String
   var action: (label: String, perform: () -> Void)?
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 12) {
-      Text(title)
-        .font(.title3.weight(.semibold))
-        .tracking(-0.22)
-        .accessibilityAddTraits(.isHeader)
+      Label {
+        Text(title).tracking(-0.22)
+      } icon: {
+        Image(systemName: systemImage).foregroundStyle(.tint)
+      }
+      .font(.title3.weight(.semibold))
+      .accessibilityAddTraits(.isHeader)
       Spacer(minLength: 0)
       if let action {
-        Button(action.label, action: action.perform)
+        Button(action: action.perform) {
+          HStack(spacing: 2) {
+            Text(action.label)
+            Image(systemName: "chevron.right").imageScale(.small)
+          }
+        }
           .font(.footnote.weight(.medium))
           .foregroundStyle(Color.studyInk60)
           .buttonStyle(StudyPressStyle(slop: 13))

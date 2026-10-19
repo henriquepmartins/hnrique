@@ -269,7 +269,7 @@ public struct WriteScreen: View {
   @ViewBuilder private var recent: some View {
     if !notes.isEmpty {
       VStack(alignment: .leading, spacing: 0) {
-        StudySectionHeading(title: "recentes")
+        StudySectionHeading(title: "recentes", systemImage: "clock.arrow.circlepath")
         StudyDbList {
           ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
             StudyDbRow(

@@ -15,7 +15,7 @@ struct RecordsCard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
-      Text("recordes").font(.title3.weight(.medium)).tracking(-0.6)
+      SectionHeading(title: "recordes", systemImage: "trophy")
       VStack(spacing: Space.s) {
         ForEach(records) { record in
           Button {

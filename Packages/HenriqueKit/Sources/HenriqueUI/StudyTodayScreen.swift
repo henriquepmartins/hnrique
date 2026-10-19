@@ -94,7 +94,7 @@ struct StudyTodayPending: View {
   var body: some View {
     let now = Date()
     VStack(alignment: .leading, spacing: 0) {
-      StudySectionHeading(title: "pendências", action: ("ver todas", onAssignments))
+      StudySectionHeading(title: "pendências", systemImage: "tray.full", action: ("ver todas", onAssignments))
         .staggeredEntrance(index: base, isReady: true)
       VStack(spacing: 8) {
         if let sync = overview.lastSync {
@@ -132,7 +132,7 @@ struct StudyTodayContinue: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      StudySectionHeading(title: "continuar")
+      StudySectionHeading(title: "continuar", systemImage: "arrow.forward.circle")
       StudyDbList {
         if overview.reviewCount > 0 {
           StudyDbRow(

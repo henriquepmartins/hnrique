@@ -175,7 +175,7 @@ public struct StudyReviewScreen: View {
   /// isso os dois ficam numa pilha sem espaçamento.
   private func queueList(_ rows: [SubjectCount]) -> some View {
     VStack(spacing: 0) {
-      StudySectionHeading(title: "por matéria")
+      StudySectionHeading(title: "por matéria", systemImage: "books.vertical")
       StudyDbList {
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
           StudyDbRow(
