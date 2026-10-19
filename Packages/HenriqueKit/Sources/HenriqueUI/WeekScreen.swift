@@ -12,7 +12,7 @@ struct WeekScreen: View {
   var body: some View {
     ScrollView {
       if store.dashboard != nil {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: Space.xxl) {
           PlanCalendarCard(
             attendance: store.attendance,
             weekPlan: store.weekPlan,
@@ -26,7 +26,7 @@ struct WeekScreen: View {
             .buttonStyle(.glassProminent)
             .controlSize(.large)
             .subtleEntrance()
-          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
+          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m),
                                    count: textSize.isAccessibilitySize ? 1 : 2), spacing: 6) {
             ForEach(store.weekPlan.inTrainingWeekOrder()) { item in
               WorkoutTile(
@@ -45,8 +45,8 @@ struct WeekScreen: View {
             }
           }
         }
-        .padding(16)
-        .padding(.bottom, 32)
+        .padding(Space.l)
+        .padding(.bottom, Space.page)
       }
     }
     .background(Color.canvas)
@@ -380,7 +380,7 @@ struct PlanExerciseRow: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      HStack(spacing: 12) {
+      HStack(spacing: Space.m) {
         if let onToggle, !isOrganizing {
           Button(action: onToggle) { header.contentShape(.rect) }
             .buttonStyle(StudyPressStyle())
@@ -452,7 +452,7 @@ struct PlanExerciseRow: View {
   }
 
   private var header: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: Space.m) {
       // Organizando, a linha encolhe para caberem muitas na tela: foto menor,
       // nome numa linha e sem o resumo.
       ExerciseThumb(imageUrl: imageUrl, size: isOrganizing ? 36 : 48)
@@ -460,7 +460,7 @@ struct PlanExerciseRow: View {
         Text(name.lowercased()).font(.headline.weight(.semibold)).foregroundStyle(Color.ink)
           .lineLimit(isOrganizing ? 1 : nil)
         if onToggle != nil, !isOrganizing {
-          HStack(spacing: 4) {
+          HStack(spacing: Space.xs) {
             Text(exercise.summary).monospacedDigit()
             if exercise.workToFailure {
               Image(systemName: "bolt.fill").imageScale(.small).foregroundStyle(accent.base)
@@ -519,7 +519,7 @@ private struct PrepWeightRow: View {
   @FocusState private var focused: Bool
 
   var body: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: Space.s) {
       Text("carga do aquecimento").font(.body)
       Spacer(minLength: 8)
       TextField("auto", text: $text)
@@ -561,7 +561,7 @@ private struct RestStepperRow: View {
 
   var body: some View {
     let value = seconds ?? defaultRestSeconds
-    HStack(spacing: 12) {
+    HStack(spacing: Space.m) {
       Text("descanso").font(.body)
       Spacer(minLength: 8)
       Text(restClock(TimeInterval(value))).font(.body.weight(.semibold)).monospacedDigit()
@@ -586,7 +586,7 @@ struct ExerciseStepperRow: View {
   let range: ClosedRange<Int>
 
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: Space.m) {
       Text(label).font(.body)
       Spacer(minLength: 8)
       Text("\(value)").font(.body.weight(.semibold)).monospacedDigit()
@@ -696,7 +696,7 @@ struct ExercisePicker: View {
                   Spacer()
                   Text("em inglês").font(.caption2).foregroundStyle(Color.mutedInk.opacity(0.7))
                 }
-                .padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 4)
+                .padding(.horizontal, Space.l).padding(.top, 18).padding(.bottom, Space.xs)
                 ForEach(Array(remote.enumerated()), id: \.element.id) { index, item in
                   ExercisePickerRow(
                     item: item, picked: chosen.contains(item.id),
@@ -708,15 +708,15 @@ struct ExercisePicker: View {
                 Text("fotos wger.de, CC-BY-SA")
                   .font(.caption2).foregroundStyle(Color.mutedInk.opacity(0.7))
                   .frame(maxWidth: .infinity, alignment: .leading)
-                  .padding(.horizontal, 16).padding(.vertical, 10)
+                  .padding(.horizontal, Space.l).padding(.vertical, 10)
               } else if remotePhase == .loading {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                   ProgressView().controlSize(.small)
                   Text("buscando na wger").font(.caption).foregroundStyle(Color.mutedInk)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(Space.l)
               } else if remotePhase == .failed {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                   Image(systemName: "wifi.exclamationmark")
                     .accessibilityLabel("a wger não respondeu")
                   Spacer(minLength: 8)
@@ -724,14 +724,14 @@ struct ExercisePicker: View {
                     .frame(minHeight: 44)
                 }
                 .font(.subheadline).foregroundStyle(Color.mutedInk)
-                .padding(.horizontal, 16).padding(.vertical, 4)
+                .padding(.horizontal, Space.l).padding(.vertical, Space.xs)
               }
             }
             // Fora do vazio, porque é justo quando a busca não acha nada que
             // dá vontade de criar.
             if canCreate {
               Button { createCustom() } label: {
-                HStack(spacing: 12) {
+                HStack(spacing: Space.m) {
                   RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
                     .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
                   VStack(alignment: .leading, spacing: 2) {
@@ -742,13 +742,13 @@ struct ExercisePicker: View {
                   }
                   Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 8)
+                .padding(.horizontal, Space.l).padding(.vertical, Space.s)
                 .contentShape(.rect)
               }.buttonStyle(StudyPressStyle())
             }
           } header: {
             VStack(spacing: 10) {
-              HStack(spacing: 8) {
+              HStack(spacing: Space.s) {
                 Image(systemName: "magnifyingglass")
                   .foregroundStyle(Color.mutedInk)
                   .padding(.leading, 2)
@@ -767,21 +767,21 @@ struct ExercisePicker: View {
                     .padding(.vertical, -12).padding(.trailing, -10)
                 }
               }
-              .padding(.horizontal, 12).padding(.vertical, 6)
+              .padding(.horizontal, Space.m).padding(.vertical, 6)
               .fieldSurface()
               .padding(.horizontal, Space.l)
               ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: Space.s) {
                   MuscleChip(title: "todos", selected: muscle == nil) { muscle = nil }
                   ForEach(ExerciseLibrary.muscleGroups, id: \.self) { group in
                     MuscleChip(title: group.lowercased(), selected: muscle == group) {
                       muscle = muscle == group ? nil : group
                     }
                   }
-                }.padding(.horizontal, 16).padding(.vertical, 2)
+                }.padding(.horizontal, Space.l).padding(.vertical, 2)
               }
             }
-            .padding(.top, 8).padding(.bottom, 6)
+            .padding(.top, Space.s).padding(.bottom, 6)
             .background(Color.canvas)
           }
         }
@@ -892,7 +892,7 @@ struct ExercisePickerRow: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 12) {
+      HStack(spacing: Space.m) {
         ExerciseThumb(imageUrl: item.imageUrl, size: 56)
         VStack(alignment: .leading, spacing: 3) {
           Text(item.name.lowercased())
@@ -917,7 +917,7 @@ struct ExercisePickerRow: View {
             .accessibilityLabel("Adicionar \(item.name)")
         }
       }
-      .padding(.horizontal, 16).padding(.vertical, 8)
+      .padding(.horizontal, Space.l).padding(.vertical, Space.s)
       .contentShape(.rect)
       .opacity(picked ? 0.55 : 1)
     }

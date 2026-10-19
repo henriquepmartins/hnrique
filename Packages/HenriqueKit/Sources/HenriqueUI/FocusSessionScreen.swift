@@ -49,9 +49,9 @@ public struct FocusSessionScreen: View {
   public var body: some View {
     VStack(spacing: 0) {
       topBar
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Space.l)
       ScrollView {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: Space.xxl) {
           stateSection
           if let banner = store.banner {
             metaLine(banner)
@@ -64,7 +64,7 @@ public struct FocusSessionScreen: View {
           rule
           reviewLink
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, Space.l)
         .padding(.bottom, 40)
       }
       .scrollDismissesKeyboard(.interactively)
@@ -127,7 +127,7 @@ public struct FocusSessionScreen: View {
       title("matéria")
       subjectPicker
         .padding(.top, Space.xxl)
-      StudyWrap(spacing: 8, lineSpacing: 8) {
+      StudyWrap(spacing: Space.s, lineSpacing: Space.s) {
         ForEach([15, 25, 50], id: \.self) { option in
           FocusSessionCapsule(active: option == minutes) {
             minutes = option
@@ -158,12 +158,12 @@ public struct FocusSessionScreen: View {
     case .ready(let list) where list.isEmpty:
       StudyEmptyState(icon: "book", title: "sem matérias", cream: true)
     case .ready(let list):
-      StudyWrap(spacing: 8, lineSpacing: 8) {
+      StudyWrap(spacing: Space.s, lineSpacing: Space.s) {
         ForEach(list) { item in
           FocusSessionCapsule(active: item.id == pickedSubject?.id, leadingGlyph: true) {
             pickedSubjectId = item.id
           } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.s) {
               StudyDot(color: item.color)
               Text(item.name)
             }
@@ -207,9 +207,9 @@ public struct FocusSessionScreen: View {
         .accessibilityValue(run.isPaused ? "pausado" : "")
       if let target = run.target {
         progressBar(fraction: min(1, elapsed / target))
-          .padding(.top, 24)
+          .padding(.top, Space.xxl)
       }
-      HStack(spacing: 12) {
+      HStack(spacing: Space.m) {
         Text("\(StudyFormat.minutes(Int(elapsed / 60))) feitos")
         Spacer(minLength: 0)
         if let remaining, !run.isPaused {
@@ -220,7 +220,7 @@ public struct FocusSessionScreen: View {
       .monospacedDigit()
       .foregroundStyle(Color.studyCream50)
       .padding(.top, 10)
-      StudyWrap(spacing: 8, lineSpacing: 8) {
+      StudyWrap(spacing: Space.s, lineSpacing: Space.s) {
         FocusSessionCapsule(leadingGlyph: true) {
           if run.isPaused { foco.resume() } else { foco.pause() }
         } label: {
@@ -270,7 +270,7 @@ public struct FocusSessionScreen: View {
 
   private var noteCard: some View {
     VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 12) {
+      HStack(spacing: Space.m) {
         StudyEyebrow("nota", cream: true)
         Spacer(minLength: 0)
         if let noteTrack { StudyPill(tone: .cream, text: noteTrack) }
@@ -285,7 +285,7 @@ public struct FocusSessionScreen: View {
             Text("nota")
               .font(.system(size: rowSize))
               .foregroundStyle(Color.studyCream50)
-              .padding(.top, 8)
+              .padding(.top, Space.s)
               .padding(.leading, 5)
               .allowsHitTesting(false)
           }
@@ -293,12 +293,12 @@ public struct FocusSessionScreen: View {
         .disabled(savingNote || (phase == .done && noteSaved))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(16)
+    .padding(Space.l)
     .background(Color.studyOffBlack, in: .rect(cornerRadius: StudyRadius.outer))
   }
 
   private var noteRetry: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Space.m) {
       metaLine("nota não salva")
       FocusSessionCapsule(leadingGlyph: true, action: { Task { await retryNote() } }) {
         Label("tentar de novo", systemImage: "arrow.clockwise")
@@ -312,7 +312,7 @@ public struct FocusSessionScreen: View {
       close()
       onReview()
     } label: {
-      HStack(spacing: 12) {
+      HStack(spacing: Space.m) {
         Text("revisar cartões")
           .font(.system(size: rowSize))
           .foregroundStyle(Color.studyCream)
@@ -485,7 +485,7 @@ private struct FocusSessionCapsule<Label: View>: View {
         .foregroundStyle(active ? Color.studyBlack : Color.studyCream)
         .padding(.vertical, 10)
         .padding(.leading, leadingGlyph ? 18 : 20)
-        .padding(.trailing, 20)
+        .padding(.trailing, Space.xl)
         .frame(minHeight: 44)
         .background(active ? Color.studyCream : Color.studyOffBlack, in: .capsule)
         .overlay(Capsule().strokeBorder(active ? .clear : Color.white.opacity(0.08)))
@@ -511,7 +511,7 @@ private struct FocusSessionGradientButton: View {
       .foregroundStyle(Color.studyCream)
       .padding(.vertical, 10)
       .padding(.leading, 18)
-      .padding(.trailing, 20)
+      .padding(.trailing, Space.xl)
       .frame(minHeight: 44)
       .overlay(Capsule().strokeBorder(focusSessionGreen, lineWidth: 1.5))
       .contentShape(.capsule)

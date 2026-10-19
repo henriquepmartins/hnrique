@@ -181,13 +181,13 @@ struct WorkoutEditor: View {
         // A 62% a pasta, o seletor e o título passavam da altura da folha e
         // empurravam o "fechar" para cima só neste passo.
         .containerRelativeFrame(.horizontal) { width, _ in width * 0.54 }
-        .padding(.top, 8)
+        .padding(.top, Space.s)
         .accessibilityHidden(true)
         .transition(.opacity)
       } else {
         WorkoutPreviewRow(name: displayName, tone: draft.color.tone)
-          .padding(.horizontal, 16)
-          .padding(.top, 12)
+          .padding(.horizontal, Space.l)
+          .padding(.top, Space.m)
           .transition(.opacity)
       }
 
@@ -225,22 +225,22 @@ struct WorkoutEditor: View {
         }
         #endif
       }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 12)
+      .padding(.horizontal, Space.l)
+      .padding(.vertical, Space.m)
 
       if let saveError {
         Label(saveError, systemImage: "exclamationmark.triangle.fill")
           .font(.footnote)
           .foregroundStyle(Color.danger)
-          .padding(.horizontal, 16)
-          .padding(.bottom, 8)
+          .padding(.horizontal, Space.l)
+          .padding(.bottom, Space.s)
           .transition(.opacity)
       } else if showsMissing, let missing = step.missing(in: draft) {
         Text(missing)
           .font(.footnote)
           .foregroundStyle(Color.mutedInk)
-          .padding(.horizontal, 16)
-          .padding(.bottom, 8)
+          .padding(.horizontal, Space.l)
+          .padding(.bottom, Space.s)
           .transition(.opacity)
       }
 
@@ -249,10 +249,10 @@ struct WorkoutEditor: View {
         case .identidade:
           IdentityStep(draft: $draft).transition(stepTransition)
         case .cor:
-          WorkoutColorPicker(color: $draft.color).padding(16).transition(stepTransition)
+          WorkoutColorPicker(color: $draft.color).padding(Space.l).transition(stepTransition)
         case .dias:
           WorkoutDaysSection(selection: $draft.weekdays, workoutId: workoutId)
-            .padding(16).transition(stepTransition)
+            .padding(Space.l).transition(stepTransition)
         case .exercicios:
           ScrollViewReader { proxy in
             ExercisesStep(
@@ -279,7 +279,7 @@ struct WorkoutEditor: View {
           .buttonStyle(.glass)
           .controlSize(.large)
           .frame(maxWidth: .infinity)
-          .padding(16)
+          .padding(Space.l)
           .disabled(isSaving)
       }
     }
@@ -405,7 +405,7 @@ private struct WorkoutPreviewRow: View {
   let tone: WorkoutTone
 
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: Space.m) {
       RoundedRectangle(cornerRadius: 10)
         .fill(tone.top)
         .frame(width: 32, height: 32)
@@ -415,7 +415,7 @@ private struct WorkoutPreviewRow: View {
         .lineLimit(1)
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 12)
+    .padding(.horizontal, Space.m)
     .frame(height: 56)
     .fieldSurface()
     .accessibilityHidden(true)
@@ -428,7 +428,7 @@ private struct IdentityStep: View {
   @FocusState private var focused: Field?
 
   var body: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: Space.m) {
       EditorField(label: "nome", isFilled: !draft.name.isEmpty) {
         TextField("nome", text: $draft.name)
           .focused($focused, equals: .name)
@@ -441,7 +441,7 @@ private struct IdentityStep: View {
           .submitLabel(.done)
       }
     }
-    .padding(16)
+    .padding(Space.l)
     .onChange(of: draft.name) { _, new in
       let cut = new.cut(to: Limits.workoutNameLength)
       if cut != new { draft.name = cut }
@@ -473,7 +473,7 @@ private struct EditorField<Content: View>: View {
       content
     }
     .font(.body)
-    .padding(.horizontal, 16)
+    .padding(.horizontal, Space.l)
     .padding(.vertical, isFilled ? 6 : 0)
     .frame(minHeight: 52, alignment: .leading)
     .fieldSurface()
@@ -629,11 +629,11 @@ struct WorkoutDaysSection: View {
 
   var body: some View {
     let handoffs = WeekdayOwners(plan: store.weekPlan, excluding: workoutId).handoffs(to: selection)
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Space.m) {
       // Nos tamanhos de acessibilidade sete círculos não cabem numa linha. Em
       // quatro colunas cada círculo cresce com o texto e a semana quebra em duas.
       LazyVGrid(
-        columns: Array(repeating: GridItem(.flexible(), spacing: 4),
+        columns: Array(repeating: GridItem(.flexible(), spacing: Space.xs),
                        count: textSize.isAccessibilitySize ? 4 : 7),
         spacing: 8
       ) {
@@ -682,7 +682,7 @@ private struct WeekdayToggle: View {
             .lineLimit(1)
             .minimumScaleFactor(0.5)
             .offset(y: -1)
-            .padding(4)
+            .padding(Space.xs)
         }
         .aspectRatio(1, contentMode: .fit)
         .frame(maxWidth: .infinity, minHeight: 44)
@@ -715,11 +715,11 @@ extension View {
   #Preview("Editor, dias") { WorkoutEditorPreview(step: .dias) }
   #Preview("Editor, exercícios") { WorkoutEditorPreview(step: .exercicios) }
   #Preview("Card de pasta") {
-    HStack(spacing: 12) {
+    HStack(spacing: Space.m) {
       WorkoutFolderCard(name: "peito e tríceps", tone: .at(0), hasDays: true)
       WorkoutFolderCard(name: "pernas", tone: .at(1), hasDays: false)
     }
-    .padding(16)
+    .padding(Space.l)
     .background(Color.canvas)
   }
 

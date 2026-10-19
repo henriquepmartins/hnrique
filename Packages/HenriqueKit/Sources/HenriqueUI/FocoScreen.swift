@@ -104,7 +104,7 @@ public struct FocoScreen: View {
     ScrollView {
       // Cada tick redesenha só o que mostra segundos. A grade muda no máximo a
       // cada minuto, e o título e a lista de hoje só quando o registro muda.
-      VStack(alignment: .leading, spacing: 20) {
+      VStack(alignment: .leading, spacing: Space.xl) {
         StudyHeading(title: "foco")
           .staggeredEntrance(index: 0, isReady: true)
         FocoTicker(since: todayAnchor) { now in
@@ -132,16 +132,16 @@ public struct FocoScreen: View {
         daySection(selectedDay ?? CalendarDate(.now, in: calendar))
           .staggeredEntrance(index: 5, isReady: true)
       }
-      .padding(.horizontal, 16)
-      .padding(.bottom, 32)
+      .padding(.horizontal, Space.l)
+      .padding(.bottom, Space.page)
     }
     .refreshable { await foco.sync() }
     .studyPage()
     .overlay(alignment: .bottom) {
       if let entry = foco.undoable {
         FocoUndoToast(entry: entry) { foco.undoRemove() }
-          .padding(.horizontal, 16)
-          .padding(.bottom, 12)
+          .padding(.horizontal, Space.l)
+          .padding(.bottom, Space.m)
           .transition(.move(edge: .bottom).combined(with: .opacity))
       }
     }
@@ -171,7 +171,7 @@ public struct FocoScreen: View {
     let fraction = min(1, seconds / goal)
     let percent = Int((seconds / goal * 100).rounded(.down))
     return StudyCard {
-      VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: Space.m) {
         Text.clock(FocoFormat.clock(seconds))
           .font(.system(size: clockSize, weight: .semibold).leading(.tight))
           .tracking(-clockSize * 0.03)
@@ -192,7 +192,7 @@ public struct FocoScreen: View {
             ForEach(1...8, id: \.self) { hours in Text("\(hours) h").tag(hours) }
           }
         } label: {
-          HStack(spacing: 4) {
+          HStack(spacing: Space.xs) {
             Text("\(percent)% de \(FocoFormat.short(minutes: ledger.dailyGoalMinutes))")
               .monospacedDigit()
               .contentTransition(.numericText())
@@ -236,11 +236,11 @@ public struct FocoScreen: View {
     // rouba a largura e a linha de baixo quebra em três.
     let layout =
       dynamicTypeSize.isAccessibilitySize
-      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-      : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.s))
+      : AnyLayout(HStackLayout(alignment: .center, spacing: Space.m))
     return StudyCard {
       layout {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: Space.m) {
           Image(systemName: "flame.fill")
             .font(.system(size: 26))
             .foregroundStyle(done ? Color.studyCoral : Color.studyInk20)
@@ -302,7 +302,7 @@ public struct FocoScreen: View {
           }
         case .failed(let message):
           StudyFailedState(message: message) { Task { await estudos.loadSubjects(force: true) } }
-            .padding(.vertical, 8)
+            .padding(.vertical, Space.s)
         case .ready:
           EmptyView()
         }
@@ -388,7 +388,7 @@ struct FocoDayBand: View {
   let shares: [(name: String, color: String, fraction: Double)]
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: Space.s) {
       GeometryReader { proxy in
         HStack(spacing: 2) {
           ForEach(shares.indices, id: \.self) { index in
@@ -401,9 +401,9 @@ struct FocoDayBand: View {
       .frame(height: 6)
       .clipShape(.capsule)
       // Sem a legenda a faixa lia como uma segunda barra de meta, cheia.
-      StudyWrap(spacing: 12, lineSpacing: 4) {
+      StudyWrap(spacing: Space.m, lineSpacing: Space.xs) {
         ForEach(shares.indices, id: \.self) { index in
-          HStack(spacing: 4) {
+          HStack(spacing: Space.xs) {
             StudyDot(color: shares[index].color)
             Text("\(shares[index].name) \(Int((shares[index].fraction * 100).rounded()))%")
               .monospacedDigit()
@@ -413,7 +413,7 @@ struct FocoDayBand: View {
       .font(.caption)
       .foregroundStyle(Color.studyInk60)
     }
-    .padding(.top, 4)
+    .padding(.top, Space.xs)
     .accessibilityElement(children: .combine)
   }
 }
@@ -427,7 +427,7 @@ struct FocoTrackRow: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 12) {
+      HStack(spacing: Space.m) {
         ZStack {
           if isRunning && !reduceMotion {
             FocoPulseRing(color: Color(hexString: track.color))
@@ -501,9 +501,9 @@ struct FocoGrid: View {
     VStack(alignment: .leading, spacing: 0) {
       StudySectionHeading(title: "últimas 12 semanas")
       StudyCard {
-        HStack(spacing: 4) {
+        HStack(spacing: Space.xs) {
           ForEach(weeks.indices, id: \.self) { column in
-            VStack(spacing: 4) {
+            VStack(spacing: Space.xs) {
               ForEach(0..<7, id: \.self) { row in
                 if let day = weeks[column][row] {
                   cell(day)
@@ -578,13 +578,13 @@ struct FocoTodayCard: View {
 
   var body: some View {
     StudyCard {
-      VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: Space.m) {
         FocoTicker(since: todayAnchor) { now in
           let ledger = foco.ledger
           let seconds = ledger.seconds(on: CalendarDate(now, in: calendar), now: now, calendar: calendar)
           let streak = ledger.streak(now: now, calendar: calendar)
-          VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
+          VStack(alignment: .leading, spacing: Space.m) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.m) {
               Text.clock(FocoFormat.clock(seconds))
                 .font(.system(size: clockSize, weight: .semibold).leading(.tight))
                 .tracking(-clockSize * 0.03)
@@ -592,7 +592,7 @@ struct FocoTodayCard: View {
                 .animation(reduceMotion ? nil : Motion.roll, value: Int(seconds))
                 .accessibilityLabel("\(FocoFormat.spoken(seconds)) hoje")
               Spacer(minLength: 0)
-              HStack(spacing: 4) {
+              HStack(spacing: Space.xs) {
                 Image(systemName: "flame.fill")
                   .foregroundStyle(streak.isTodayDone ? Color.studyCoral : Color.studyInk20)
                   .animation(reduceMotion ? nil : Motion.crossfade, value: streak.isTodayDone)
@@ -616,7 +616,7 @@ struct FocoTodayCard: View {
         .buttonStyle(.glassProminent)
         .controlSize(.large)
         .tint(.studyBlue)
-        .padding(.top, 4)
+        .padding(.top, Space.xs)
       }
     }
     .task { await foco.syncIfStale() }
@@ -630,7 +630,7 @@ struct FocoUndoToast: View {
   let undo: () -> Void
 
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: Space.m) {
       Label("sessão de \(entry.track.name) apagada", systemImage: "trash")
         .font(.subheadline)
         .lineLimit(2)
@@ -640,8 +640,8 @@ struct FocoUndoToast: View {
         .font(.subheadline.weight(.semibold))
         .accessibilityIdentifier("foco.desfazer")
     }
-    .padding(.leading, 16)
-    .padding(.trailing, 8)
+    .padding(.leading, Space.l)
+    .padding(.trailing, Space.s)
     .padding(.vertical, 6)
     .frame(minHeight: 48)
     .glassEffect(in: .rect(cornerRadius: 24))

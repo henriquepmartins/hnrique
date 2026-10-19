@@ -150,7 +150,7 @@ struct WorkoutSessionScreen: View {
                 rest: rest, next: store.nextSet(after: rest),
                 onAdjust: { store.adjustRest(by: $0) }, onDismiss: { store.endRest() }
               )
-              .padding(.horizontal, 12).padding(.bottom, 12)
+              .padding(.horizontal, Space.m).padding(.bottom, Space.m)
               .transition(.move(edge: .bottom).combined(with: .opacity))
             }
           }
@@ -264,7 +264,7 @@ struct WorkoutSessionScreen: View {
             .labelStyle(.titleAndIcon)
             .font(.system(size: actionSize, weight: .medium))
             .foregroundStyle(complete ? Color.white : Color.ink)
-            .padding(.horizontal, 16).frame(minHeight: 44)
+            .padding(.horizontal, Space.l).frame(minHeight: 44)
             .background(complete ? accent.base : .white, in: .capsule)
             .overlay(Capsule().strokeBorder(complete ? .clear : hairline))
             .animation(glide, value: complete)
@@ -305,7 +305,7 @@ struct WorkoutSessionScreen: View {
         .frame(height: 8)
       }
     }
-    .padding(.top, 4).padding(.horizontal, 16).padding(.bottom, 12)
+    .padding(.top, Space.xs).padding(.horizontal, Space.l).padding(.bottom, Space.m)
     .background {
       // A versão possível do `backdrop-filter: blur(20px)` do board. O material
       // desfoca o que rola por baixo e a tinta do papel devolve a cor.
@@ -352,7 +352,7 @@ struct WorkoutSessionScreen: View {
             .background(Color.surfaceMuted, in: .capsule)
         }
       }
-      .padding(.horizontal, 18).padding(.vertical, 16)
+      .padding(.horizontal, 18).padding(.vertical, Space.l)
       .frame(maxWidth: .infinity, alignment: .leading)
       .paperCard(radius: Radius.tile)
       .contentShape(.rect)
@@ -378,7 +378,7 @@ struct WorkoutSessionScreen: View {
     return VStack(alignment: .leading, spacing: 0) {
       if exercise.isFromSession {
         onlyTodayChip(exercise: exercise, date: date, templateId: templateId)
-          .padding(.bottom, 12)
+          .padding(.bottom, Space.m)
       }
       HStack(alignment: .top, spacing: Space.s) {
         Text(exercise.name.lowercased())
@@ -392,8 +392,8 @@ struct WorkoutSessionScreen: View {
         .padding(.top, -6).padding(.trailing, -10)
         .accessibilityIdentifier("sessao.historico.\(exercise.id)")
       }
-      restPicker(exercise).padding(.top, 8)
-      header.padding(.top, 18).padding(.bottom, 8)
+      restPicker(exercise).padding(.top, Space.s)
+      header.padding(.top, 18).padding(.bottom, Space.s)
       VStack(spacing: 2) {
         ForEach(exercise.sets.prep) { set in
           row(exercise: exercise, date: date, templateId: templateId, kind: .prep,
@@ -408,10 +408,10 @@ struct WorkoutSessionScreen: View {
       }
       .animation(Motion.resolve(Motion.expand, reduceMotion), value: exercise.sets.work.count)
       setCountRow(exercise: exercise, date: date, templateId: templateId).padding(.top, 10)
-      noteField(exercise: exercise, date: date, templateId: templateId).padding(.top, 12)
+      noteField(exercise: exercise, date: date, templateId: templateId).padding(.top, Space.m)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(20)
+    .padding(Space.xl)
     // Sem `Radius.concentric` aqui. As linhas de série não são ladrilhos
     // embutidos, são fatias rentes à coluna de texto, então o raio de fora não
     // sai do de dentro.
@@ -442,7 +442,7 @@ struct WorkoutSessionScreen: View {
   /// As mesmas cinco colunas da linha, com as mesmas larguras, para o título
   /// cair em cima do que nomeia.
   private var header: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: Space.s) {
       Text("#").frame(width: 30)
       if typeSize.isAccessibilitySize {
         Spacer(minLength: 0)
@@ -601,7 +601,7 @@ struct WorkoutSessionScreen: View {
       }
         .font(.system(size: addExerciseSize)).foregroundStyle(Color.mutedInk)
         .frame(maxWidth: .infinity, minHeight: 22)
-        .padding(16)
+        .padding(Space.l)
         .overlay(RoundedRectangle(cornerRadius: Radius.row).strokeBorder(hairline))
     }
     .buttonStyle(StudyPressStyle())
@@ -742,7 +742,7 @@ private struct SessionClock: View {
       ? .hourMinuteSecond : .minuteSecond(padMinuteToLength: 2)))
     let start = timing.startedAt.formatted(.dateTime.hour().minute())
     return VStack(alignment: .leading, spacing: 1) {
-      HStack(spacing: 8) {
+      HStack(spacing: Space.s) {
         if live {
           Circle().fill(accent.signal).frame(width: 8, height: 8)
             .offset(y: 1)
