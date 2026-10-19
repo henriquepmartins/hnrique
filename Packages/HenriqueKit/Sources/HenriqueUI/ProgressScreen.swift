@@ -38,6 +38,7 @@ struct ProgressScreen: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var editing: GoalKind?
+  @State private var history: ExerciseHistoryTarget?
   var onWorkout: () -> Void = {}
 
   var body: some View {
@@ -90,7 +91,8 @@ struct ProgressScreen: View {
             NavigationLink { MetricDetailScreen(onWorkout: onWorkout) } label: {
               OneRepMaxChart(
                 title: series.exerciseName, points: series.points,
-                target: dashboard.strengthGoal?.targetValue)
+                target: dashboard.strengthGoal?.targetValue,
+                choices: dashboard.historyTargets) { history = $0 }
             }
             .buttonStyle(StudyPressStyle())
             .foregroundStyle(Color.ink)
@@ -116,6 +118,7 @@ struct ProgressScreen: View {
       .padding(.bottom, 40)
     }
     .refreshable { await store.load() }
+    .exerciseHistorySheet(item: $history)
     .sheet(item: $editing) { kind in
       if let dashboard = store.dashboard {
         GoalEditor(kind: kind, dashboard: dashboard)
@@ -280,9 +283,11 @@ struct OneRepMaxChart: View {
   let title: String
   let points: [ProgressPoint]
   let target: Double?
+  var choices: [ExerciseHistoryTarget] = []
+  var onChoose: (ExerciseHistoryTarget) -> Void = { _ in }
 
   var body: some View {
-    ChartCard(title: title.lowercased(), opens: true) {
+    ChartCard(title: title.lowercased(), opens: true, choices: choices, onChoose: onChoose) {
       Chart {
         ForEach(points) { point in
           LineMark(
@@ -368,12 +373,33 @@ struct ChartCard<Content: View>: View {
   let title: String
   /// O cartão é o link para os detalhes, e o chevron é o que diz isso.
   var opens = false
+  /// Com escolhas, o título é um menu que abre o histórico do exercício escolhido.
+  var choices: [ExerciseHistoryTarget] = []
+  var onChoose: (ExerciseHistoryTarget) -> Void = { _ in }
   @ViewBuilder let content: Content
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
       HStack {
-        Text(title).font(.headline)
+        if choices.isEmpty {
+          Text(title).font(.headline)
+        } else {
+          Menu {
+            ForEach(choices) { choice in
+              Button(choice.name.lowercased(), systemImage: "chart.line.uptrend.xyaxis") { onChoose(choice) }
+            }
+          } label: {
+            HStack(spacing: 4) {
+              Text(title).font(.headline)
+              Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold))
+                .foregroundStyle(Color.mutedInk)
+            }
+            .frame(minHeight: 44).contentShape(.rect)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(title)
+          .accessibilityHint("escolher exercício para ver o histórico")
+        }
         Spacer(minLength: 8)
         if opens {
           Image(systemName: "chevron.right")

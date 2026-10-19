@@ -146,6 +146,8 @@ extension PendingSetQueueTests {
       let activity = FakeSessionActivity()
       let store = await storeWithDashboard(activity)
       let target = key("supino-reto", .work, 2)
+      let shown = try #require(
+        store.dashboard?.workout?.exercises.first { $0.id == "supino-reto" }?.sets.work.first { $0.index == 2 })
 
       await store.completeFromActivity(target)
       await store.completeFromActivity(target)
@@ -155,8 +157,8 @@ extension PendingSetQueueTests {
       let set = try #require(
         store.dashboard?.workout?.exercises.first { $0.id == "supino-reto" }?.sets.work.first { $0.index == 2 })
       #expect(set.isDone)
-      #expect(set.weightKg == 42.5)
-      #expect(set.reps == 10)
+      #expect(set.weightKg == shown.weightKg)
+      #expect(set.reps == shown.reps)
       #expect(!isDone(store, key("desenvolvimento", .prep, 1)))
       #expect(store.rest?.key == target)
       #expect(activityStore(FakeSessionActivity()).isWaiting(target))

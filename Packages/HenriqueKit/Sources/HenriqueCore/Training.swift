@@ -130,6 +130,70 @@ extension DashboardExercise {
   }
 }
 
+extension DashboardExercise {
+  /// As séries não marcadas com a carga do exercício, pela mesma regra do
+  /// servidor. A valendo repete a última vez deslocada pela diferença entre a
+  /// carga e o topo de lá, então uma pirâmide volta como pirâmide. O
+  /// aquecimento fixado no plano vence a última vez.
+  ///
+  /// O aparelho não sabe qual linha o servidor preencheu e qual o dono digitou
+  /// sem marcar. Só muda a linha que ainda tem o número que o servidor antigo
+  /// ou esta regra, com a carga anterior, poriam ali.
+  public func applyingLoad(_ kilograms: Double) -> DashboardExercise {
+    let current = prescription.startingWeightKg
+    var copy = self
+    copy.prescription.startingWeightKg = kilograms
+    for row in copy.sets.work.indices where !copy.sets.work[row].isDone {
+      let index = copy.sets.work[row].index
+      let filled = [previousWorkWeight(index) ?? current, workWeight(index, load: current)]
+      if filled.contains(copy.sets.work[row].weightKg) {
+        copy.sets.work[row].weightKg = workWeight(index, load: kilograms)
+      }
+    }
+    for row in copy.sets.prep.indices where !copy.sets.prep[row].isDone {
+      let index = copy.sets.prep[row].index
+      let legacy = previousPrep?.set(index)?.weightKg ?? prepWeightKg
+        ?? rampWeightKg(current, index: index, count: prescription.prepSets)
+      if [legacy, prepWeight(index, load: current)].contains(copy.sets.prep[row].weightKg) {
+        copy.sets.prep[row].weightKg = prepWeight(index, load: kilograms)
+      }
+    }
+    return copy
+  }
+
+  /// O servidor antigo só manda o topo, e aí ele vale para todo índice.
+  private func previousWorkWeight(_ index: Int) -> Double? {
+    guard let previous else { return nil }
+    guard let sets = previous.sets else { return previous.weightKg }
+    return sets.first { $0.index == index }?.weightKg
+  }
+
+  private var previousTop: Double? { previous?.sets?.map(\.weightKg).max() ?? previous?.weightKg }
+
+  private func workWeight(_ index: Int, load: Double) -> Double {
+    guard let top = previousTop, let last = previousWorkWeight(index) else { return max(0, load) }
+    return max(0, ((last + load - top) * 100).rounded() / 100)
+  }
+
+  private func prepWeight(_ index: Int, load: Double) -> Double {
+    if let prepWeightKg { return prepWeightKg }
+    guard let last = previousPrep?.set(index)?.weightKg else {
+      return rampWeightKg(load, index: index, count: prescription.prepSets)
+    }
+    guard let top = previousTop, top > 0, load != top else { return last }
+    return max(0, (last * load / top / 2.5).rounded() * 2.5)
+  }
+}
+
+/// A fração da carga em cada aquecimento, igual à do servidor. Acima de três,
+/// a rampa vai de 40% a 80% em passos iguais.
+private func rampWeightKg(_ load: Double, index: Int, count: Int) -> Double {
+  let ramp: [Int: [Double]] = [1: [0.6], 2: [0.5, 0.75], 3: [0.4, 0.6, 0.8]]
+  let fraction = ramp[count].flatMap { $0.indices.contains(index - 1) ? $0[index - 1] : nil }
+    ?? 0.4 + 0.4 * Double(index - 1) / Double(max(count - 1, 1))
+  return max(0, (load * fraction / 2.5).rounded() * 2.5)
+}
+
 /// O aquecimento da última sessão, série a série: as cargas sobem dentro do
 /// aquecimento, então um peso só para todas não diria nada.
 public struct PreviousPrepSets: Codable, Hashable, Sendable {
@@ -273,8 +337,51 @@ public struct ProgressPoint: Codable, Hashable, Sendable, Identifiable {
   public var date: CalendarDate
   public var estimatedOneRepMax: Double
   public var volumeKg: Double
+  /// A série valendo mais pesada do dia. Nula no servidor antigo.
+  public var topWeightKg: Double? = nil
 
   public var id: CalendarDate { date }
+}
+
+extension ProgressPoint {
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    date = try container.decode(CalendarDate.self, forKey: .date)
+    estimatedOneRepMax = try container.decode(Double.self, forKey: .estimatedOneRepMax)
+    volumeKg = try container.decode(Double.self, forKey: .volumeKg)
+    topWeightKg = (try? container.decodeIfPresent(Double.self, forKey: .topWeightKg)) ?? nil
+  }
+}
+
+/// A carga do exercício, uma só para todos os treinos que o têm.
+public struct ExerciseLoad: Codable, Hashable, Sendable {
+  public var exerciseId: String
+  public var workWeightKg: Double
+  /// Nulo quando o aquecimento não foi fixado.
+  public var prepWeightKg: Double?
+}
+
+/// Cada sessão em que o exercício teve série valendo feita, em qualquer treino.
+public struct ExerciseHistory: Codable, Hashable, Sendable {
+  public struct Entry: Codable, Hashable, Sendable, Identifiable {
+    public var date: CalendarDate
+    public var workoutTemplateId: String
+    public var workoutName: String
+    /// As valendo feitas, pelo índice.
+    public var sets: [PreviousPrepSets.Set]
+    public var topWeightKg: Double
+    public var topReps: Int
+    public var estimatedOneRepMax: Double
+    public var volumeKg: Double
+
+    public var id: String { "\(date.iso).\(workoutTemplateId)" }
+  }
+
+  public var exerciseId: String
+  public var exerciseName: String
+  public var load: ExerciseLoad
+  /// A mais nova primeiro.
+  public var entries: [Entry]
 }
 
 public struct BodyMeasurement: Codable, Hashable, Sendable, Identifiable {
@@ -575,10 +682,21 @@ extension Dashboard {
     }
     if var workout = copy.workout,
       let exerciseIndex = workout.exercises.firstIndex(where: { $0.id == exerciseId }) {
-      workout.exercises[exerciseIndex].prescription.startingWeightKg = weightKg
+      workout.exercises[exerciseIndex] = workout.exercises[exerciseIndex].applyingLoad(weightKg)
       copy.workout = workout
     }
     return copy
+  }
+
+  /// A carga do exercício para quem o põe num treino novo. Enquanto ela for
+  /// guardada por treino, dois treinos podem discordar; a maior ganha, que é a
+  /// que a última série valendo marcada deixa em todos. Sem plano, o topo da
+  /// última vez.
+  public func loadKg(exerciseId: String) -> Double? {
+    weekPlan.flatMap(\.exercises)
+      .filter { $0.exerciseId == exerciseId && $0.startingWeightKg > 0 }
+      .map(\.startingWeightKg).max()
+      ?? workout?.exercises.first { $0.id == exerciseId }?.previous?.weightKg
   }
 
   public var highlightedWorkoutIDs: Set<String> {

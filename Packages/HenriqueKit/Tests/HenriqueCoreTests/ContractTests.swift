@@ -148,6 +148,18 @@ struct ContractTests {
 
     #expect(updated.weekPlan.map { $0.exercises[0].startingWeightKg } == [50, 50])
     #expect(updated.workout?.exercises.first?.prescription.startingWeightKg == 50)
+    let sets = try #require(updated.workout?.exercises.first?.sets)
+    #expect(sets.work.map(\.weightKg) == [42.5, 50])
+    #expect(sets.prep.map(\.weightKg) == [20, 37.5])
+  }
+
+  @Test("o exercício posto num treino novo começa com a carga que já tem")
+  func newExerciseStartsWithItsLoad() throws {
+    var dashboard = try Self.dashboard()
+    #expect(dashboard.loadKg(exerciseId: "supino-reto") == 40)
+    #expect(dashboard.loadKg(exerciseId: "desenvolvimento") == nil)
+    dashboard.weekPlan = []
+    #expect(dashboard.loadKg(exerciseId: "supino-reto") == 42.5)
   }
 
   @Test("o aquecimento sai sem o campo de falha")
@@ -263,6 +275,38 @@ struct ContractTests {
     #expect(loaded.set(1) == PreviousPrepSets.Set(index: 1, weightKg: 42.5, reps: 9))
     #expect(loaded.set(2)?.weightKg == 40)
     #expect(loaded.set(3) == nil)
+  }
+
+  @Test("o histórico do exercício decodifica com a carga e as séries de cada sessão")
+  func decodesExerciseHistory() throws {
+    let json = #"""
+      {"exerciseId": "supino-reto", "exerciseName": "Supino reto",
+       "load": {"exerciseId": "supino-reto", "workWeightKg": 55, "prepWeightKg": null},
+       "entries": [
+         {"date": "2026-10-12", "workoutTemplateId": "tpl-terca", "workoutName": "Empurrar A",
+          "sets": [{"index": 1, "weightKg": 55, "reps": 8}, {"index": 2, "weightKg": 55, "reps": 7}],
+          "topWeightKg": 55, "topReps": 8, "estimatedOneRepMax": 69.67, "volumeKg": 825}]}
+      """#
+    let history = try JSONDecoder.henrique().decode(ExerciseHistory.self, from: Data(json.utf8))
+    #expect(history.load.workWeightKg == 55)
+    #expect(history.load.prepWeightKg == nil)
+    let entry = try #require(history.entries.first)
+    #expect(entry.date == CalendarDate(iso: "2026-10-12"))
+    #expect(entry.workoutName == "Empurrar A")
+    #expect(entry.sets.map(\.reps) == [8, 7])
+    #expect(entry.topWeightKg == 55)
+
+    let point = #"{"date": "2026-10-12", "estimatedOneRepMax": 69.67, "volumeKg": 825, "topWeightKg": 55}"#
+    #expect(try JSONDecoder.henrique().decode(ProgressPoint.self, from: Data(point.utf8)).topWeightKg == 55)
+    #expect(try Self.dashboard().progress.first?.topWeightKg == nil)
+  }
+
+  @Test("o pedido de histórico manda só o exercício")
+  func exerciseHistoryEncodesKeys() throws {
+    let json = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(ExerciseHistoryInput(exerciseId: "supino-reto")))
+        as? [String: Any])
+    #expect(json as NSDictionary == ["exerciseId": "supino-reto"])
   }
 
   @Test("formato inesperado na carga anterior por série não derruba o exercício")

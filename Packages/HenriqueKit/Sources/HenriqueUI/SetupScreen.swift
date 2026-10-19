@@ -112,7 +112,8 @@ struct SetupScreen: View {
         ExercisePicker(catalog: store.dashboard?.exerciseCatalog ?? [], chosen: Set(exercises.map(\.exerciseId))) { item in
           let known = (store.dashboard?.exerciseCatalog ?? []).contains(where: { $0.id == item.id })
           exercises.append(PlanExercise(exerciseId: item.id, prepSets: 2, workSets: 2,
-            repsMin: 8, repsMax: 12, workToFailure: true, startingWeightKg: 0,
+            repsMin: 8, repsMax: 12, workToFailure: true,
+            startingWeightKg: store.dashboard?.loadKg(exerciseId: item.id) ?? 0,
             name: known ? nil : item.name, muscleGroup: known ? nil : item.muscleGroup,
             equipment: known ? nil : item.equipment, imageUrl: known ? nil : item.imageUrl))
         }

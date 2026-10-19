@@ -474,6 +474,7 @@ private struct EditorField<Content: View>: View {
 }
 
 private struct ExercisesStep: View {
+  @Environment(AcademiaStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   #if os(iOS)
   @Environment(\.editMode) private var editMode
@@ -579,7 +580,8 @@ private struct ExercisesStep: View {
         exercises.append(
           PlanExercise(
             exerciseId: item.id, prepSets: 2, workSets: 2, repsMin: 8, repsMax: 12,
-            workToFailure: true, startingWeightKg: 0, name: known ? nil : item.name,
+            workToFailure: true, startingWeightKg: store.dashboard?.loadKg(exerciseId: item.id) ?? 0,
+            name: known ? nil : item.name,
             muscleGroup: known ? nil : item.muscleGroup,
             equipment: known ? nil : item.equipment,
             imageUrl: known ? nil : item.imageUrl))

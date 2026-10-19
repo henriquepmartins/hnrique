@@ -97,7 +97,7 @@ public final class AcademiaStore {
   }
 
   private func projected() -> Dashboard? {
-    guard var value = acceptedDashboard else { return nil }
+    guard var value = acceptedDashboard?.applyingPlannedLoads() else { return nil }
     for pending in pendingSets.values.sorted(by: { $0.revision < $1.revision }) {
       let key = pending.key
       let draft = pending.draft
@@ -120,7 +120,9 @@ public final class AcademiaStore {
       workout.completionPercent = workout.workSetCount == 0 ? 0
         : Int((Double(workout.completedWorkSetCount) / Double(workout.workSetCount) * 100).rounded())
       value.workout = workout
-      if key.kind == .work, draft.completed {
+      // Só hoje: num dia passado pode existir sessão mais nova, e aí o servidor
+      // não mexe no plano.
+      if key.kind == .work, draft.completed, key.date == .today {
         value = value.applyingTopWorkWeight(exerciseId: key.exerciseId)
       }
     }
@@ -159,6 +161,11 @@ public final class AcademiaStore {
     let storedAt: Date
   }
   @ObservationIgnored private var dayCache: [CalendarDate: CachedDay] = [:]
+  /// O histórico de cada exercício já buscado. Uma escrita que muda o
+  /// exercício apaga a entrada, e `historyRevision` descarta a busca que
+  /// estava no ar durante a escrita.
+  @ObservationIgnored private var histories: [String: ExerciseHistory] = [:]
+  @ObservationIgnored private var historyRevision = 0
   public private(set) var attendance: [CalendarDate: AttendanceDay] = [:]
   @ObservationIgnored private var attendanceRanges: [ClosedRange<CalendarDate>] = []
   /// Os intervalos que já vieram do servidor nesta sessão. Ao contrário de
@@ -177,6 +184,7 @@ public final class AcademiaStore {
 
   private func invalidateDays() {
     dayCache.removeAll()
+    forgetHistories()
     cancelRead()
   }
 
@@ -189,9 +197,25 @@ public final class AcademiaStore {
 
   private func invalidateAll() {
     dayCache.removeAll()
+    forgetHistories()
     // a escrita muda a frequência; o mapa fica na tela e o próximo mês
     // visitado busca de novo.
     attendanceRanges.removeAll()
+  }
+
+  private func forgetHistories(of exerciseId: String? = nil) {
+    if let exerciseId { histories.removeValue(forKey: exerciseId) } else { histories.removeAll() }
+    historyRevision += 1
+  }
+
+  public func cachedHistory(of exerciseId: String) -> ExerciseHistory? { histories[exerciseId] }
+
+  public func history(of exerciseId: String) async throws -> ExerciseHistory {
+    if let cached = histories[exerciseId] { return cached }
+    let revision = historyRevision
+    let history = try await client.exerciseHistory(exerciseId: exerciseId)
+    if revision == historyRevision { histories[exerciseId] = history }
+    return history
   }
 
   private func remember(_ value: Dashboard) {
@@ -609,6 +633,7 @@ public final class AcademiaStore {
     let pending = PendingSet(key: key, draft: draft, revision: revision, failed: false)
     pendingSets[key] = pending
     saveQueue()
+    forgetHistories(of: key.exerciseId)
     if key.kind == .work {
       if completed && existingDate == nil {
         reopen(workout.id, on: key.date)
@@ -631,9 +656,7 @@ public final class AcademiaStore {
     let input: RecordSetInput = key.kind == .prep
       ? .prep(fields) : .work(fields, toFailure: draft.toFailure)
     return enqueue(pending: pending, affecting: key.date) {
-      let received = try await self.client.recordSet(input)
-      guard key.kind == .work, draft.completed else { return received }
-      return received.applyingTopWorkWeight(exerciseId: key.exerciseId)
+      try await self.client.recordSet(input)
     }
   }
 
@@ -792,6 +815,7 @@ public final class AcademiaStore {
         guard sessionID == mutationSession, !Task.isCancelled else { return .offline }
         forget(pending)
         if let date { invalidate(from: date) } else { invalidateAll() }
+        if let pending { forgetHistories(of: pending.key.exerciseId) }
         if pending != nil { noteAttendance(from: received) }
         remember(received)
         if received.date == selectedDate {
@@ -1052,6 +1076,20 @@ extension Dashboard {
   func applyingTopWorkWeight(exerciseId: String) -> Dashboard {
     guard let top = workout?.topWorkWeight(exerciseId: exerciseId) else { return self }
     return applyingSharedExerciseWeight(top, exerciseId: exerciseId)
+  }
+
+  /// O servidor antigo preenche as séries pela última vez e ignora a carga
+  /// editada no plano. Carga zero fica de fora: é o exercício posto num treino
+  /// antes de o editor saber a carga, e ela zeraria as séries que vêm da última vez.
+  func applyingPlannedLoads() -> Dashboard {
+    guard var workout else { return self }
+    workout.exercises = workout.exercises.map { exercise in
+      let load = exercise.prescription.startingWeightKg
+      return load > 0 ? exercise.applyingLoad(load) : exercise
+    }
+    var copy = self
+    copy.workout = workout
+    return copy
   }
 
   /// O dia já tem alguma série marcada, de aquecimento ou valendo.

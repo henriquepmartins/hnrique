@@ -316,6 +316,7 @@ struct PlanExerciseRow: View {
   let isExpanded: Bool
   let onToggle: (() -> Void)?
   let onRemove: (() -> Void)?
+  @State private var history: ExerciseHistoryTarget?
 
   init(
     exercise: Binding<PlanExercise>, name: String, subtitle: String? = nil,
@@ -381,6 +382,19 @@ struct PlanExerciseRow: View {
         Toggle("até a falha", isOn: $exercise.workToFailure)
           .font(.body)
           .frame(minHeight: 48)
+        Divider()
+        Button {
+          history = ExerciseHistoryTarget(id: exercise.exerciseId, name: name)
+        } label: {
+          HStack {
+            Label("histórico", systemImage: "chart.line.uptrend.xyaxis")
+            Spacer()
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.mutedInk)
+          }
+          .font(.body).foregroundStyle(Color.ink)
+          .frame(minHeight: 48).contentShape(.rect)
+        }
+        .buttonStyle(StudyPressStyle())
       }
     }
     .padding(.vertical, showsControls ? 10 : 4)
@@ -391,6 +405,7 @@ struct PlanExerciseRow: View {
     .onChange(of: exercise.repsMax) { _, new in
       if new < exercise.repsMin { exercise.repsMin = new }
     }
+    .exerciseHistorySheet(item: $history)
   }
 
   private var header: some View {
