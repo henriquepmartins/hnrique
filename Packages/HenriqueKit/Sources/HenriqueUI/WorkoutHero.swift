@@ -451,9 +451,13 @@ private struct PaperButton: View {
   @Environment(\.accent) private var accent
   let label: String
   let action: () -> Void
+  @State private var taps = 0
 
   var body: some View {
-    Button(action: action) {
+    Button {
+      taps += 1
+      action()
+    } label: {
       if reduceMotion {
         paper(tick: 0)
       } else {
@@ -463,6 +467,7 @@ private struct PaperButton: View {
       }
     }
     .buttonStyle(StudyPressStyle())
+    .sensoryFeedback(.impact(weight: .medium), trigger: taps)
   }
 
   private static let cuts: [(seed: UInt64, angle: Double, offset: CGSize)] = [

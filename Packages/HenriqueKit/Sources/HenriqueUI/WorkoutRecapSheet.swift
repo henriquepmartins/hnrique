@@ -89,7 +89,7 @@ struct WorkoutRecapSheet: View {
   }
 
   private var duration: String {
-    HeroModel.clock(TimeInterval(recap.durationSeconds ?? 0))
+    Formatting.duration(seconds: TimeInterval(recap.durationSeconds ?? 0))
   }
 
   /// A diferença para a última vez, nos exercícios que têm histórico. Zero não

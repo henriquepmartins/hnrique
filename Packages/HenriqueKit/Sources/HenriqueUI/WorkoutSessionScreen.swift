@@ -796,7 +796,7 @@ private struct SessionClock: View {
 
   private func readout(at now: Date, timing: WorkoutSessionTiming?, live: Bool) -> some View {
     let seconds = Int(timing?.elapsed(at: now) ?? 0)
-    let time = HeroModel.clock(TimeInterval(seconds))
+    let time = Formatting.clock(seconds: TimeInterval(seconds))
     let start = timing?.startedAt.formatted(.dateTime.hour().minute())
     return VStack(alignment: .leading, spacing: 1) {
       HStack(spacing: Space.s) {

@@ -228,6 +228,7 @@ struct ExerciseHistorySheet: View {
 private struct LoadHero: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .largeTitle) private var loadSize = 44.0
   let kilograms: Double?
 
   var body: some View {
@@ -235,7 +236,7 @@ private struct LoadHero: View {
       VStack(alignment: .leading, spacing: 0) {
         Text("carga atual").font(.caption).foregroundStyle(Color.mutedInk)
         Text(weightLabel(kilograms))
-          .font(.system(size: 44, weight: .semibold)).monospacedDigit()
+          .font(.system(size: loadSize, weight: .semibold)).monospacedDigit()
           .foregroundStyle(accent.deep)
           .contentTransition(.numericText(value: kilograms))
           .animation(Motion.resolve(Motion.roll, reduceMotion), value: kilograms)

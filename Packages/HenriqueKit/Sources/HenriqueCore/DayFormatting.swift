@@ -34,4 +34,10 @@ extension Formatting {
   public static func duration(seconds: TimeInterval) -> String {
     duration(minutes: max(1, Int((seconds / 60).rounded())))
   }
+
+  /// O relógio que corre na sessão: "4:13", "1:02:05".
+  public static func clock(seconds: TimeInterval) -> String {
+    let whole = Int(seconds)
+    return Duration.seconds(whole).formatted(.time(pattern: whole >= 3600 ? .hourMinuteSecond : .minuteSecond))
+  }
 }

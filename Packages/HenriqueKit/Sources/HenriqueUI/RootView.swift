@@ -254,11 +254,16 @@ struct AcademiaTabs: View {
       }
       Tab("plano", systemImage: "list.clipboard", value: AcademiaTab.semana) {
         shell {
-          WeekScreen { weekday in
-            let delta = (weekday - store.selectedDate.weekday() + 7) % 7
-            Task { await store.select(date: store.selectedDate.adding(days: delta)) }
-            tab = .treino
-          }
+          WeekScreen(
+            onStart: { weekday in
+              let delta = (weekday - store.selectedDate.weekday() + 7) % 7
+              Task { await store.select(date: store.selectedDate.adding(days: delta)) }
+              tab = .treino
+            },
+            onTrainToday: {
+              tab = .treino
+              sessionRequested = true
+            })
         }
       }
       Tab("treino", systemImage: "dumbbell", value: AcademiaTab.treino) {

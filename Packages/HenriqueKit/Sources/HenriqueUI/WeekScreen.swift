@@ -8,6 +8,7 @@ struct WeekScreen: View {
   @State private var editor: PlanEditorDestination?
   @State private var deletions = 0
   var onStart: (Int) -> Void = { _ in }
+  var onTrainToday: () -> Void = {}
 
   var body: some View {
     ScrollView {
@@ -84,14 +85,14 @@ struct WeekScreen: View {
     return dashboard.schedule.workout(on: .today)?.id != item.id
   }
 
-  /// Abre hoje, troca o treino do dia por este e leva à aba treino.
+  /// Abre hoje, troca o treino do dia por este e abre a sessão.
   private func trainToday(_ item: WeekPlanItem) async {
     let today = CalendarDate.today
     await store.select(date: today)
     if store.dashboard?.schedule.workout(on: today)?.id != item.id {
       guard await store.swapDay(workoutTemplateId: item.id) else { return }
     }
-    onStart(today.weekday())
+    onTrainToday()
   }
 }
 
