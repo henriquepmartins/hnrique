@@ -169,7 +169,7 @@ private struct FocoAura: View {
       .scaleEffect(reduceMotion ? 1 : inhaled ? 1.05 : 0.92)
       .opacity(reduceMotion ? 0.45 : inhaled ? 0.6 : 0.35)
       .animation(
-        reduceMotion ? nil : .easeInOut(duration: 2).repeatForever(autoreverses: true), value: inhaled
+        reduceMotion ? nil : Motion.breatheSlow, value: inhaled
       )
       .onAppear { inhaled = true }
       .allowsHitTesting(false)

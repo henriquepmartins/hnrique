@@ -254,6 +254,7 @@ struct MeasurementEditor: View {
   @State private var weightKg: Double?
   @State private var date = Date.now
   @State private var isSaving = false
+  @State private var saves = 0
   @State private var bodyFatPercent: Double?
   @State private var waistCm: Double?
   @State private var chestCm: Double?
@@ -308,6 +309,7 @@ struct MeasurementEditor: View {
         }
       }
       .interactiveDismissDisabled(isSaving)
+      .sensoryFeedback(.success, trigger: saves)
       .navigationTitle(editingDate == nil ? "nova medida" : "editar medida")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
@@ -346,7 +348,10 @@ struct MeasurementEditor: View {
     Task {
       let saved = await store.addMeasurement(input)
       isSaving = false
-      if saved { dismiss() }
+      if saved {
+        saves += 1
+        dismiss()
+      }
     }
   }
 }

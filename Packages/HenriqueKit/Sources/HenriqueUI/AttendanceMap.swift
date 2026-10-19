@@ -482,9 +482,7 @@ private struct GraphCell: View {
 
   private func twinkle(after entrance: Double) -> Animation? {
     guard twinkling else { return nil }
-    let cycle = 2 + seed * 1.4
-    return .easeInOut(duration: cycle / 2).repeatForever(autoreverses: true)
-      .delay(entrance + seed * 0.85)
+    return Motion.twinkle(seed: seed).delay(entrance + seed * 0.85)
   }
 }
 

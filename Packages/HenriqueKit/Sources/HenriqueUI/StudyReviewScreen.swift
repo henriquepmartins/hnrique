@@ -203,7 +203,7 @@ public struct StudyReviewScreen: View {
         title: "resposta não salva",
         detail: conflict ? "cartão mudou" : "tente de novo")
       if conflict {
-        Button("atualizar") { Task { await refreshQueue() } }
+        Button("atualizar", systemImage: "arrow.clockwise") { Task { await refreshQueue() } }
           .buttonStyle(.glass)
           .controlSize(.large)
           .tint(Color.studyInk)

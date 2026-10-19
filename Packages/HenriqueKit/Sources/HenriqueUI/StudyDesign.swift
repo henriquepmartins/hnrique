@@ -791,9 +791,50 @@ extension View {
   }
 }
 
+/// Esqueleto de Estudos e Idiomas no formato do que vai chegar: fileiras de
+/// `StudyDbRow` nas listas, linhas de texto numa nota aberta.
 struct StudyLoadingState: View {
+  enum Shape { case rows, page }
+  var shape: Shape = .rows
+
   var body: some View {
-    ProgressView().frame(maxWidth: .infinity, minHeight: 160)
+    Group {
+      switch shape {
+      case .rows: rows
+      case .page: page
+      }
+    }
+    .foregroundStyle(Color.studyLine)
+    .modifier(SkeletonPulse())
+    .accessibilityElement()
+    .accessibilityLabel("carregando")
+  }
+
+  private var rows: some View {
+    VStack(alignment: .leading, spacing: Space.m) {
+      ForEach(0..<4, id: \.self) { index in
+        HStack(spacing: Space.s) {
+          RoundedRectangle(cornerRadius: StudyRadius.inner).frame(width: 26, height: 26)
+          VStack(alignment: .leading, spacing: Space.xs) {
+            Capsule().frame(width: index.isMultiple(of: 2) ? 180 : 140, height: 14)
+            Capsule().frame(width: 96, height: 10)
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(Space.m)
+        .background(Color.studyLine, in: .rect(cornerRadius: StudyRadius.card))
+      }
+    }
+  }
+
+  private var page: some View {
+    VStack(alignment: .leading, spacing: Space.m) {
+      Capsule().frame(width: 200, height: 24).padding(.bottom, Space.s)
+      ForEach([0, 32, 8, 120], id: \.self) { shortfall in
+        Capsule().frame(height: 12).padding(.trailing, CGFloat(shortfall))
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 

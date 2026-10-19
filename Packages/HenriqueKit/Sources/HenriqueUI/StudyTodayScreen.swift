@@ -125,6 +125,7 @@ struct StudyTodayPending: View {
 // MARK: - Continuar
 
 struct StudyTodayContinue: View {
+  @Environment(FocoStore.self) private var foco
   let overview: StudyOverview
   let onSession: () -> Void
   let onReview: () -> Void
@@ -142,7 +143,7 @@ struct StudyTodayContinue: View {
         }
         if let session = overview.lastSession {
           StudyDbRow(
-            icon: "timer", title: "retomar", detail: sessionDetail(session), action: onSession)
+            icon: "timer", title: foco.isRunning ? "voltar ao foco" : "retomar", detail: sessionDetail(session), action: onSession)
         }
       }
     }

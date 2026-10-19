@@ -240,10 +240,16 @@ struct AcademiaTabs: View {
     TabView(selection: appSwitcherSelection($tab, isPresented: $showingApps, bubble: .apps)) {
       Tab("hoje", systemImage: "house", value: AcademiaTab.hoje) {
         shell {
-          OverviewScreen(onWorkout: {
-            tab = .treino
-            sessionRequested = true
-          }, onPlan: { tab = .semana })
+          OverviewScreen(
+            onWorkout: {
+              tab = .treino
+              sessionRequested = true
+            },
+            onPlan: { tab = .semana },
+            onDay: { date in
+              Task { await store.select(date: date) }
+              tab = .treino
+            })
         }
       }
       Tab("plano", systemImage: "list.clipboard", value: AcademiaTab.semana) {
@@ -542,6 +548,7 @@ struct OverviewScreen: View {
   @Environment(AcademiaStore.self) private var store
   let onWorkout: () -> Void
   let onPlan: () -> Void
+  let onDay: (CalendarDate) -> Void
 
   var body: some View {
     ScrollView {
@@ -553,18 +560,19 @@ struct OverviewScreen: View {
             onPlan: onPlan, onSwap: { await store.swapDay(workoutTemplateId: $0) })
             .staggeredEntrance(index: 0, isReady: true)
           NextDaysStrip(
-            days: plannedDays(from: data.date, schedule: data.schedule), onPlan: onPlan)
+            days: plannedDays(from: data.date, schedule: data.schedule), onPlan: onPlan,
+            onDay: onDay)
             .staggeredEntrance(index: 1, isReady: true)
           if let records = data.records, !records.isEmpty {
             RecordsCard(records: records, today: data.date)
               .staggeredEntrance(index: 2, isReady: true)
           }
           if let week = store.trainingWeek(today: data.date), week.planned > 0 {
-            WeeklyAdherenceCard(week: week, today: data.date)
+            WeeklyAdherenceCard(week: week, today: data.date, onPlan: onPlan)
               .staggeredEntrance(index: 3, isReady: true)
           }
           if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {
-            MuscleMap(load: load, today: data.date)
+            MuscleMap(load: load, today: data.date, onPlan: onPlan)
               .staggeredEntrance(index: 4, isReady: true)
           }
         } else if store.phase.awaitsDashboard {

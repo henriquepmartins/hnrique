@@ -16,8 +16,7 @@ struct MuscleMap: View {
   @AppStorage("academia.musculos.tocou") private var touched = false
   let load: [MuscleLoad]
   let today: CalendarDate
-  /// Abre o plano a partir do aviso de grupo parado. Sem ela, o aviso só avisa.
-  var onPlan: (() -> Void)?
+  let onPlan: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -204,26 +203,24 @@ struct MuscleMap: View {
 /// do mapa que pede uma mudança no plano.
 struct GapNote: View {
   let text: String
-  var onPlan: (() -> Void)?
+  let onPlan: () -> Void
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Space.s) {
       Image(systemName: "exclamationmark.circle")
         .font(.footnote.weight(.medium))
       Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)
-      if let onPlan {
-        Spacer(minLength: Space.s)
-        Button("plano", systemImage: "calendar", action: onPlan)
-          .font(.footnote.weight(.semibold))
-          .labelStyle(.titleAndIcon)
-          .buttonStyle(.plain)
-          .frame(minHeight: 44).contentShape(.rect)
-      }
+      Spacer(minLength: Space.s)
+      Button("plano", systemImage: "calendar", action: onPlan)
+        .font(.footnote.weight(.semibold))
+        .labelStyle(.titleAndIcon)
+        .buttonStyle(.plain)
+        .frame(minHeight: 44).contentShape(.rect)
     }
-    .foregroundStyle(Color(red: 0.54, green: 0.18, blue: 0.18))
+    .foregroundStyle(Color.danger)
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, Space.l).padding(.vertical, 13)
-    .background(Color(red: 0.99, green: 0.95, blue: 0.95), in: .rect(cornerRadius: 18))
+    .background(Color.danger.opacity(0.06), in: .rect(cornerRadius: 18))
     .accessibilityIdentifier("musculos.lacuna")
   }
 }

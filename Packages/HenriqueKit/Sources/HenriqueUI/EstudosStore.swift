@@ -483,7 +483,7 @@ public final class EstudosStore {
   }
 
   private static func message(for error: any Error) -> String {
-    (error as? APIError)?.message ?? "erro"
+    (error as? APIError)?.message ?? "algo deu errado, tente de novo"
   }
 }
 
