@@ -7,6 +7,9 @@ public struct StudyAssignmentsScreen: View {
   @State private var filter: AssignmentFilter = .todas
   @State private var switched = false
   @State private var selectedDay: CalendarDate?
+  /// Entregas que acabaram de trocar de estado. Ficam na lista mesmo fora do
+  /// filtro até o check aparecer, e só então saem com transição.
+  @State private var settling: Set<String> = []
 
   public init() {}
 
@@ -62,16 +65,21 @@ public struct StudyAssignmentsScreen: View {
     AssignmentAppleCalendarCard(assignments: all)
 
     if let day = selectedDay {
-      HStack(spacing: 8) {
-        StudyPill(
-          tone: .neutral, systemImage: "calendar",
-          text: StudyFormat.dayLabel(day, today: today))
-        Button("limpar") { selectedDay = nil }
-          .font(.footnote.weight(.medium))
-          .foregroundStyle(Color.studyInk60)
-          .buttonStyle(StudyPressStyle(slop: 13))
-        Spacer(minLength: 0)
+      let label = StudyFormat.dayLabel(day, today: today)
+      Button { selectedDay = nil } label: {
+        HStack(spacing: 4) {
+          Image(systemName: "calendar").imageScale(.small)
+          Text(label)
+          Image(systemName: "xmark.circle.fill").foregroundStyle(Color.studyInk40)
+        }
+        .font(.footnote.weight(.medium))
+        .foregroundStyle(Color.studyInk)
+        .padding(.horizontal, 12)
+        .frame(minHeight: 32)
+        .background(StudyPillTone.neutral.background, in: .capsule)
       }
+      .buttonStyle(StudyPressStyle(slop: 6))
+      .accessibilityLabel("tirar filtro de \(label)")
     }
 
     ScrollView(.horizontal) {
@@ -103,9 +111,10 @@ public struct StudyAssignmentsScreen: View {
             VStack(spacing: 8) {
               ForEach(Array(entry.group.items.enumerated()), id: \.element.id) { index, item in
                 StudyTaskCard(assignment: item, now: now) { next in
-                  Task { await store.setStatus(of: item, to: next) }
+                  setStatus(of: item, to: next)
                 }
                 .firstEntrance(index: entry.start + index, settled: switched)
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
               }
             }
           }
@@ -117,6 +126,18 @@ public struct StudyAssignmentsScreen: View {
     .transition(.opacity)
     .animation(Motion.swap, value: filter)
     .onChange(of: selectedDay) { switched = true }
+  }
+
+  private func setStatus(of item: StudyAssignment, to next: AssignmentStatus) {
+    settling.insert(item.id)
+    Task {
+      async let save: Void = store.setStatus(of: item, to: next)
+      try? await Task.sleep(for: .milliseconds(600))
+      _ = withAnimation(Motion.resolve(Motion.swap, reduceMotion)) {
+        settling.remove(item.id)
+      }
+      await save
+    }
   }
 
   private func count(of entry: AssignmentFilter, in groups: [AssignmentGroup], now: Date) -> Int {
@@ -136,10 +157,9 @@ public struct StudyAssignmentsScreen: View {
         detail: sync.createdCount == 1 ? "1 nova" : "\(sync.createdCount) novas")
     } else {
       StudyCallout(
-        icon: "arrow.triangle.2.circlepath", tone: .sky,
-        title: "o portal chega sozinho",
-        detail:
-          "a varredura roda de quinze em quinze minutos e só cria o que ainda não existe.")
+        icon: "arrow.triangle.2.circlepath", tone: .sky, title: "portal a cada 15 min"
+      )
+      .accessibilityHint("a varredura só cria o que ainda não existe")
     }
   }
 
@@ -149,7 +169,9 @@ public struct StudyAssignmentsScreen: View {
     for group in groups {
       // Com dia marcado no calendário, a lista mostra só ele.
       if let day = selectedDay, group.date != day { continue }
-      let items = group.items.filter { filter.matches($0, now: now) }
+      let items = group.items.filter {
+        filter.matches($0, now: now) || settling.contains($0.id)
+      }
       guard !items.isEmpty else { continue }
       visible.append(
         VisibleGroup(group: AssignmentGroup(date: group.date, items: items), start: start))
