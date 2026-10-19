@@ -417,6 +417,9 @@ public struct FocusSessionScreen: View {
     foco.start(
       .subject(id: subject.id, name: subject.name, color: subject.color),
       target: Double(minutes) * 60)
+    // A tela do bloco não mostra o selo da troca. Guardado, ele aparecia velho
+    // na próxima vez que o cronômetro escuro abrisse.
+    foco.clearSwitched()
   }
 
   private func retryNote() async {
