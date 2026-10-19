@@ -10,41 +10,46 @@ struct WeekScreen: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 24) {
-        PlanCalendarCard(
-          attendance: store.attendance,
-          weekPlan: store.weekPlan,
-          swaps: store.dashboard?.daySwaps ?? [],
-          week: store.trainingWeek(),
-          load: { from, to in await store.loadAttendance(from: from, to: to) })
-        Button("novo treino", systemImage: "plus") {
-          editorStep = .identidade
-          editor = .new(weekdays: [])
-        }
-          .buttonStyle(.glassProminent)
-          .controlSize(.large)
-          .subtleEntrance()
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
-                                 count: textSize.isAccessibilitySize ? 1 : 2), spacing: 6) {
-          ForEach(store.weekPlan.inTrainingWeekOrder()) { item in
-            WorkoutTile(
-              item: item,
-              showsWave: store.dashboard?.highlightedWorkoutIDs.contains(item.id) == true,
-              onEdit: { step in
-                editorStep = step
-                editor = .existing(item)
-              },
-              onDelete: { store.deleteWorkout(workoutTemplateId: item.id) },
-              onStart: { if let day = item.nextWeekday(from: store.selectedDate.weekday()) { onStart(day) } })
-              .subtleEntrance()
+      if store.dashboard != nil {
+        VStack(alignment: .leading, spacing: 24) {
+          PlanCalendarCard(
+            attendance: store.attendance,
+            weekPlan: store.weekPlan,
+            swaps: store.dashboard?.daySwaps ?? [],
+            week: store.trainingWeek(),
+            load: { from, to in await store.loadAttendance(from: from, to: to) })
+          Button("novo treino", systemImage: "plus") {
+            editorStep = .identidade
+            editor = .new(weekdays: [])
+          }
+            .buttonStyle(.glassProminent)
+            .controlSize(.large)
+            .subtleEntrance()
+          LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
+                                   count: textSize.isAccessibilitySize ? 1 : 2), spacing: 6) {
+            ForEach(store.weekPlan.inTrainingWeekOrder()) { item in
+              WorkoutTile(
+                item: item,
+                showsWave: store.dashboard?.highlightedWorkoutIDs.contains(item.id) == true,
+                onEdit: { step in
+                  editorStep = step
+                  editor = .existing(item)
+                },
+                onDelete: { store.deleteWorkout(workoutTemplateId: item.id) },
+                onStart: { if let day = item.nextWeekday(from: store.selectedDate.weekday()) { onStart(day) } })
+                .subtleEntrance()
+            }
           }
         }
+        .padding(16)
+        .padding(.bottom, 32)
       }
-      .padding(16)
-      .padding(.bottom, 32)
     }
     .background(Color.canvas)
     .refreshable { await store.load() }
+    .overlay {
+      TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil) { WeekSkeleton() }
+    }
     .sheet(item: $editor) { destination in
       WorkoutEditor(
         item: destination.item, weekdays: destination.weekdays,
@@ -55,6 +60,39 @@ struct WeekScreen: View {
   }
 
 
+}
+
+/// A forma do plano sem dados: o calendário, o botão de novo treino e as
+/// pastas, com a aba e o corpo de cada uma.
+private struct WeekSkeleton: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.xxl) {
+      RoundedRectangle(cornerRadius: Radius.card).frame(height: 340)
+      Capsule().frame(width: 160, height: 50)
+      LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: 2), spacing: 6) {
+        ForEach(0..<4, id: \.self) { _ in FolderSilhouette() }
+      }
+    }
+    .foregroundStyle(Color.surfaceMuted)
+    .modifier(SkeletonPulse())
+    .padding(Space.l)
+    .frame(maxHeight: .infinity, alignment: .top)
+    .accessibilityHidden(true)
+  }
+}
+
+/// A silhueta da `WorkoutFolderCard`, nas mesmas proporções do desenho de 508.
+private struct FolderSilhouette: View {
+  var body: some View {
+    GeometryReader { geometry in
+      let scale = geometry.size.width / 508
+      ZStack(alignment: .topLeading) {
+        RoundedRectangle(cornerRadius: 40 * scale).frame(width: 225 * scale, height: 180 * scale)
+        RoundedRectangle(cornerRadius: 52 * scale).padding(.top, 32 * scale)
+      }
+    }
+    .aspectRatio(508 / 455, contentMode: .fit)
+  }
 }
 
 private enum PlanEditorDestination: Identifiable {
