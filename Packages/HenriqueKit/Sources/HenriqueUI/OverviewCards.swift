@@ -20,26 +20,28 @@ struct DateHeader: View {
   }
 }
 
-/// O treino do dia na home, em quatro estados: programado, em andamento, feito e
-/// descanso. O cartão anterior mostrava só o nome e uma seta, e dizia a mesma
-/// coisa nos quatro.
+/// O treino do dia na home, um cartão por momento do dia. Antes ele chama para
+/// começar, durante conta as séries, depois vira o resumo do que saiu e no
+/// descanso aponta o próximo treino.
 struct DayCard: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let workout: WorkoutSummary?
+  let moment: HomeMoment
+  /// O próximo dia com treino no plano, que o cartão de descanso aponta.
+  let next: PlannedDay?
   /// Nulo quando o servidor ainda não troca dia: sem menu, em vez de um menu que falha.
   let choices: DaySwapChoices?
   let onWorkout: () -> Void
   let onPlan: () -> Void
   let onSwap: @MainActor (String?) async -> Bool
   @State private var swaps = 0
+  @State private var showingRecap = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      if let kicker {
-        Text(kicker).font(.caption.weight(.medium)).foregroundStyle(accent.deep)
-      }
+      kicker
       if let rest = store.rest, rest.key.date == store.selectedDate {
         RestChip(rest: rest, onOpen: onWorkout)
       }
@@ -47,8 +49,9 @@ struct DayCard: View {
       HStack(alignment: .top, spacing: Space.s) {
         ZStack(alignment: .topLeading) {
           DayCardTitle(
-            workout: workout, tone: workout.flatMap { store.dashboard?.tone(forWorkout: $0.id) },
-            time: time)
+            workout: workout, moment: moment, next: next,
+            tone: workout.flatMap { store.dashboard?.tone(forWorkout: $0.id) },
+            recap: recap)
             .id(workout?.id)
             .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         }
@@ -75,21 +78,17 @@ struct DayCard: View {
           .accessibilityLabel("trocar o treino do dia")
         }
       }
-      Button(action, systemImage: actionSymbol) {
-        if workout == nil {
-          onPlan()
-        } else {
-          onWorkout()
-        }
+      if moment == .during, let workout {
+        ProgressView(value: Double(workout.completionPercent) / 100)
+          .tint(accent.deep)
+          .animation(Motion.resolve(Motion.glide, reduceMotion), value: workout.completionPercent)
+          .accessibilityHidden(true)
       }
-        .buttonStyle(.glassProminent).tint(accent.deep).foregroundStyle(.white).controlSize(.large)
-        .padding(.top, 6)
-        .accessibilityIdentifier("hoje.abrir")
+      actions.padding(.top, 6)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(Space.xl)
-    .background(workout == nil ? AnyShapeStyle(Color.white) : AnyShapeStyle(accent.acid),
-      in: .rect(cornerRadius: Radius.card))
+    .background(background, in: .rect(cornerRadius: Radius.card))
     .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(accent.deep.opacity(0.12)))
     .contentShape(.contextMenuPreview, .rect(cornerRadius: Radius.card))
     .contextMenu {
@@ -98,7 +97,11 @@ struct DayCard: View {
       }
     }
     .animation(Motion.resolve(Motion.confirm, reduceMotion), value: workout?.id)
+    .animation(Motion.resolve(Motion.confirm, reduceMotion), value: moment)
     .sensoryFeedback(.selection, trigger: swaps)
+    .sheet(isPresented: $showingRecap) {
+      if let recap { WorkoutRecapSheet(recap: recap) }
+    }
   }
 
   private func choose(_ option: DaySwapChoices.Option) {
@@ -107,48 +110,73 @@ struct DayCard: View {
     }
   }
 
-  private var percent: Int { workout?.completionPercent ?? 0 }
-
-  /// Encerrado no "encerrar" da sessão, mesmo com série em aberto.
-  private var isClosed: Bool {
-    guard let workout else { return false }
-    return percent >= 100 || store.finishedAt(workout.id, on: store.selectedDate) != nil
+  /// O lima é o chamado para treinar. Feito o treino, o cartão vira papel e
+  /// deixa a semana e os recordes falarem mais alto.
+  private var background: AnyShapeStyle {
+    switch moment {
+    case .before, .during: AnyShapeStyle(accent.acid)
+    case .rest, .after: AnyShapeStyle(Color.white)
+    }
   }
 
   /// Só aparece quando o dia foge do comum. Treino por começar e descanso já
   /// se dizem pelo título.
-  private var kicker: String? {
-    let state: String? =
-      if workout == nil { nil }
-      else if percent >= 100 { "feito" }
-      else if isClosed { "encerrado" }
-      else if percent > 0 { "em andamento" }
-      else { nil }
-    let parts = [state, choices?.replaced].compactMap { $0 }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  @ViewBuilder
+  private var kicker: some View {
+    let replaced = choices?.replaced
+    switch moment {
+    case .after:
+      Label {
+        Text([isComplete ? "feito" : "encerrado", replaced].compactMap { $0 }.joined(separator: " · "))
+      } icon: {
+        Image(systemName: "checkmark.circle.fill")
+      }
+      .font(.caption.weight(.medium)).foregroundStyle(accent.deep)
+    case .during:
+      Text(["em andamento", replaced].compactMap { $0 }.joined(separator: " · "))
+        .font(.caption.weight(.medium)).foregroundStyle(accent.deep)
+    case .before, .rest:
+      if let replaced {
+        Text(replaced).font(.caption.weight(.medium)).foregroundStyle(accent.deep)
+      }
+    }
   }
 
-  /// Aberto, o card mostra a estimativa; encerrado, o tempo que levou. Menos
-  /// de um minuto é série marcada depois do treino, não duração, e some.
-  private var time: DayCardTitle.Time {
-    guard isClosed, let workout else { return .estimate }
+  private var isComplete: Bool { (workout?.completionPercent ?? 0) >= 100 }
+
+  /// O resumo da sessão encerrada, o mesmo da folha de "encerrar".
+  private var recap: WorkoutRecap? {
+    guard moment == .after, let workout, let data = store.dashboard else { return nil }
     let date = store.selectedDate
-    let elapsed = WorkoutSessionTiming(
+    let timing = WorkoutSessionTiming(
       workout, anchor: store.startedAt(workout.id, on: date),
-      finishedAt: store.finishedAt(workout.id, on: date)
-    )?.elapsed(at: .now) ?? 0
-    return elapsed >= 60 ? .took(elapsed) : .unknown
+      finishedAt: store.finishedAt(workout.id, on: date))
+    return WorkoutRecap(workout, timing: timing, records: data.records ?? [], on: date)
   }
 
-  private var actionSymbol: String {
-    guard workout != nil else { return "list.clipboard" }
-    return isClosed ? "eye" : "play.fill"
-  }
-
-  private var action: String {
-    guard workout != nil else { return "ver o plano" }
-    if isClosed { return "ver o treino" }
-    return percent > 0 ? "continuar" : "começar"
+  @ViewBuilder
+  private var actions: some View {
+    switch moment {
+    case .rest:
+      Button("ver o plano", systemImage: "list.clipboard", action: onPlan)
+        .buttonStyle(.glassProminent).tint(accent.deep).foregroundStyle(.white).controlSize(.large)
+        .accessibilityIdentifier("hoje.abrir")
+    case .before, .during:
+      Button(moment == .during ? "continuar" : "começar", systemImage: "play.fill", action: onWorkout)
+        .buttonStyle(.glassProminent).tint(accent.deep).foregroundStyle(.white).controlSize(.large)
+        .accessibilityIdentifier("hoje.abrir")
+    case .after:
+      HStack(spacing: Space.s) {
+        Button("ver o treino", systemImage: "eye", action: onWorkout)
+          .accessibilityIdentifier("hoje.abrir")
+        if recap != nil {
+          Button("resumo", systemImage: "list.bullet.rectangle") { showingRecap = true }
+            .accessibilityIdentifier("hoje.resumo")
+        }
+      }
+      .buttonStyle(.glass).controlSize(.regular)
+      .foregroundStyle(accent.deep)
+    }
   }
 }
 
@@ -156,16 +184,13 @@ struct DayCard: View {
 /// dia troca de treino.
 private struct DayCardTitle: View {
   @Environment(\.accent) private var accent
+  @ScaledMetric(relativeTo: .largeTitle) private var nameSize = 34.0
   let workout: WorkoutSummary?
+  let moment: HomeMoment
+  let next: PlannedDay?
   /// A cor do treino no plano, a mesma da pasta e dos próximos dias.
   let tone: WorkoutTone?
-  let time: Time
-
-  enum Time {
-    case estimate
-    case took(TimeInterval)
-    case unknown
-  }
+  let recap: WorkoutRecap?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -175,40 +200,72 @@ private struct DayCardTitle: View {
             .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
             .accessibilityHidden(true)
         }
+        // Depois do treino o nome desce de tamanho: o cartão é resumo, não chamado.
+        let size = moment == .after ? nameSize * 0.7 : nameSize
         Text(workout?.name.lowercased() ?? "descanso")
-          .font(.system(size: 34, weight: .medium)).tracking(-1.5)
+          .font(.system(size: size, weight: .medium)).tracking(size * -0.044)
+          .lineLimit(2).truncationMode(.tail)
           .fixedSize(horizontal: false, vertical: true)
       }
       if let workout {
-        if !workout.focus.isEmpty {
-          Text(workout.focus).font(.subheadline).foregroundStyle(accent.deep)
+        if !workout.focus.isEmpty, moment != .after {
+          Text(workout.focus.lowercased()).font(.subheadline).foregroundStyle(accent.deep)
+            // O foco é o detalhe; acima disso ele ficava maior que o nome.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         }
         Text(counts(workout))
           .font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk)
           .accessibilityLabel(spokenCounts(workout))
+      } else if let next, let item = next.workout {
+        Label("\(item.name.lowercased()) · \(when(next.date))", systemImage: "arrow.turn.down.right")
+          .font(.subheadline).foregroundStyle(accent.deep)
+          .accessibilityLabel("próximo treino, \(item.name.lowercased()), \(when(next.date))")
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
+  private func when(_ date: CalendarDate) -> String {
+    date == CalendarDate.today.adding(days: 1) ? "amanhã" : Formatting.weekday(date)
+  }
+
   private func counts(_ workout: WorkoutSummary) -> String {
-    let parts = ["\(workout.exerciseCount) exercícios", "\(workout.workSetCount) séries"]
-    switch time {
-    case .estimate: return (parts + ["\(workout.estimatedMinutes) min"]).joined(separator: " · ")
-    case .took(let seconds): return (parts + [HeroModel.clock(seconds)]).joined(separator: " · ")
-    case .unknown: return parts.joined(separator: " · ")
+    let exercises = "\(workout.exerciseCount) exercícios"
+    switch moment {
+    case .rest, .before:
+      return [exercises, "\(workout.workSetCount) séries",
+        Formatting.duration(minutes: workout.estimatedMinutes)].joined(separator: " · ")
+    case .during:
+      return [exercises, "\(workout.completedWorkSetCount) de \(workout.workSetCount) séries"]
+        .joined(separator: " · ")
+    case .after:
+      guard let recap else { return exercises }
+      return [
+        took(recap), "\(recap.doneSets) de \(recap.totalSets) séries",
+        "\(Formatting.trim(recap.workVolumeKg.rounded())) kg",
+      ].compactMap { $0 }.joined(separator: " · ")
     }
   }
 
+  /// Menos de um minuto é série marcada depois do treino, não duração, e some.
+  private func took(_ recap: WorkoutRecap) -> String? {
+    guard let seconds = recap.durationSeconds, seconds >= 60 else { return nil }
+    return Formatting.duration(seconds: TimeInterval(seconds))
+  }
+
   private func spokenCounts(_ workout: WorkoutSummary) -> String {
-    let parts = ["\(workout.exerciseCount) exercícios", "\(workout.workSetCount) séries"]
-    switch time {
-    case .estimate:
-      return (parts + ["uns \(workout.estimatedMinutes) minutos"]).joined(separator: ", ")
-    case .took(let seconds):
-      let spoken = Duration.seconds(seconds).formatted(.units(allowed: [.hours, .minutes]))
-      return (parts + ["durou \(spoken)"]).joined(separator: ", ")
-    case .unknown: return parts.joined(separator: ", ")
+    let exercises = "\(workout.exerciseCount) exercícios"
+    switch moment {
+    case .rest, .before:
+      return "\(exercises), \(workout.workSetCount) séries, uns \(workout.estimatedMinutes) minutos"
+    case .during:
+      return "\(exercises), \(workout.completedWorkSetCount) de \(workout.workSetCount) séries feitas"
+    case .after:
+      guard let recap else { return exercises }
+      return [
+        took(recap).map { "durou \($0)" }, "\(recap.doneSets) de \(recap.totalSets) séries",
+        "\(Formatting.trim(recap.workVolumeKg.rounded())) quilos de volume",
+      ].compactMap { $0 }.joined(separator: ", ")
     }
   }
 }

@@ -348,9 +348,9 @@ final class FluxoDrive: XCTestCase {
     let plano = app.buttons["hoje.plano"]
     XCTAssert(plano.waitForExistence(timeout: 5), "a fita dos próximos dias apareceu")
     XCTAssert(
-      app.staticTexts.matching(
-        NSPredicate(format: "label CONTAINS 'hoje'")).firstMatch.waitForExistence(timeout: 3),
-      "a fita marca o dia de hoje")
+      app.buttons.matching(
+        NSPredicate(format: "label BEGINSWITH 'amanhã'")).firstMatch.waitForExistence(timeout: 3),
+      "a fita começa amanhã")
     shot("43-home-proximos-dias")
 
     plano.tap()

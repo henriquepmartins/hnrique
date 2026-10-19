@@ -541,48 +541,74 @@ private struct AppSwitcherRow: View {
 }
 
 /// A home responde uma pergunta só, o que eu faço agora, e depois desce para o
-/// diagnóstico. A ordem é essa: ação, o que vem a seguir, o que mudou, quanto do
-/// plano da semana saiu, quais músculos ficaram sem estímulo. Presença e
-/// constância moram em "progresso".
+/// diagnóstico. A ordem segue o momento do dia (`HomeMoment`): antes e durante
+/// o treino a semana vem logo abaixo do cartão do dia; depois sobem os recordes
+/// de hoje e a semana que o treino fechou. Presença e constância moram em
+/// "progresso".
 struct OverviewScreen: View {
   @Environment(AcademiaStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let onWorkout: () -> Void
   let onPlan: () -> Void
   let onDay: (CalendarDate) -> Void
+
+  private var moment: HomeMoment? {
+    store.dashboard.map { data in
+      HomeMoment(
+        workout: data.workout,
+        finishedAt: data.workout.flatMap { store.finishedAt($0.id, on: store.selectedDate) })
+    }
+  }
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
         DateHeader(date: store.selectedDate)
-        if let data = store.dashboard {
-          DayCard(
-            workout: data.workout, choices: DaySwapChoices(data), onWorkout: onWorkout,
-            onPlan: onPlan, onSwap: { await store.swapDay(workoutTemplateId: $0) })
-            .staggeredEntrance(index: 0, isReady: true)
-          NextDaysStrip(
-            days: plannedDays(from: data.date, schedule: data.schedule), onPlan: onPlan,
-            onDay: onDay)
-            .staggeredEntrance(index: 1, isReady: true)
-          if let records = data.records, !records.isEmpty {
-            RecordsCard(records: records, today: data.date)
-              .staggeredEntrance(index: 2, isReady: true)
-          }
-          if let week = store.trainingWeek(today: data.date), week.planned > 0 {
-            WeeklyAdherenceCard(week: week, today: data.date, onPlan: onPlan)
-              .staggeredEntrance(index: 3, isReady: true)
-          }
-          if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {
-            MuscleMap(load: load, today: data.date, onPlan: onPlan)
-              .staggeredEntrance(index: 4, isReady: true)
+        if let data = store.dashboard, let moment {
+          let days = plannedDays(from: data.date.adding(days: 1), schedule: data.schedule)
+          ForEach(Array(moment.sections.enumerated()), id: \.element) { index, section in
+            self.section(section, data: data, moment: moment, days: days)
+              .staggeredEntrance(index: index, isReady: true)
           }
         } else if store.phase.awaitsDashboard {
           OverviewSkeleton().transition(.opacity)
         }
       }.padding(Space.l).padding(.bottom, Space.page)
+      .animation(Motion.resolve(Motion.glide, reduceMotion), value: moment)
     }
     .refreshable { await store.load() }
     .overlay {
       TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil) { EmptyView() }
+    }
+  }
+
+  @ViewBuilder
+  private func section(
+    _ section: HomeSection, data: Dashboard, moment: HomeMoment, days: [PlannedDay]
+  ) -> some View {
+    switch section {
+    case .day:
+      DayCard(
+        workout: data.workout, moment: moment, next: days.first { $0.workout != nil },
+        choices: DaySwapChoices(data), onWorkout: onWorkout, onPlan: onPlan,
+        onSwap: { await store.swapDay(workoutTemplateId: $0) })
+    case .nextDays:
+      NextDaysStrip(days: days, onPlan: onPlan, onDay: onDay)
+    case .records:
+      // A primeira sessão de cada exercício conta como estreia, e um usuário
+      // novo veria a seção "recordes" cheia do primeiro treino. As estreias
+      // continuam no histórico do exercício.
+      if let records = data.records?.filter({ $0.kind != .estreia }), !records.isEmpty {
+        RecordsCard(records: records, today: data.date)
+      }
+    case .week:
+      if let week = store.trainingWeek(today: data.date), week.planned > 0 {
+        WeeklyAdherenceCard(week: week, today: data.date, onPlan: onPlan)
+      }
+    case .muscles:
+      if let load = data.muscleLoad, load.contains(where: { $0.setsMonth > 0 }) {
+        MuscleMap(load: load, today: data.date, onPlan: onPlan)
+      }
     }
   }
 }

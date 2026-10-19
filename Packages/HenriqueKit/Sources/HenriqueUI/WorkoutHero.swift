@@ -11,37 +11,44 @@ enum HeroModel {
   struct Session {
     let workout: WorkoutSummary
     let meta: String
+    /// A versão curta do rodapé, para quando a longa não cabe ao lado do botão.
+    let compactMeta: String
+    let spokenMeta: String
     let actionLabel: String
   }
 
   /// `duration` é o tempo real da sessão já parada. Sem ele o rodapé mostra a
-  /// estimativa que sai das séries e descansos do treino.
+  /// estimativa que sai das séries e descansos do treino. Em andamento, o
+  /// rodapé conta as séries: a estimativa já não ajuda e "33%" não diz de quê.
   init(workout: WorkoutSummary?, finished: Bool = false, duration: TimeInterval? = nil) {
     guard let workout else {
       self = .rest
       return
     }
     let exercises = "\(workout.exerciseCount) exercícios"
-    let estimate = "\(exercises) · \(workout.estimatedMinutes) min"
+    let minutes = Formatting.duration(minutes: workout.estimatedMinutes)
+    let estimate = "\(exercises) · \(minutes)"
+    let spokenEstimate = "\(exercises), uns \(workout.estimatedMinutes) minutos"
     if finished {
-      // Séries marcadas todas de uma vez, depois do treino, dariam "0:00".
-      let real = duration.flatMap { $0 >= 60 ? $0 : nil }
-      let meta = real.map { "\(exercises) · \(Self.clock($0))" } ?? estimate
-      self = .session(Session(workout: workout, meta: meta, actionLabel: "ver o treino"))
-    } else if workout.completionPercent > 0 {
+      // Séries marcadas todas de uma vez, depois do treino, dariam "1 min".
+      let real = duration.flatMap { $0 >= 60 ? Formatting.duration(seconds: $0) : nil }
       self = .session(Session(
-        workout: workout, meta: estimate + " · \(workout.completionPercent)%",
+        workout: workout, meta: real.map { "\(exercises) · \($0)" } ?? estimate,
+        compactMeta: real ?? minutes,
+        spokenMeta: real.map { "\(exercises), durou \($0)" } ?? spokenEstimate,
+        actionLabel: "ver o treino"))
+    } else if workout.completionPercent > 0 {
+      let done = workout.completedWorkSetCount
+      let total = workout.workSetCount
+      self = .session(Session(
+        workout: workout, meta: "\(done) de \(total) séries", compactMeta: "\(done)/\(total)",
+        spokenMeta: "\(done) de \(total) séries, uns \(workout.estimatedMinutes) minutos",
         actionLabel: "continuar"))
     } else {
-      self = .session(Session(workout: workout, meta: estimate, actionLabel: "começar"))
+      self = .session(Session(
+        workout: workout, meta: estimate, compactMeta: minutes, spokenMeta: spokenEstimate,
+        actionLabel: "começar"))
     }
-  }
-
-  /// "4:43", ou "1:02:10" passando de uma hora.
-  static func clock(_ duration: TimeInterval) -> String {
-    let seconds = Int(duration)
-    return Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600
-      ? .hourMinuteSecond : .minuteSecond))
   }
 
   /// "quarta, 23 de setembro". Só o VoiceOver lê: na tela a fita de dias acima
@@ -75,13 +82,16 @@ struct WorkoutHero: View {
         title("descanso", size: restTitleSize)
           .accessibilityLabel("\(dateLabel), descanso")
       case .session(let session):
-        title(session.workout.name, size: titleSize)
-          .accessibilityLabel("\(dateLabel), \(session.workout.name)")
-          .accessibilityValue(session.workout.focus)
+        title(session.workout.name.lowercased(), size: titleSize)
+          .accessibilityLabel("\(dateLabel), \(session.workout.name.lowercased())")
+          .accessibilityValue(session.workout.focus.lowercased())
         HStack(spacing: 12) {
-          Text(session.meta)
-            .font(.subheadline).monospacedDigit().foregroundStyle(HeroInk.meta)
-            .contentTransition(.numericText())
+          ViewThatFits(in: .horizontal) {
+            meta(session.meta)
+            meta(session.compactMeta)
+          }
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel(session.spokenMeta)
           Spacer(minLength: 0)
           PaperButton(label: session.actionLabel, action: onStart)
             .matchedTransitionSource(id: "sessao", in: sessionSource)
@@ -92,7 +102,18 @@ struct WorkoutHero: View {
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.top, 44).padding(.horizontal, 24).padding(.bottom, 24)
-    .background { HeroBackground(accent: accent) }
+    .background {
+      HeroBackground(accent: accent)
+        // O pé do degradê é o tom mais claro, e o rodapé creme sumia nele.
+        .overlay(alignment: .bottom) {
+          if case .session = model {
+            LinearGradient(
+              colors: [.black.opacity(0), .black.opacity(0.35)], startPoint: .top, endPoint: .bottom
+            )
+            .frame(height: 140)
+          }
+        }
+    }
     .overlay(alignment: .top) {
       HeroNotch(center: notch).fill(Color.canvas)
         .shadow(color: .white.opacity(0.38), radius: 0, y: 1)
@@ -100,6 +121,13 @@ struct WorkoutHero: View {
     }
     .clipShape(.rect(cornerRadius: 32))
     .shadow(color: accent.deep.opacity(0.13), radius: 30, y: 22)
+  }
+
+  private func meta(_ text: String) -> some View {
+    Text(text)
+      .font(.subheadline).monospacedDigit().foregroundStyle(HeroInk.meta)
+      .lineLimit(1)
+      .contentTransition(.numericText())
   }
 
   /// A linha exata de `size * 1.05` deixa a perna do "ç" e do "p" fora do
@@ -397,7 +425,11 @@ struct FilmTitle: View {
     let longest = text.split(separator: " ").map(String.init).max { $0.count < $1.count } ?? text
     return ZStack(alignment: .topLeading) {
       styled(longest, size: size).fixedSize().hidden()
+      // Um nome de oito palavras a 76 pontos tomava sete linhas e empurrava o
+      // botão para baixo da barra de abas. Três linhas no máximo, encolhendo.
       styled(text, size: size)
+        .lineLimit(3)
+        .minimumScaleFactor(0.45)
         .fixedSize(horizontal: false, vertical: true)
         .frame(minWidth: 0, idealWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
@@ -416,6 +448,7 @@ struct FilmTitle: View {
 /// três recortes a cada 0,2s, e uma sombra do contorno treme no próprio ritmo.
 private struct PaperButton: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.accent) private var accent
   let label: String
   let action: () -> Void
 
@@ -442,16 +475,22 @@ private struct PaperButton: View {
 
   private func paper(tick: Int) -> some View {
     let cut = Self.cuts[(tick / 2) % 3]
+    // Cheio de papel e o rótulo no tom escuro do acento: só o contorno creme
+    // sobre o pé do degradê dava 2:1 de contraste.
     return Text(label)
       .font(.callout.weight(.semibold)).tracking(0.15)
-      .foregroundStyle(HeroInk.cream)
+      .foregroundStyle(accent.deep)
+      .lineLimit(1).fixedSize()
       .padding(.horizontal, 24).frame(minHeight: 48)
       .background {
         Capsule().stroke(HeroInk.cream, lineWidth: 1)
           .padding(-1.5).opacity(0.32)
           .offset(Self.ghostOffsets[(tick / 3) % 3])
       }
-      .background { PaperCapsule(seed: cut.seed).stroke(HeroInk.cream, lineWidth: 1.5) }
+      .background {
+        PaperCapsule(seed: cut.seed).fill(HeroInk.cream)
+          .overlay { PaperCapsule(seed: cut.seed).stroke(HeroInk.cream, lineWidth: 1.5) }
+      }
       .contentShape(.capsule)
       .rotationEffect(.degrees(cut.angle))
       .offset(cut.offset)
