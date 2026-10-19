@@ -4,7 +4,6 @@ import SwiftUI
 struct WeightStepper: View {
   @Binding var weightKg: Double
   var range: ClosedRange<Double> = Limits.setWeightKg
-  var onFocus: () -> Void = {}
   /// Sobe só pelo stepper. O campo digitado não vibra a cada tecla.
   @State private var steps = 0
 
@@ -12,8 +11,7 @@ struct WeightStepper: View {
     AdjustRow(label: "carga") {
       DecimalField(
         placeholder: "0",
-        value: Binding(get: { weightKg }, set: { weightKg = ($0 ?? 0).clamped(to: range) }),
-        onFocus: onFocus)
+        value: Binding(get: { weightKg }, set: { weightKg = ($0 ?? 0).clamped(to: range) }))
         .submitLabel(.done)
         .multilineTextAlignment(.trailing)
         .font(.body.weight(.semibold)).monospacedDigit()
@@ -39,7 +37,6 @@ struct WeightStepper: View {
 struct DecimalField: View {
   let placeholder: String
   @Binding var value: Double?
-  var onFocus: () -> Void = {}
   @FocusState private var focused: Bool?
 
   var body: some View {
@@ -48,9 +45,6 @@ struct DecimalField: View {
       parse: parseDecimal, format: formatPrepWeight
     )
     .decimalInput()
-    .onChange(of: focused) { _, new in
-      if new == true { onFocus() }
-    }
   }
 }
 

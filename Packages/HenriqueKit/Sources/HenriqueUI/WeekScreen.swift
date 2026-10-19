@@ -438,16 +438,12 @@ struct PlanExerciseRow: View {
   let isExpanded: Bool
   let onToggle: (() -> Void)?
   let onRemove: (() -> Void)?
-  /// Um campo de carga ganhou o foco. Quem mostra a linha rola para ela ficar
-  /// acima do teclado.
-  let onFieldFocus: () -> Void
   @State private var history: ExerciseHistoryTarget?
 
   init(
     exercise: Binding<PlanExercise>, name: String, subtitle: String? = nil,
     imageUrl: String? = nil, isOrganizing: Bool = false, isExpanded: Bool = true,
-    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil,
-    onFieldFocus: @escaping () -> Void = {}
+    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil
   ) {
     _exercise = exercise
     self.name = name
@@ -457,7 +453,6 @@ struct PlanExerciseRow: View {
     self.isExpanded = isExpanded
     self.onToggle = onToggle
     self.onRemove = onRemove
-    self.onFieldFocus = onFieldFocus
   }
 
   private var showsControls: Bool { !isOrganizing && (isExpanded || onToggle == nil) }
@@ -500,9 +495,9 @@ struct PlanExerciseRow: View {
         Divider()
         ExerciseStepperRow(label: "reps máx.", value: $exercise.repsMax, range: Limits.planReps)
         Divider()
-        WeightStepper(weightKg: $exercise.startingWeightKg, onFocus: onFieldFocus)
+        WeightStepper(weightKg: $exercise.startingWeightKg)
         Divider()
-        PrepWeightRow(weightKg: $exercise.prepWeightKg, onFocus: onFieldFocus)
+        PrepWeightRow(weightKg: $exercise.prepWeightKg)
         Divider()
         RestStepperRow(seconds: $exercise.restSeconds)
         Divider()
@@ -632,7 +627,6 @@ extension PlanExercise {
 /// "concluir" com o teclado aberto salvava sem ele.
 private struct PrepWeightRow: View {
   @Binding var weightKg: Double?
-  var onFocus: () -> Void = {}
   @State private var text = ""
   @FocusState private var focused: Bool
 
@@ -654,7 +648,7 @@ private struct PrepWeightRow: View {
     }
     .onChange(of: text) { _, new in weightKg = parsePrepWeight(new) }
     .onChange(of: focused) { _, isFocused in
-      if isFocused { onFocus() } else { text = weightKg.map(formatPrepWeight) ?? "" }
+      if !isFocused { text = weightKg.map(formatPrepWeight) ?? "" }
     }
   }
 }
@@ -1082,6 +1076,7 @@ private struct MuscleChip: View {
 
 struct ExercisePickerRow: View {
   @Environment(\.accent) private var accent
+  @Environment(\.dynamicTypeSize) private var typeSize
   let item: ExerciseCatalogItem
   let picked: Bool
   /// O treino chegou ao limite: o "+" apaga, mas o toque continua chegando
@@ -1093,43 +1088,68 @@ struct ExercisePickerRow: View {
 
   var body: some View {
     Button(action: onUnpick ?? action) {
-      HStack(spacing: Space.m) {
-        ExerciseThumb(imageUrl: item.imageUrl, size: 56)
-        VStack(alignment: .leading, spacing: 3) {
-          Text(item.name.lowercased())
-            .font(.body.weight(.medium)).foregroundStyle(Color.ink)
-            .lineLimit(2)
-          Text("\(item.muscleGroup.lowercased()) · \(item.equipment.lowercased())")
-            .font(.caption).foregroundStyle(Color.mutedInk)
-            .lineLimit(1)
-        }
-        Spacer(minLength: 8)
-        if picked {
-          HStack(spacing: 4) {
-            if onUnpick != nil {
-              Image(systemName: "checkmark.circle.fill").foregroundStyle(accent.base)
-            }
-            Text("no treino")
-          }
-          .font(.caption2.weight(.medium))
-          .foregroundStyle(Color.mutedInk)
-          .padding(.horizontal, 10).padding(.vertical, 6)
-          .background(Color.surfaceMuted, in: .capsule)
-        } else {
-          Image(systemName: "plus.circle.fill")
-            .font(.title2).foregroundStyle(Color.ink.opacity(isFull ? 0.25 : 0.75))
-            .frame(width: 44, height: 44)
-            .contentShape(.rect)
-        }
-      }
-      .padding(.horizontal, Space.l).padding(.vertical, Space.s)
-      .contentShape(.rect)
-      .opacity(picked && onUnpick == nil ? 0.55 : 1)
+      layout
+        .padding(.horizontal, Space.l).padding(.vertical, Space.s)
+        .contentShape(.rect)
+        .opacity(picked && onUnpick == nil ? 0.55 : 1)
     }
     .buttonStyle(StudyPressStyle())
     .disabled(picked && onUnpick == nil)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(accessibilityLabel)
+  }
+
+  /// Nos tamanhos de acessibilidade a foto e o "+" ficam numa linha própria, e o
+  /// nome ganha a largura toda em vez de quebrar no meio e cortar.
+  @ViewBuilder private var layout: some View {
+    if typeSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: Space.s) {
+        HStack {
+          ExerciseThumb(imageUrl: item.imageUrl, size: 56)
+          Spacer(minLength: 8)
+          trailing
+        }
+        titles
+      }
+    } else {
+      HStack(spacing: Space.m) {
+        ExerciseThumb(imageUrl: item.imageUrl, size: 56)
+        titles
+        Spacer(minLength: 8)
+        trailing
+      }
+    }
+  }
+
+  private var titles: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(item.name.lowercased())
+        .font(.body.weight(.medium)).foregroundStyle(Color.ink)
+        .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+      Text("\(item.muscleGroup.lowercased()) · \(item.equipment.lowercased())")
+        .font(.caption).foregroundStyle(Color.mutedInk)
+        .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+    }
+  }
+
+  @ViewBuilder private var trailing: some View {
+    if picked {
+      HStack(spacing: 4) {
+        if onUnpick != nil {
+          Image(systemName: "checkmark.circle.fill").foregroundStyle(accent.base)
+        }
+        Text("no treino")
+      }
+      .font(.caption2.weight(.medium))
+      .foregroundStyle(Color.mutedInk)
+      .padding(.horizontal, 10).padding(.vertical, 6)
+      .background(Color.surfaceMuted, in: .capsule)
+    } else {
+      Image(systemName: "plus.circle.fill")
+        .font(.title2).foregroundStyle(Color.ink.opacity(isFull ? 0.25 : 0.75))
+        .frame(width: 44, height: 44)
+        .contentShape(.rect)
+    }
   }
 
   private var accessibilityLabel: String {

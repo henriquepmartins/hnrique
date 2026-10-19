@@ -429,20 +429,20 @@ struct ChartCard<Content: View>: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
-      HStack {
-        Text(title).font(.headline)
-          .lineLimit(2).minimumScaleFactor(0.7)
-        Spacer(minLength: 8)
-        if let onHistory {
-          Button("histórico", systemImage: "clock.arrow.circlepath", action: onHistory)
-            .labelStyle(.iconOnly)
-            .font(.subheadline.weight(.semibold)).foregroundStyle(.tint)
-            .frame(width: 44, height: 44).contentShape(.rect)
-            .buttonStyle(.plain)
+      // Com os botões ao lado, o texto grande quebrava o título em
+      // "desen-volvimento"; sem espaço, eles sobem para cima do título.
+      ViewThatFits(in: .horizontal) {
+        HStack {
+          titleText.fixedSize()
+          Spacer(minLength: 8)
+          actions
         }
-        if opens {
-          Image(systemName: "chevron.right")
-            .font(.subheadline.weight(.semibold)).foregroundStyle(Color.mutedInk)
+        VStack(alignment: .leading, spacing: Space.xs) {
+          HStack {
+            Spacer(minLength: 0)
+            actions
+          }
+          titleText
         }
       }
       content
@@ -454,6 +454,27 @@ struct ChartCard<Content: View>: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(Space.xl)
     .paperCard()
+  }
+
+  private var titleText: some View {
+    Text(title).font(.headline)
+      .lineLimit(2).minimumScaleFactor(0.7)
+  }
+
+  private var actions: some View {
+    HStack {
+      if let onHistory {
+        Button("histórico", systemImage: "clock.arrow.circlepath", action: onHistory)
+          .labelStyle(.iconOnly)
+          .font(.subheadline.weight(.semibold)).foregroundStyle(.tint)
+          .frame(width: 44, height: 44).contentShape(.rect)
+          .buttonStyle(.plain)
+      }
+      if opens {
+        Image(systemName: "chevron.right")
+          .font(.subheadline.weight(.semibold)).foregroundStyle(Color.mutedInk)
+      }
+    }
   }
 }
 

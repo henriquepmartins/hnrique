@@ -12,29 +12,13 @@ struct ExerciseCard: View {
   let templateId: String
   let isOpen: Bool
   let onToggle: () -> Void
+  @Environment(\.dynamicTypeSize) private var typeSize
   @State private var history: ExerciseHistoryTarget?
 
   var body: some View {
     VStack(spacing: 0) {
       Button(action: onToggle) {
-        HStack(spacing: 12) {
-          if exercise.imageUrl != nil {
-            ExerciseThumb(imageUrl: exercise.imageUrl, size: 48)
-          } else {
-            Image(systemName: "dumbbell").font(.title3).foregroundStyle(accent.base)
-              .frame(width: 48, height: 48).background(accent.pale.opacity(0.4), in: .rect(cornerRadius: 48 * 0.32))
-          }
-          VStack(alignment: .leading, spacing: 6) {
-            Text(exercise.name.lowercased()).font(.headline.weight(.medium))
-            prescription.font(.caption).foregroundStyle(Color.mutedInk)
-              .fixedSize(horizontal: false, vertical: true)
-              .accessibilityLabel(spokenPrescription)
-          }
-          Spacer(minLength: 0)
-          Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
-            .font(.caption).monospacedDigit().foregroundStyle(Color.mutedInk)
-          Image(systemName: isOpen ? "chevron.up" : "chevron.down").font(.caption2)
-        }.padding(16).frame(minHeight: 92).contentShape(.rect)
+        header.padding(16).frame(minHeight: 92).contentShape(.rect)
       }.buttonStyle(StudyPressStyle()).accessibilityValue(isOpen ? "expandido" : "recolhido")
       .contextMenu {
         Button("histórico", systemImage: "chart.line.uptrend.xyaxis") {
@@ -74,14 +58,61 @@ struct ExerciseCard: View {
     .exerciseHistorySheet(item: $history)
   }
 
-  /// "2 × 6–10" e o raio quando as séries valendo vão à falha.
-  private var prescription: some View {
-    let p = exercise.prescription
-    return HStack(spacing: 4) {
-      Text("\(p.workSets) × \(p.repsMin)–\(p.repsMax)")
-      if p.workToFailure { FailureMark() }
-      Text("· \(weightLabel(p.startingWeightKg))")
+  /// Nos tamanhos de acessibilidade a foto e a contagem sobem para uma linha
+  /// própria, e o nome fica com a largura toda em vez de quebrar no meio.
+  @ViewBuilder private var header: some View {
+    if typeSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: Space.s) {
+        HStack(spacing: 12) {
+          thumb
+          Spacer(minLength: 0)
+          progress
+        }
+        titles
+      }
+    } else {
+      HStack(spacing: 12) {
+        thumb
+        titles
+        Spacer(minLength: 0)
+        progress
+      }
     }
+  }
+
+  @ViewBuilder private var thumb: some View {
+    if exercise.imageUrl != nil {
+      ExerciseThumb(imageUrl: exercise.imageUrl, size: 48)
+    } else {
+      Image(systemName: "dumbbell").font(.title3).foregroundStyle(accent.base)
+        .frame(width: 48, height: 48).background(accent.pale.opacity(0.4), in: .rect(cornerRadius: 48 * 0.32))
+    }
+  }
+
+  private var titles: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(exercise.name.lowercased()).font(.headline.weight(.medium))
+      prescription.font(.caption).foregroundStyle(Color.mutedInk)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityLabel(spokenPrescription)
+    }
+  }
+
+  private var progress: some View {
+    HStack(spacing: 12) {
+      Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
+        .font(.caption).monospacedDigit().foregroundStyle(Color.mutedInk)
+      Image(systemName: isOpen ? "chevron.up" : "chevron.down").font(.caption2)
+    }
+  }
+
+  /// "2 × 6–10 ⚡ · 24 kg". Um `Text` só, para quebrar entre palavras quando o
+  /// texto cresce.
+  private var prescription: Text {
+    let p = exercise.prescription
+    let bolt = p.workToFailure
+      ? Text(" \(Image(systemName: "bolt.fill"))").font(.caption2).foregroundStyle(accent.base) : Text("")
+    return Text("\(p.workSets) × \(p.repsMin)–\(p.repsMax)\(bolt) · \(weightLabel(p.startingWeightKg))")
   }
   private var spokenPrescription: String {
     let p = exercise.prescription
