@@ -223,10 +223,11 @@ struct MeasurementEditor: View {
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("cancelar") { dismiss() }
+          Button("cancelar", systemImage: "xmark", role: .cancel) { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
-          Button("salvar") { save() }.disabled(isSaving || !allWithinLimits)
+          Button("salvar", systemImage: "checkmark", role: .confirm) { save() }
+            .disabled(isSaving || !allWithinLimits)
         }
       }
       .keyboardDone()
@@ -291,7 +292,7 @@ struct RangeHint: View {
 
   var body: some View {
     Text("entre \(bound(range.lowerBound)) e \(bound(range.upperBound)) \(unit)")
-      .font(.caption2).foregroundStyle(.red)
+      .font(.caption2).foregroundStyle(Color.danger)
       .frame(maxWidth: .infinity, alignment: .trailing)
       .accessibilityAddTraits(.updatesFrequently)
   }

@@ -646,8 +646,7 @@ struct ExercisePicker: View {
                 }
               }
               .padding(.horizontal, 12).padding(.vertical, 6)
-              .background(.white, in: .rect(cornerRadius: 18))
-              .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+              .fieldSurface()
               ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                   MuscleChip(title: "todos", selected: muscle == nil) { muscle = nil }
@@ -669,7 +668,7 @@ struct ExercisePicker: View {
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("fechar") { dismiss() }
+          Button("fechar", systemImage: "xmark", role: .close) { dismiss() }
         }
       }
       .keyboardDone()

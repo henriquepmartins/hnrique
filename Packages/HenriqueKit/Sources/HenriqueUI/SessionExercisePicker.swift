@@ -54,8 +54,7 @@ struct SessionExercisePicker: View {
               }
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(.white, in: .rect(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+            .fieldSurface()
             .padding(.horizontal, Space.l).padding(.top, Space.s).padding(.bottom, Space.s)
             .background(Color.canvas)
           }
@@ -68,7 +67,8 @@ struct SessionExercisePicker: View {
       #endif
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("fechar") { dismiss() }.accessibilityIdentifier("sessao.fechar-catalogo")
+          Button("fechar", systemImage: "xmark", role: .close) { dismiss() }
+            .accessibilityIdentifier("sessao.fechar-catalogo")
         }
       }
       .onAppear { searchFocused = true }

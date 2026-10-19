@@ -181,9 +181,9 @@ struct SyncStatusLine: View {
     if let notice = store.notice {
       HStack(spacing: 6) {
         Label(notice, systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(Color.orange).lineLimit(2)
+          .foregroundStyle(Color.warning).lineLimit(2)
         Spacer(minLength: 4)
-        Button("ok") { store.notice = nil }.font(.caption.weight(.semibold))
+        IconButton(title: "dispensar aviso", systemImage: "xmark", size: 12) { store.notice = nil }
       }
       .font(.caption)
       .accessibilityIdentifier("fila.aviso")

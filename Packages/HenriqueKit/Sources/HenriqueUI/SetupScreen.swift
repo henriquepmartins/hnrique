@@ -53,7 +53,7 @@ struct SetupScreen: View {
         VStack(alignment: .leading, spacing: Space.xxl) {
           PageHeading(title: step.title)
           fields
-          if let error { Text(error).font(.subheadline).foregroundStyle(.red).accessibilityAddTraits(.updatesFrequently) }
+          if let error { Text(error).font(.subheadline).foregroundStyle(Color.danger).accessibilityAddTraits(.updatesFrequently) }
           HStack {
             if step != .welcome {
               Button("voltar") { step = SetupStep(rawValue: step.rawValue - 1) ?? .welcome; error = nil }
@@ -81,7 +81,9 @@ struct SetupScreen: View {
       .navigationTitle("h&")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("fechar") { dismiss() }.disabled(saving) }
+        ToolbarItem(placement: .cancellationAction) {
+          Button("fechar", systemImage: "xmark", role: .close) { dismiss() }.disabled(saving)
+        }
       }
       .keyboardDone()
       .interactiveDismissDisabled(saving)

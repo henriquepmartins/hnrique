@@ -283,8 +283,7 @@ private struct WorkoutPreviewRow: View {
     }
     .padding(.horizontal, 12)
     .frame(height: 56)
-    .background(.white, in: .rect(cornerRadius: 18))
-    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+    .fieldSurface()
     .accessibilityHidden(true)
   }
 }
@@ -314,8 +313,7 @@ private struct EditorField<Content: View>: View {
       .font(.body)
       .padding(.horizontal, 16)
       .frame(minHeight: 52)
-      .background(.white, in: .rect(cornerRadius: 18))
-      .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+      .fieldSurface()
   }
 }
 
