@@ -19,6 +19,8 @@ struct WeeklyAdherenceCard: View {
       SectionHeading(title: "esta semana", systemImage: "calendar.badge.checkmark")
       Button(action: onPlan) { summary }
         .buttonStyle(StudyPressStyle())
+        .accessibilityLabel("\(week.done) de \(week.planned) treinos nesta semana")
+        .accessibilityValue(spokenState)
         .accessibilityIdentifier("hoje.aderencia")
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,9 +59,6 @@ struct WeeklyAdherenceCard: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(Space.xl)
     .paperCard(radius: Radius.tile)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("\(week.done) de \(week.planned) treinos nesta semana")
-    .accessibilityValue(spokenState)
   }
 
   /// Feito cheio, perdido tracejado, o que falta apagado.
