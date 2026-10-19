@@ -34,7 +34,7 @@ struct SetActivityWidget: Widget {
             if let up = state.up {
               Load(up: up, tone: tone)
               Spacer()
-              DoneButton(target: up.target, tone: tone)
+              DoneButton(target: up.target, exerciseName: up.exerciseName, tone: tone)
             } else {
               Progress(done: state.done, total: state.total, tone: tone)
             }
@@ -90,7 +90,7 @@ private struct LockScreenView: View {
           SetLabel(text: up.setLabel, tone: tone)
           Load(up: up, tone: tone)
           Spacer(minLength: 8)
-          DoneButton(target: up.target, tone: tone)
+          DoneButton(target: up.target, exerciseName: up.exerciseName, tone: tone)
         }
       }
       Progress(done: state.done, total: state.total, tone: tone)
@@ -156,18 +156,21 @@ private struct Load: View {
 
 private struct DoneButton: View {
   let target: SetKey
+  let exerciseName: String
   let tone: Tone
 
   var body: some View {
     Button(intent: CompleteSetIntent(target)) {
-      Text("feito")
+      Label("feito", systemImage: "checkmark")
         .font(.body.weight(.semibold))
         .foregroundStyle(tone.ink)
         .padding(.horizontal, 18)
-        .padding(.vertical, 8)
+        .frame(minHeight: 44)
         .background(tone.fill, in: Capsule())
     }
     .buttonStyle(.plain)
+    .accessibilityLabel(
+      "marcar \(target.kind == .prep ? "aquecimento" : "série") \(target.index), \(exerciseName.lowercased())")
   }
 }
 
@@ -191,8 +194,10 @@ private struct Progress: View {
   }
 }
 
-/// A cor do treino e a tinta que vai por cima dela, com a mesma regra do app:
-/// tinta escura do mesmo matiz, e branca quando a cor já é escura.
+/// A cor do treino e a tinta que vai por cima dela: tinta escura do mesmo matiz
+/// ou branca, a que tiver mais contraste. O contraste é o do APCA, que pesa como
+/// o olho lê cor saturada; pela conta do WCAG 2 o vermelho ficava com a tinta
+/// escura, que some nele.
 private struct Tone {
   let fill: Color
   let ink: Color
@@ -209,7 +214,30 @@ private struct Tone {
     var brightness: CGFloat = 0
     color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: nil)
     fill = Color(uiColor: color)
-    ink = brightness < 0.4
-      ? .white : Color(hue: hue, saturation: min(1, saturation * 1.1), brightness: brightness * 0.26)
+    let dark = UIColor(
+      hue: hue, saturation: min(1, saturation * 1.1), brightness: brightness * 0.26, alpha: 1)
+    ink = abs(apcaContrast(text: dark, on: color)) > abs(apcaContrast(text: .white, on: color))
+      ? Color(uiColor: dark) : .white
   }
+}
+
+/// O Lc do APCA 0.0.98G: positivo para texto escuro em fundo claro, negativo ao contrário.
+private func apcaContrast(text: UIColor, on background: UIColor) -> Double {
+  func luminance(_ color: UIColor) -> Double {
+    var red: CGFloat = 0
+    var green: CGFloat = 0
+    var blue: CGFloat = 0
+    color.getRed(&red, green: &green, blue: &blue, alpha: nil)
+    let y = 0.2126729 * pow(Double(red), 2.4) + 0.7151522 * pow(Double(green), 2.4)
+      + 0.0721750 * pow(Double(blue), 2.4)
+    return y > 0.022 ? y : y + pow(0.022 - y, 1.414)
+  }
+  let text = luminance(text)
+  let background = luminance(background)
+  if background > text {
+    let contrast = (pow(background, 0.56) - pow(text, 0.57)) * 1.14
+    return contrast < 0.1 ? 0 : (contrast - 0.027) * 100
+  }
+  let contrast = (pow(background, 0.65) - pow(text, 0.62)) * 1.14
+  return contrast > -0.1 ? 0 : (contrast + 0.027) * 100
 }
