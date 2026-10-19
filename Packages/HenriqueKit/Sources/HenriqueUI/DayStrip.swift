@@ -4,6 +4,7 @@ import SwiftUI
 struct DayStrip: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var textSize
   @Namespace private var selection
   @State private var anchor = CalendarDate.today
   /// A segunda de cada semana da fita. Cada semana é uma página inteira.
@@ -52,25 +53,49 @@ struct DayStrip: View {
     selected != .today || (visible ?? selected.trainingWeekStart()) != CalendarDate.today.trainingWeekStart()
   }
 
+  private var backButton: some View {
+    Button { move(-7) } label: { Image(systemName: "chevron.left").offset(x: 1) }
+      .accessibilityLabel("Voltar uma semana").buttonStyle(.glass).controlSize(.large)
+  }
+
+  private var forwardButton: some View {
+    Button { move(7) } label: { Image(systemName: "chevron.right").offset(x: -1) }
+      .accessibilityLabel("Avançar uma semana").buttonStyle(.glass).controlSize(.large)
+  }
+
+  private var monthButton: some View {
+    Button { moveTo(.today) } label: {
+      Label(
+        shownMonth.date().formatted(.dateTime.month(.wide).year()),
+        systemImage: awayFromToday ? "arrow.uturn.backward" : "calendar"
+      )
+      .font(.subheadline).foregroundStyle(Color.ink)
+      .lineLimit(1).minimumScaleFactor(0.6)
+      .contentTransition(.symbolEffect(.replace))
+      .frame(minHeight: 44).contentShape(.rect)
+    }.buttonStyle(StudyPressStyle()).accessibilityLabel("Ir para hoje")
+      .accessibilityValue(shownMonth.date().formatted(.dateTime.month(.wide).year()))
+  }
+
   var body: some View {
     VStack(spacing: 12) {
-      HStack {
-        Button { move(-7) } label: { Image(systemName: "chevron.left").offset(x: 1) }
-          .accessibilityLabel("Voltar uma semana").buttonStyle(.glass).controlSize(.large)
-        Spacer()
-        Button { moveTo(.today) } label: {
-          Label(
-            shownMonth.date().formatted(.dateTime.month(.wide).year()),
-            systemImage: awayFromToday ? "arrow.uturn.backward" : "calendar"
-          )
-          .font(.subheadline).foregroundStyle(Color.ink)
-          .contentTransition(.symbolEffect(.replace))
-          .frame(minHeight: 44).contentShape(.rect)
-        }.buttonStyle(StudyPressStyle()).accessibilityLabel("Ir para hoje")
-          .accessibilityValue(shownMonth.date().formatted(.dateTime.month(.wide).year()))
-        Spacer()
-        Button { move(7) } label: { Image(systemName: "chevron.right").offset(x: -1) }
-          .accessibilityLabel("Avançar uma semana").buttonStyle(.glass).controlSize(.large)
+      // Em texto de acessibilidade o mês espremido entre os dois botões saía
+      // em cinco linhas ("out- / ubro / de / 202 / 6"); ele sobe para a dele.
+      if textSize.isAccessibilitySize {
+        monthButton
+        HStack {
+          backButton
+          Spacer()
+          forwardButton
+        }
+      } else {
+        HStack {
+          backButton
+          Spacer()
+          monthButton
+          Spacer()
+          forwardButton
+        }
       }
       ScrollView(.horizontal) {
         LazyHStack(spacing: 0) {
@@ -150,8 +175,9 @@ struct DayChip: View {
   var body: some View {
     Button(action: onTap) {
       VStack(spacing: 10) {
-        Text(day.date(), format: .dateTime.weekday(.abbreviated))
+        Text(Formatting.weekday(day))
           .font(.caption2).foregroundStyle(isSelected ? accent.deep : Color.mutedInk)
+          .lineLimit(1).minimumScaleFactor(0.5)
         Text("\(day.day)").font(.body.weight(isSelected ? .semibold : .regular))
           .frame(width: 40, height: 40)
           .foregroundStyle(isSelected ? .white : Color.ink)

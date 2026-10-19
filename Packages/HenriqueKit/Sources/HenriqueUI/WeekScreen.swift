@@ -151,7 +151,7 @@ private struct WorkoutTile: View {
   var body: some View {
     // Sem dia, o que falta é o dia, então a pasta abre direto nesse passo.
     Button(action: item.weekdays.isEmpty ? { onEdit(.dias) } : onStart) {
-      WorkoutFolderCard(name: item.name, tone: item.tone, hasDays: !item.weekdays.isEmpty, showsWave: showsWave)
+      WorkoutFolderCard(name: item.name.lowercased(), tone: item.tone, hasDays: !item.weekdays.isEmpty, showsWave: showsWave)
     }
     .buttonStyle(StudyPressStyle())
     .accessibilityLabel(item.weekdays.isEmpty ? "editar \(item.name), sem dia" : "iniciar \(item.name), \(spokenWeekdays(item.weekdays))")

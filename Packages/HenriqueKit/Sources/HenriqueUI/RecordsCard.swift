@@ -9,6 +9,7 @@ struct RecordsCard: View {
   // maior transborda um quadrado que ficou do tamanho de antes.
   @ScaledMetric(relativeTo: .caption) private var badgeSize = 12.0
   @ScaledMetric(relativeTo: .caption) private var medalSize = 42.0
+  @Environment(\.dynamicTypeSize) private var textSize
   let records: [PersonalRecord]
   let today: CalendarDate
   @State private var history: ExerciseHistoryTarget?
@@ -33,19 +34,27 @@ struct RecordsCard: View {
 
   private func row(_ record: PersonalRecord) -> some View {
     // Pilha sem espaçamento próprio porque ele valeria dos dois lados do Spacer e
-    // daria 36 pontos de folga mínima, comendo a largura do nome.
-    HStack(spacing: 0) {
-      medal(record)
-        .foregroundStyle(accent.deep)
-        .frame(width: medalSize, height: medalSize)
-        .background(Color.surfaceMuted, in: .rect(cornerRadius: medalSize / 3))
-        .accessibilityHidden(true)
-        .padding(.trailing, 14)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(record.exerciseName.lowercased())
-          .font(.callout.weight(.medium)).lineLimit(1)
-        Text(record.summary(today: today))
-          .font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk)
+    // daria 36 pontos de folga mínima, comendo a largura do nome. Em texto de
+    // acessibilidade a medalha cresce para uns 100 pontos e sobe para cima do
+    // texto, senão o nome virava "hip…".
+    let stacked = textSize.isAccessibilitySize
+    let layout = stacked
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.s))
+      : AnyLayout(HStackLayout(spacing: 0))
+    return HStack(spacing: 0) {
+      layout {
+        medal(record)
+          .foregroundStyle(accent.deep)
+          .frame(width: medalSize, height: medalSize)
+          .background(Color.surfaceMuted, in: .rect(cornerRadius: medalSize / 3))
+          .accessibilityHidden(true)
+          .padding(.trailing, stacked ? 0 : 14)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(record.exerciseName.lowercased())
+            .font(.callout.weight(.medium)).lineLimit(stacked ? 3 : 1)
+          Text(record.summary(today: today))
+            .font(.footnote).monospacedDigit().foregroundStyle(Color.mutedInk)
+        }
       }
       Spacer(minLength: 0)
       HistoryGlyph()

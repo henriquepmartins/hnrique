@@ -48,7 +48,7 @@ struct WeeklyAdherenceCard: View {
                   Circle().strokeBorder(accent.deep, lineWidth: 1.5).padding(-3)
                 }
               }
-            Text(dayInitial(slot.date))
+            Text(Formatting.weekday(slot.date))
               .font(.system(size: daySize, design: .monospaced))
               .tracking(daySize * 0.01)
               .foregroundStyle(Color.mutedInk)
@@ -85,9 +85,4 @@ struct WeeklyAdherenceCard: View {
     return parts.joined(separator: ", ")
   }
 
-  private func dayInitial(_ date: CalendarDate) -> String {
-    date.date().formatted(.dateTime.weekday(.abbreviated).locale(Locale(identifier: "pt_BR")))
-      .lowercased()
-      .replacingOccurrences(of: ".", with: "")
-  }
 }
