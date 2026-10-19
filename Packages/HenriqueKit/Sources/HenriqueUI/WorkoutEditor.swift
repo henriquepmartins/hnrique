@@ -274,7 +274,10 @@ struct WorkoutEditor: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .clipped()
+      // Corta em cima e dos lados, para a troca de passo não vazar. Embaixo a
+      // lista corre por trás da barra do teclado: o sistema rola o campo focado
+      // só até a borda, e o corte ali comia o pé da linha.
+      .mask { Rectangle().padding(.bottom, -400) }
     }
     .background(Color.canvas)
     .safeAreaInset(edge: .bottom) {
@@ -605,8 +608,7 @@ private struct ExercisesStep: View {
               withAnimation(editAnimation) {
                 exercises.removeAll { $0.exerciseId == exerciseId }
               }
-            },
-            onFieldFocus: { reveal(exerciseId) })
+            })
             // Sem o modo organizar, a linha aberta levantada pelo toque longo
             // tem uns 500 pt e cobre as vizinhas. Só as fechadas arrastam.
             .deleteDisabled(isSaving || isOrganizing)
@@ -672,18 +674,6 @@ private struct ExercisesStep: View {
             imageUrl: known ? nil : item.imageUrl))
         },
         onUnpick: { id in exercises.removeAll { $0.exerciseId == id } })
-    }
-  }
-
-  /// O teclado sobe e a barra dele ainda tira 48 pt do fim da lista depois
-  /// que a lista já rolou até o campo. Rolar de novo, com tudo assentado, põe o
-  /// fim da linha aberta rente à barra, e o campo de carga fica acima dela.
-  private func reveal(_ exerciseId: String) {
-    Task {
-      try? await Task.sleep(for: .milliseconds(350))
-      withAnimation(Motion.resolve(Motion.expand, reduceMotion)) {
-        scroll.scrollTo(exerciseId, anchor: .bottom)
-      }
     }
   }
 

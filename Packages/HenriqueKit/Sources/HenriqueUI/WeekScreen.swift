@@ -438,16 +438,12 @@ struct PlanExerciseRow: View {
   let isExpanded: Bool
   let onToggle: (() -> Void)?
   let onRemove: (() -> Void)?
-  /// Um campo de carga ganhou o foco. Quem mostra a linha rola para ela ficar
-  /// acima do teclado.
-  let onFieldFocus: () -> Void
   @State private var history: ExerciseHistoryTarget?
 
   init(
     exercise: Binding<PlanExercise>, name: String, subtitle: String? = nil,
     imageUrl: String? = nil, isOrganizing: Bool = false, isExpanded: Bool = true,
-    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil,
-    onFieldFocus: @escaping () -> Void = {}
+    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil
   ) {
     _exercise = exercise
     self.name = name
@@ -457,7 +453,6 @@ struct PlanExerciseRow: View {
     self.isExpanded = isExpanded
     self.onToggle = onToggle
     self.onRemove = onRemove
-    self.onFieldFocus = onFieldFocus
   }
 
   private var showsControls: Bool { !isOrganizing && (isExpanded || onToggle == nil) }
@@ -500,9 +495,9 @@ struct PlanExerciseRow: View {
         Divider()
         ExerciseStepperRow(label: "reps máx.", value: $exercise.repsMax, range: Limits.planReps)
         Divider()
-        WeightStepper(weightKg: $exercise.startingWeightKg, onFocus: onFieldFocus)
+        WeightStepper(weightKg: $exercise.startingWeightKg)
         Divider()
-        PrepWeightRow(weightKg: $exercise.prepWeightKg, onFocus: onFieldFocus)
+        PrepWeightRow(weightKg: $exercise.prepWeightKg)
         Divider()
         RestStepperRow(seconds: $exercise.restSeconds)
         Divider()
@@ -632,7 +627,6 @@ extension PlanExercise {
 /// "concluir" com o teclado aberto salvava sem ele.
 private struct PrepWeightRow: View {
   @Binding var weightKg: Double?
-  var onFocus: () -> Void = {}
   @State private var text = ""
   @FocusState private var focused: Bool
 
@@ -654,7 +648,7 @@ private struct PrepWeightRow: View {
     }
     .onChange(of: text) { _, new in weightKg = parsePrepWeight(new) }
     .onChange(of: focused) { _, isFocused in
-      if isFocused { onFocus() } else { text = weightKg.map(formatPrepWeight) ?? "" }
+      if !isFocused { text = weightKg.map(formatPrepWeight) ?? "" }
     }
   }
 }
