@@ -178,9 +178,9 @@ struct MuscleMap: View {
       .max { a, b in days(a) < days(b) }
     guard let stale, days(stale) >= 10 else { return nil }
     guard let last = stale.lastTrainedDate else {
-      return "\(stale.group.label) sem estímulo nos últimos 28 dias."
+      return "\(stale.group.label) sem estímulo nos últimos 28 dias"
     }
-    return "\(stale.group.label) sem estímulo há \(today.daysSince(last)) dias."
+    return "\(stale.group.label) sem estímulo há \(today.daysSince(last)) dias"
   }
 
   private func days(_ item: MuscleLoad) -> Int {

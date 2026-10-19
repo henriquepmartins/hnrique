@@ -34,10 +34,16 @@ struct AttendanceMap: View {
       // Trocar de período monta a grade de novo, e a onda de entrada corre outra
       // vez. As casas só nascem quando a frequência daquele período chegou;
       // antes disso a grade pulsa vazia, com o mesmo desenho.
-      AttendanceGraph(
-        grid: grid, name: period.name(locale: locale), ready: loaded == period, scrolls: period.isYear)
-        .id(period)
-        .transition(.opacity)
+      // O ano é a fita do GitHub; o mês é um calendário, onde se acha o dia 14.
+      Group {
+        if period.isYear {
+          AttendanceGraph(grid: grid, name: period.name(locale: locale), ready: loaded == period)
+        } else {
+          AttendanceMonthGrid(grid: grid, ready: loaded == period)
+        }
+      }
+      .id(period)
+      .transition(.opacity)
       AttendanceLegend()
         .opacity(grid.total > 0 ? 1 : 0)
         .animation(reduceMotion ? Motion.plain : Motion.crossfade, value: grid.total > 0)
@@ -147,6 +153,7 @@ private struct AttendanceHeader: View {
 private struct AttendanceCount: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let total: Int
+  /// Só o VoiceOver diz o período; na tela ele já está no cabeçalho.
   let name: String
   let answered: Bool
   let isPast: Bool
@@ -157,13 +164,14 @@ private struct AttendanceCount: View {
       .contentTransition(.numericText(value: Double(total)))
       .opacity(answered || total > 0 ? 1 : 0)
       .animation(reduceMotion ? nil : Motion.roll, value: total)
+      .accessibilityLabel("\(text) em \(name)")
   }
 
   private var text: String {
     switch total {
     case 0: isPast ? "nenhum treino" : "nenhum treino ainda"
-    case 1: "1 treino em \(name)"
-    default: "\(total) treinos em \(name)"
+    case 1: "1 treino"
+    default: "\(total) treinos"
     }
   }
 }
@@ -206,7 +214,6 @@ private struct AttendanceGraph: View {
   let grid: AttendanceGrid
   let name: String
   let ready: Bool
-  let scrolls: Bool
 
   /// Como no componente, a grade para na semana de hoje. O resto do ano ainda
   /// não aconteceu, e com a fita ancorada à direita ele empurraria os treinos
@@ -218,21 +225,17 @@ private struct AttendanceGraph: View {
   var body: some View {
     HStack(alignment: .top, spacing: 6) {
       weekdayLabels
-      if scrolls {
-        ScrollView(.horizontal) {
-          VStack(alignment: .leading, spacing: GraphMetrics.gap) {
-            monthLabels
-            board
-          }
-          .padding(.vertical, Space.s)
+      ScrollView(.horizontal) {
+        VStack(alignment: .leading, spacing: GraphMetrics.gap) {
+          monthLabels
+          board
         }
-        .scrollIndicators(.hidden)
-        .defaultScrollAnchor(.trailing)
-        .onScrollGeometryChange(for: CGRect.self, of: \.visibleRect) { _, visible in
-          viewport = visible
-        }
-      } else {
-        board.padding(.vertical, Space.s)
+        .padding(.vertical, Space.s)
+      }
+      .scrollIndicators(.hidden)
+      .defaultScrollAnchor(.trailing)
+      .onScrollGeometryChange(for: CGRect.self, of: \.visibleRect) { _, visible in
+        viewport = visible
       }
     }
   }
@@ -246,7 +249,7 @@ private struct AttendanceGraph: View {
           .frame(height: GraphMetrics.side)
       }
     }
-    .padding(.top, Space.s + (scrolls ? GraphMetrics.monthRow + GraphMetrics.gap : 0))
+    .padding(.top, Space.s + GraphMetrics.monthRow + GraphMetrics.gap)
     .font(.caption2).foregroundStyle(Color.mutedInk)
     .dynamicTypeSize(...DynamicTypeSize.large)
     .accessibilityHidden(true)
@@ -273,15 +276,9 @@ private struct AttendanceGraph: View {
   }
 
   private var board: some View {
-    // Na fita do ano só as semanas na tela existem; as de janeiro, fora da
-    // tela, não cintilam nem pulsam à toa. No mês tudo cabe e a pilha é comum.
-    Group {
-      if scrolls {
-        LazyHStack(alignment: .top, spacing: GraphMetrics.gap) { columns }
-      } else {
-        HStack(alignment: .top, spacing: GraphMetrics.gap) { columns }
-      }
-    }
+    // Só as semanas na tela existem; as de janeiro, fora da tela, não
+    // cintilam nem pulsam à toa.
+    LazyHStack(alignment: .top, spacing: GraphMetrics.gap) { columns }
     .overlay(alignment: .topLeading) {
       tooltip.animation(Motion.swap, value: focus == nil)
     }
@@ -325,15 +322,15 @@ private struct AttendanceGraph: View {
   }
 
   private var columns: some View {
-    // A onda atravessa a grade inteira em 0,25 s, seja um mês ou um ano. A fita
-    // do ano abre na borda direita, então a onda parte de lá.
+    // A onda atravessa a fita inteira em 0,25 s. A fita abre na borda direita,
+    // então a onda parte de lá.
     let span = Double(max(weeks.count - 1, 1) + 6)
     return ForEach(Array(weeks.enumerated()), id: \.element.id) { week, column in
       VStack(spacing: GraphMetrics.gap) {
         ForEach(Array(column.cells.enumerated()), id: \.element.id) { day, cell in
           GraphCell(
             cell: cell, week: week, day: day, ready: ready, entered: entered,
-            delay: 0.25 * Double((scrolls ? weeks.count - 1 - week : week) + day) / span,
+            delay: 0.25 * Double(weeks.count - 1 - week + day) / span,
             glow: glow(week: week, day: day)
           )
         }
@@ -418,11 +415,114 @@ private struct AttendanceGraph: View {
   }
 
   private func tooltipText(date: CalendarDate, sets: Int) -> String {
-    let day = date.date().formatted(Date.FormatStyle(locale: locale).day().month(.abbreviated))
+    let day = Formatting.shortDate(date)
     switch sets {
     case 0: return "sem treino · \(day)"
     case 1: return "1 série · \(day)"
     default: return "\(sets) séries · \(day)"
+    }
+  }
+}
+
+/// O mês como calendário: sete colunas de segunda a domingo, casas quadradas
+/// que ocupam a largura do cartão e o número do dia dentro. As cores e o balão
+/// do toque são os da fita do ano.
+private struct AttendanceMonthGrid: View {
+  @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var focus: CalendarDate?
+  let grid: AttendanceGrid
+  let ready: Bool
+
+  private static let weekdays = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
+
+  var body: some View {
+    VStack(spacing: GraphMetrics.gap) {
+      HStack(spacing: GraphMetrics.gap) {
+        ForEach(Self.weekdays, id: \.self) { name in
+          Text(name).frame(maxWidth: .infinity)
+        }
+      }
+      .font(.caption2).foregroundStyle(Color.mutedInk)
+      .lineLimit(1).minimumScaleFactor(0.6)
+      .accessibilityHidden(true)
+      ForEach(grid.weeks) { week in
+        HStack(spacing: GraphMetrics.gap) {
+          ForEach(Array(week.cells.enumerated()), id: \.element.id) { column, cell in
+            day(cell, column: column)
+          }
+        }
+        .zIndex(week.cells.contains { $0.date != nil && $0.date == focus } ? 1 : 0)
+      }
+    }
+    .sensoryFeedback(.selection, trigger: focus) { _, new in new != nil }
+  }
+
+  @ViewBuilder
+  private func day(_ cell: AttendanceGrid.Cell, column: Int) -> some View {
+    if let date = cell.date {
+      Button {
+        withAnimation(reduceMotion ? nil : Motion.tap) { focus = focus == date ? nil : date }
+      } label: {
+        RoundedRectangle(cornerRadius: GraphMetrics.radius * 2)
+          .fill(ready ? AttendanceFill.color(level: cell.level, accent: accent) : Color.surfaceMuted)
+          .aspectRatio(1, contentMode: .fit)
+          .overlay {
+            Text("\(date.day)")
+              .font(.caption2).monospacedDigit()
+              .foregroundStyle(ready && cell.level >= 3 ? Color.white : Color.mutedInk)
+              .minimumScaleFactor(0.6)
+          }
+          .animation(reduceMotion ? nil : Motion.crossfade, value: ready)
+      }
+      .buttonStyle(StudyPressStyle())
+      .frame(maxWidth: .infinity)
+      .overlay(alignment: balloonAlignment(column)) {
+        if focus == date {
+          Text(tooltipText(date: date, sets: cell.workSets))
+            .font(.footnote.weight(.medium)).monospacedDigit()
+            .foregroundStyle(Color.canvas)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Color.ink, in: Capsule())
+            .fixedSize()
+            .alignmentGuide(.top) { $0[.bottom] + 6 }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .bottom)))
+        }
+      }
+      .accessibilityLabel(spoken(date: date, sets: cell.workSets))
+    } else {
+      Color.clear.aspectRatio(1, contentMode: .fit).frame(maxWidth: .infinity)
+        .accessibilityHidden(true)
+    }
+  }
+
+  /// Nas duas colunas de cada ponta o balão encosta na casa por dentro, para
+  /// não passar da borda da tela.
+  private func balloonAlignment(_ column: Int) -> Alignment {
+    switch column {
+    case ..<2: .topLeading
+    case 5...: .topTrailing
+    default: .top
+    }
+  }
+
+  private func tooltipText(date: CalendarDate, sets: Int) -> String {
+    let day = Formatting.shortDate(date)
+    switch sets {
+    case 0: return "sem treino · \(day)"
+    case 1: return "1 série · \(day)"
+    default: return "\(sets) séries · \(day)"
+    }
+  }
+
+  private func spoken(date: CalendarDate, sets: Int) -> String {
+    let day = "\(date.day) \(Formatting.weekday(date))"
+    switch sets {
+    case 0: return "\(day), sem treino"
+    case 1: return "\(day), 1 série"
+    default: return "\(day), \(sets) séries"
     }
   }
 }
