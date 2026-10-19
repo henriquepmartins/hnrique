@@ -279,7 +279,7 @@ struct TrainingSetRow: View {
         if showsPrevious {
           Text(previous ?? "–")
             .font(.system(size: indexSize)).monospacedDigit()
-            .foregroundStyle(done ? tint.text.opacity(0.6) : Color.mutedInk)
+            .foregroundStyle(Color.mutedInk)
             .lineLimit(1).minimumScaleFactor(0.8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel(spokenPrevious)
