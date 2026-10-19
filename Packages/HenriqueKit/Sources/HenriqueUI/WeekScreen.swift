@@ -4,6 +4,7 @@ import SwiftUI
 struct WeekScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.dynamicTypeSize) private var textSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var editor: PlanEditorDestination?
   @State private var deletions = 0
   var onStart: (Int) -> Void = { _ in }
@@ -17,7 +18,9 @@ struct WeekScreen: View {
             weekPlan: store.weekPlan,
             swaps: store.dashboard?.daySwaps ?? [],
             week: store.trainingWeek(),
-            load: { from, to in await store.loadAttendance(from: from, to: to) })
+            swapWindow: swapWindow,
+            load: { from, to in await store.loadAttendance(from: from, to: to) },
+            onSwap: { date, workoutId in await store.swapDay(on: date, workoutTemplateId: workoutId) })
           Button("novo treino", systemImage: "plus") { editor = .new }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
@@ -30,11 +33,15 @@ struct WeekScreen: View {
                 showsWave: store.dashboard?.highlightedWorkoutIDs.contains(item.id) == true,
                 onEdit: { step in editor = .existing(item, at: step) },
                 onDelete: {
-                  store.deleteWorkout(workoutTemplateId: item.id)
+                  withAnimation(Motion.resolve(Motion.confirm, reduceMotion)) {
+                    store.deleteWorkout(workoutTemplateId: item.id)
+                  }
                   deletions += 1
                 },
-                onStart: { if let day = item.nextWeekday(from: store.selectedDate.weekday()) { onStart(day) } })
+                onStart: { if let day = item.nextWeekday(from: store.selectedDate.weekday()) { onStart(day) } },
+                onTrainToday: canTrainToday(item) ? { Task { await trainToday(item) } } : nil)
                 .subtleEntrance()
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92)))
             }
           }
         }
@@ -57,7 +64,35 @@ struct WeekScreen: View {
     }
   }
 
+  /// As datas cujas trocas o painel aberto traz: de hoje até seis dias depois
+  /// do dia aberto. Fora dela uma troca salvaria sem aparecer no calendário.
+  /// Nula no servidor que ainda não troca dia. Hoje com série marcada fica de
+  /// fora, como no menu de troca da home.
+  private var swapWindow: ClosedRange<CalendarDate>? {
+    guard let dashboard = store.dashboard, dashboard.daySwaps != nil else { return nil }
+    let today = CalendarDate.today
+    let start = dashboard.date == today && dashboard.hasMarkedSets ? today.adding(days: 1) : today
+    let end = dashboard.date.adding(days: 6)
+    return start <= end ? start...end : nil
+  }
 
+  /// Some quando o treino já é o de hoje ou quando hoje já tem série marcada,
+  /// que a troca não pode levar para outro treino.
+  private func canTrainToday(_ item: WeekPlanItem) -> Bool {
+    guard let dashboard = store.dashboard, dashboard.daySwaps != nil else { return false }
+    if dashboard.date == .today, dashboard.hasMarkedSets { return false }
+    return dashboard.schedule.workout(on: .today)?.id != item.id
+  }
+
+  /// Abre hoje, troca o treino do dia por este e leva à aba treino.
+  private func trainToday(_ item: WeekPlanItem) async {
+    let today = CalendarDate.today
+    await store.select(date: today)
+    if store.dashboard?.schedule.workout(on: today)?.id != item.id {
+      guard await store.swapDay(workoutTemplateId: item.id) else { return }
+    }
+    onStart(today.weekday())
+  }
 }
 
 /// A forma do plano sem dados: o calendário, o botão de novo treino e as
@@ -153,15 +188,21 @@ private struct WorkoutTile: View {
   let onEdit: (EditorStep) -> Void
   let onDelete: () -> Void
   let onStart: () -> Void
+  let onTrainToday: (() -> Void)?
   @State private var confirmDelete = false
 
   var body: some View {
     // Sem dia, o que falta é o dia, então a pasta abre direto nesse passo.
     Button(action: item.weekdays.isEmpty ? { onEdit(.dias) } : onStart) {
-      WorkoutFolderCard(name: item.name, tone: item.tone, hasDays: !item.weekdays.isEmpty, showsWave: showsWave)
+      WorkoutFolderCard(
+        name: item.name, tone: item.tone, weekdays: item.weekdays,
+        exerciseCount: item.exerciseCount, showsWave: showsWave)
     }
     .buttonStyle(StudyPressStyle())
-    .accessibilityLabel(item.weekdays.isEmpty ? "editar \(item.name), sem dia" : "iniciar \(item.name), \(spokenWeekdays(item.weekdays))")
+    .accessibilityLabel(item.weekdays.isEmpty ? "editar \(item.name), sem dia" : "\(item.name), \(spokenWeekdays(item.weekdays))")
+    .accessibilityHint(item.weekdays.isEmpty ? "" : "abre o próximo dia deste treino")
+    .accessibilityIdentifier("plano.pasta")
+    .contextMenu { menuItems }
     // Menu dentro do label de um Button nunca chega a receber o dedo. Por isso
     // ele vem numa camada por cima, com área de toque só no disco dos três pontos.
     .overlay {
@@ -172,13 +213,21 @@ private struct WorkoutTile: View {
     }
   }
 
+  @ViewBuilder private var menuItems: some View {
+    if let onTrainToday {
+      Button("treinar hoje", systemImage: "play.fill", action: onTrainToday)
+      Divider()
+    }
+    Button("editar", systemImage: "pencil") { onEdit(.identidade) }
+    Button("cor", systemImage: "paintpalette") { onEdit(.cor) }
+    Button("dias", systemImage: "calendar") { onEdit(.dias) }
+    Button("exercícios", systemImage: "dumbbell") { onEdit(.exercicios) }
+    Button("apagar", systemImage: "trash", role: .destructive) { confirmDelete = true }
+  }
+
   private var menuLayer: some View {
     Menu {
-      Button("editar", systemImage: "pencil") { onEdit(.identidade) }
-      Button("cor", systemImage: "paintpalette") { onEdit(.cor) }
-      Button("dias", systemImage: "calendar") { onEdit(.dias) }
-      Button("exercícios", systemImage: "dumbbell") { onEdit(.exercicios) }
-      Button("apagar", systemImage: "trash", role: .destructive) { confirmDelete = true }
+      menuItems
     } label: {
       Color.clear
         .frame(width: 44, height: 44)
@@ -197,8 +246,19 @@ struct WorkoutFolderCard: View {
   @ScaledMetric(relativeTo: .subheadline) private var footerSize = 35.0
   let name: String
   let tone: WorkoutTone
-  let hasDays: Bool
+  let weekdays: [Int]
+  var exerciseCount: Int?
   var showsWave = false
+
+  private var hasDays: Bool { !weekdays.isEmpty }
+
+  /// "seg · qui", na ordem da semana de treino.
+  private var shortDays: String {
+    let start = Calendar.trainingWeek.firstWeekday - 1
+    return weekdays.sorted { ($0 - start + 7) % 7 < ($1 - start + 7) % 7 }
+      .map { planWeekdaysShort[$0] }
+      .joined(separator: " · ")
+  }
 
   private var extraTitleHeight: CGFloat { textSize.isAccessibilitySize ? 0 : max(0, titleSize - 44) * 2.4 }
   private var extraFooterHeight: CGFloat { textSize.isAccessibilitySize ? 60 : max(0, footerSize - 35) * 2.6 }
@@ -297,11 +357,28 @@ struct WorkoutFolderCard: View {
         .accessibilityHidden(true)
       VStack(spacing: 0) {
         if hasDays {
-          Image(systemName: "play.fill")
-            .font(.system(size: footerSize * textScale * 0.85, weight: .semibold))
-            .foregroundStyle(tone.ink)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityHidden(true)
+          // Com dias e exercícios na mesma linha quando cabem; senão só os
+          // dias, encolhendo até caber.
+          ViewThatFits(in: .horizontal) {
+            HStack(spacing: 14 * scale) {
+              Text(shortDays)
+              if let exerciseCount, exerciseCount > 0 {
+                HStack(spacing: 5 * scale) {
+                  Image(systemName: "dumbbell.fill").imageScale(.small)
+                  Text("\(exerciseCount)").monospacedDigit()
+                }
+                .foregroundStyle(tone.ink.opacity(0.6))
+              }
+            }
+            .fixedSize()
+            Text(shortDays).minimumScaleFactor(0.5)
+          }
+          .font(.system(size: footerSize * textScale, weight: .semibold))
+          .lineLimit(1)
+          .foregroundStyle(tone.ink)
+          .padding(.horizontal, 24 * scale)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityHidden(true)
         } else {
           Text("sem dia")
             .font(.system(size: footerSize * textScale, weight: .semibold))

@@ -119,7 +119,7 @@ private struct ColorThumb: View {
 
     var body: some View {
       VStack(spacing: 24) {
-        WorkoutFolderCard(name: "peito e tríceps", tone: color.tone, hasDays: true)
+        WorkoutFolderCard(name: "peito e tríceps", tone: color.tone, weekdays: [1, 4])
           .frame(width: 240)
         WorkoutColorPicker(color: $color)
         Text(color.hex).font(.caption.monospaced())

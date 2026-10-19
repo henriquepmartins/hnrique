@@ -175,7 +175,8 @@ struct WorkoutEditor: View {
 
       if step == .cor {
         WorkoutFolderCard(
-          name: displayName, tone: draft.color.tone, hasDays: !draft.weekdays.isEmpty
+          name: displayName, tone: draft.color.tone, weekdays: draft.weekdays.sorted(),
+          exerciseCount: draft.exercises.count
         )
         .dynamicTypeSize(.large)
         // A 62% a pasta, o seletor e o título passavam da altura da folha e
@@ -366,7 +367,9 @@ struct WorkoutEditor: View {
 
   private func remove() {
     guard let workoutId else { return }
-    store.deleteWorkout(workoutTemplateId: workoutId)
+    withAnimation(Motion.resolve(Motion.confirm, reduceMotion)) {
+      store.deleteWorkout(workoutTemplateId: workoutId)
+    }
     deletions += 1
     dismiss()
   }
@@ -716,8 +719,8 @@ extension View {
   #Preview("Editor, exercícios") { WorkoutEditorPreview(step: .exercicios) }
   #Preview("Card de pasta") {
     HStack(spacing: Space.m) {
-      WorkoutFolderCard(name: "peito e tríceps", tone: .at(0), hasDays: true)
-      WorkoutFolderCard(name: "pernas", tone: .at(1), hasDays: false)
+      WorkoutFolderCard(name: "peito e tríceps", tone: .at(0), weekdays: [1, 4], exerciseCount: 6)
+      WorkoutFolderCard(name: "pernas", tone: .at(1), weekdays: [])
     }
     .padding(Space.l)
     .background(Color.canvas)
