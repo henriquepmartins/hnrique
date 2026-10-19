@@ -677,6 +677,10 @@ public struct Dashboard: Codable, Hashable, Sendable {
   /// O exercício com mais séries valendo nas últimas 8 semanas, só quando não
   /// há meta de força. Nulo no servidor antigo.
   public var featuredProgress: FeaturedProgress? = nil
+  /// O primeiro dia em que a sequência de presença vira 0 se ninguém treinar
+  /// até lá, pela conta do servidor. Nulo com a sequência já em 0, e nulo no
+  /// servidor antigo, que não manda o campo.
+  public var streakResetsOn: CalendarDate? = nil
   public var onboardingCompleted: Bool
 }
 

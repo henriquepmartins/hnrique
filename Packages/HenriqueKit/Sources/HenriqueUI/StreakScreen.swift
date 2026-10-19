@@ -4,16 +4,7 @@ import SwiftUI
 /// O laranja da chama não é o acento do app. A sequência é a mesma coisa em
 /// qualquer cor escolhida, então ela pega a primeira vaga da paleta de treino e
 /// fica com ela.
-private let streakTone = WorkoutTone.all[0]
-
-/// O dia em que a sequência zera se ninguém treinar até lá. O servidor corta a
-/// sequência com mais de 5 dias entre dois treinos, então é o último treino mais
-/// 6. Nulo com treino hoje ou com a sequência já zerada.
-func streakResetDay(lastAttended: CalendarDate?, today: CalendarDate) -> CalendarDate? {
-  guard let last = lastAttended, last < today else { return nil }
-  let reset = last.adding(days: 6)
-  return reset > today ? reset : nil
-}
+let streakTone = WorkoutTone.all[0]
 
 let streakGradient = LinearGradient(
   colors: [streakTone.top, streakTone.bottom], startPoint: .top, endPoint: .bottom)
@@ -76,7 +67,7 @@ struct StreakScreen: View {
   /// A frequência da semana já veio. Antes disso, sem `weekAttendance`, a
   /// conta cai em `sessionDates`, que só tem treino completo.
   @State private var weekLoaded = false
-  @State private var weekChecked = false
+  @Environment(\.dynamicTypeSize) private var textSize
   @Environment(\.dismiss) private var dismiss
   @State private var entered = false
   @State private var celebrating = false
@@ -98,7 +89,8 @@ struct StreakScreen: View {
   private func resetDay(_ streak: WorkoutStreak) -> CalendarDate? {
     guard !streak.isTodayDone else { return nil }
     let last = store.attendance.values.filter { $0.workSets > 0 && $0.date < today }.map(\.date).max()
-    return streakResetDay(lastAttended: last, today: today)
+    return dashboard.streakResetDay(
+      lastAttended: last, today: today, fallback: weekLoaded ? store.attendance : nil)
   }
 
   var body: some View {
@@ -106,17 +98,20 @@ struct StreakScreen: View {
     NavigationStack {
       ScrollView {
         VStack(spacing: Space.xxl) {
-          StreakRing(streak: streak, entered: entered, celebrating: celebrating)
+          StreakRing(
+            streak: streak, entered: entered, celebrating: celebrating,
+            showsSeal: !textSize.isAccessibilitySize)
+          // Em texto de acessibilidade o selo não cabe dentro do anel e cortava
+          // em "3 com…"; ele desce para baixo da chama.
+          if textSize.isAccessibilitySize {
+            CompleteSeal(complete: streak.complete)
+          }
           if hasWeek {
             StreakRibbon(days: streak.days, today: today, entered: entered)
           }
           if let tenure = store.tenure, let tier = tenure.tier {
             InsigniaRow(tier: tier, months: tenure.months)
           }
-          Text("\(streak.weeklyCompleted)/\(streak.weeklyPlanned) na semana")
-            .font(.subheadline).monospacedDigit().foregroundStyle(Color.mutedInk)
-            .opacity(weekChecked || dashboard.weekAttendance != nil ? 1 : 0)
-            .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: weekChecked)
           if streak.attendance.target == nil {
             Button("meta", systemImage: "target") { editingGoal = true }
               .buttonStyle(.glass)
@@ -140,9 +135,10 @@ struct StreakScreen: View {
       .navigationTitle("sequência")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("fechar", systemImage: "xmark") { dismiss() }
-            .labelStyle(.iconOnly)
+        // Em `.confirmationAction` o iOS pinta o botão no tint, e fechar
+        // parecia confirmar.
+        ToolbarItem(placement: .topBarTrailing) {
+          Button(role: .close) { dismiss() }
             .accessibilityLabel("fechar")
         }
       }
@@ -159,7 +155,6 @@ struct StreakScreen: View {
       // sequência, mesmo quando ele foi na semana anterior.
       let from = min(today.trainingWeekStart(), today.adding(days: -6))
       weekLoaded = await store.loadAttendance(from: from, to: today)
-      weekChecked = true
     }
     .task {
       try? await Task.sleep(for: .seconds(Entrance.sheet))
@@ -225,6 +220,7 @@ private struct StreakRing: View {
   let streak: WorkoutStreak
   let entered: Bool
   let celebrating: Bool
+  let showsSeal: Bool
 
   private let diameter: CGFloat = 216
   private let line: CGFloat = 18
@@ -234,7 +230,7 @@ private struct StreakRing: View {
     ZStack {
       Circle().stroke(streakTone.bottom.opacity(0.32), lineWidth: line)
       Circle()
-        .trim(from: 0, to: streak.weekProgress)
+        .trim(from: 0, to: progress)
         // Degradê reto e não angular: o angular emenda a última cor na primeira
         // bem no ponto onde o traço começa, e a ponta arredondada mostra o corte.
         .stroke(
@@ -244,7 +240,9 @@ private struct StreakRing: View {
           style: StrokeStyle(lineWidth: line, lineCap: .round)
         )
         .rotationEffect(.degrees(-90))
-      StreakCount(attendance: streak.attendance, complete: streak.complete, entered: entered)
+      StreakCount(
+        attendance: streak.attendance, complete: streak.complete, entered: entered,
+        showsSeal: showsSeal)
     }
     .frame(width: diameter, height: diameter)
     // Âncora no centro e só escala: o anel nasce do lugar onde vai ficar, sem
@@ -269,6 +267,14 @@ private struct StreakRing: View {
     .accessibilityValue("\(streak.weeklyCompleted) de \(streak.weeklyPlanned) na semana")
   }
 
+  /// O anel mede o número do meio: a meta de presença quando existe, e sem
+  /// meta fica cheio. Medindo a semana, um "3" grande dentro de um anel vazio
+  /// dizia que a sequência não valia nada.
+  private var progress: Double {
+    guard let target = streak.attendance.target, target > 0 else { return 1 }
+    return min(1, Double(streak.attendance.count) / Double(target))
+  }
+
   private var grown: Bool { entered || reduceMotion }
 
   private func growth(_ animation: Animation, delay: Double) -> Animation? {
@@ -283,6 +289,7 @@ private struct StreakCount: View {
   let attendance: StreakFigure
   let complete: StreakFigure
   let entered: Bool
+  let showsSeal: Bool
 
   var body: some View {
     label
@@ -307,15 +314,25 @@ private struct StreakCount: View {
       }
       .monospacedDigit()
       Text("treinos").font(.caption).foregroundStyle(Color.mutedInk)
-      Label {
-        Text(complete.target.map { "\(complete.count)/\($0) completos" } ?? "\(complete.count) completos")
-      } icon: {
-        Image(systemName: "checkmark.seal.fill")
+      if showsSeal {
+        CompleteSeal(complete: complete).padding(.top, 4)
       }
-      .font(.caption.weight(.medium)).monospacedDigit()
-      .foregroundStyle(streakTone.ink)
-      .padding(.top, 4)
     }
+  }
+}
+
+/// Os treinos completos, o segundo número da sequência.
+private struct CompleteSeal: View {
+  let complete: StreakFigure
+
+  var body: some View {
+    Label {
+      Text(complete.target.map { "\(complete.count)/\($0) completos" } ?? "\(complete.count) completos")
+    } icon: {
+      Image(systemName: "checkmark.seal.fill")
+    }
+    .font(.caption.weight(.medium)).monospacedDigit()
+    .foregroundStyle(streakTone.ink)
   }
 }
 
@@ -464,9 +481,9 @@ private struct StreakRibbon: View {
         VStack(spacing: 6) {
           // A inicial sozinha não serve em português, sexta, sábado e segunda
           // começam todas com s.
-          Text(day.date.date(), format: .dateTime.weekday(.abbreviated))
+          Text(Formatting.weekday(day.date))
             .font(.caption2).foregroundStyle(Color.mutedInk)
-            .textCase(.lowercase)
+            .lineLimit(1).minimumScaleFactor(0.5)
           DayMarker(
             day: day, isToday: day.date == today, size: 32, accent: accent)
         }
