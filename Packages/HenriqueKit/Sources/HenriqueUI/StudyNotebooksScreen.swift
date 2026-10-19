@@ -22,6 +22,7 @@ public struct SubjectNotebookSection: View {
   @State private var creating = false
   @State private var failed = false
   @State private var created: NotebookPageRoute?
+  @State private var doomed: NotebookPageSummary?
   let subjectId: String
 
   public init(subjectId: String) { self.subjectId = subjectId }
@@ -42,6 +43,13 @@ public struct SubjectNotebookSection: View {
     .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.notebooks.phase)
     .task { await store.loadNotebooks() }
     .navigationDestination(item: $created) { NotebookPageScreen(id: $0.id) }
+    .confirmationDialog(
+      "apagar página?", isPresented: Binding(get: { doomed != nil }, set: { if !$0 { doomed = nil } }),
+      titleVisibility: .visible, presenting: doomed
+    ) { page in
+      Button("apagar", role: .destructive) { Task { _ = await store.removeNotebookPage(id: page.id) } }
+      Button("cancelar", role: .cancel) {}
+    }
   }
 
   @ViewBuilder
@@ -71,6 +79,9 @@ public struct SubjectNotebookSection: View {
             }
           }
           .buttonStyle(StudyPressStyle())
+          .contextMenu {
+            Button("apagar", systemImage: "trash", role: .destructive) { doomed = page }
+          }
           .staggeredEntrance(index: index, isReady: true)
         }
       }
@@ -112,6 +123,7 @@ public struct NotebookPageScreen: View {
   @State private var inFlight = false
   @State private var debounce: Task<Void, Never>?
   @State private var confirmingDelete = false
+  @FocusState private var editingTitle: Bool
   let id: String
 
   public init(id: String) { self.id = id }
@@ -128,14 +140,22 @@ public struct NotebookPageScreen: View {
       switch self {
       case .clean: "salvo"
       case .pending: "alterado"
-      case .saving: "salvando..."
-      case .failed: "não salvou"
+      case .saving: "salvando…"
+      case .failed: "não salvou, tentar de novo"
+      }
+    }
+
+    var icon: String {
+      switch self {
+      case .clean: "checkmark.icloud"
+      case .pending, .saving: "icloud"
+      case .failed: "exclamationmark.icloud"
       }
     }
 
     var color: Color {
       switch self {
-      case .failed: .studyCoral
+      case .failed: StudyPillTone.coral.foreground
       case .saving: .studyInk60
       default: .studyInk40
       }
@@ -146,19 +166,26 @@ public struct NotebookPageScreen: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 8) {
         if page != nil {
-          TextField("título", text: Binding(get: { title }, set: { touch($0) }))
+          TextField("título", text: Binding(get: { title }, set: { touch($0) }), axis: .vertical)
+            .lineLimit(1...4)
+            .focused($editingTitle)
             .submitLabel(.done)
             .font(.system(size: titleSize, weight: .bold))
             .tracking(-titleSize * 0.035)
             .textFieldStyle(.plain)
             .padding(.vertical, 4)
             .accessibilityLabel("título da página")
-          NotebookBody(blocks: blocks)
-            .padding(.top, 8)
-          Text("só leitura")
-            .font(.footnote)
-            .foregroundStyle(Color.studyInk40)
-            .padding(.top, 24)
+          if blocks.isEmpty {
+            StudyEmptyState(icon: "lock", title: "corpo só no web")
+              .padding(.top, 8)
+          } else {
+            NotebookBody(blocks: blocks)
+              .padding(.top, 8)
+            Label("só leitura", systemImage: "lock")
+              .font(.footnote)
+              .foregroundStyle(Color.studyInk40)
+              .padding(.top, 24)
+          }
         } else if let failed {
           StudyFailedState(message: failed) { Task { await load(force: true) } }
         } else {
@@ -177,14 +204,17 @@ public struct NotebookPageScreen: View {
         StudyPill(color: subject?.color, text: subject?.name ?? "caderno")
       }
       ToolbarItem(placement: .primaryAction) {
-        Text(page == nil ? "" : save.label)
-          .font(.caption)
-          .foregroundStyle(save.color)
-          // Largura fixa: o rótulo troca entre "salvo" e "salvando..." sem
-          // empurrar o botão do lado.
-          .frame(width: 72, alignment: .trailing)
+        if page != nil {
+          Button { flush(report: true) } label: {
+            Image(systemName: save.icon)
+              .foregroundStyle(save.color)
+              .symbolEffect(.pulse, isActive: save == .saving)
+              .contentTransition(.symbolEffect(.replace))
+          }
+          .disabled(save != .failed)
           .accessibilityLabel("salvamento")
-          .accessibilityValue(page == nil ? "" : save.label)
+          .accessibilityValue(save.label)
+        }
       }
       ToolbarItem(placement: .primaryAction) {
         Button("apagar página", systemImage: "trash") { confirmingDelete = true }
@@ -229,7 +259,11 @@ public struct NotebookPageScreen: View {
     }
   }
 
-  private func touch(_ text: String) {
+  /// Com eixo vertical o Return viraria quebra de linha. Aqui ele encerra.
+  private func touch(_ typed: String) {
+    let text = typed.replacingOccurrences(of: "\n", with: "")
+    if text != typed { editingTitle = false }
+    guard text != title else { return }
     title = text
     guard page != nil else { return }
     version += 1
@@ -300,6 +334,11 @@ struct NotebookBody: View {
 struct NotebookBlockView: View {
   let block: NotebookBlock
   let number: Int?
+  @ScaledMetric(relativeTo: .body) private var textSize = 16.0
+  @ScaledMetric(relativeTo: .callout) private var codeSize = 14.0
+  @ScaledMetric(relativeTo: .title) private var heading1 = 26.0
+  @ScaledMetric(relativeTo: .title2) private var heading2 = 21.0
+  @ScaledMetric(relativeTo: .headline) private var heading3 = 17.0
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -332,7 +371,7 @@ struct NotebookBlockView: View {
     case .checkListItem:
       HStack(alignment: .firstTextBaseline, spacing: 8) {
         Image(systemName: block.checked == true ? "checkmark.square" : "square")
-          .font(.system(size: 16))
+          .font(.system(size: textSize))
           .foregroundStyle(block.checked == true ? Color.studyBlue : Color.studyInk40)
           .frame(width: 24, alignment: .trailing)
         paragraph(block.text)
@@ -341,7 +380,7 @@ struct NotebookBlockView: View {
       }
     case .codeBlock:
       Text(block.text)
-        .font(.system(size: 14, design: .monospaced))
+        .font(.system(size: codeSize, design: .monospaced))
         .foregroundStyle(Color.studyInk)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -360,7 +399,7 @@ struct NotebookBlockView: View {
   private func marker(_ symbol: Text) -> some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
       symbol
-        .font(.system(size: 16))
+        .font(.system(size: textSize))
         .foregroundStyle(Color.studyInk40)
         .frame(width: 24, alignment: .trailing)
       paragraph(block.text)
@@ -369,7 +408,7 @@ struct NotebookBlockView: View {
 
   private func paragraph(_ text: String) -> some View {
     Text(text)
-      .font(.system(size: 16))
+      .font(.system(size: textSize))
       .lineSpacing(5)
       .foregroundStyle(Color.studyInk)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -378,9 +417,9 @@ struct NotebookBlockView: View {
 
   private var headingSize: CGFloat {
     switch block.level ?? 1 {
-    case 1: 26
-    case 2: 21
-    default: 17
+    case 1: heading1
+    case 2: heading2
+    default: heading3
     }
   }
 }

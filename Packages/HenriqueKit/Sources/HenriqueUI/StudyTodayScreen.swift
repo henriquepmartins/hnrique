@@ -92,7 +92,7 @@ struct StudyTodayPending: View {
   var base = 0
 
   var body: some View {
-    let now = overview.date.date(in: StudyFormat.calendar)
+    let now = Date()
     VStack(alignment: .leading, spacing: 0) {
       StudySectionHeading(title: "pendências", action: ("ver todas", onAssignments))
         .staggeredEntrance(index: base, isReady: true)

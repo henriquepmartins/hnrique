@@ -61,9 +61,6 @@ struct EstudosContractTests {
     #expect(AssignmentStatus.in_progress.next == .done)
     #expect(AssignmentStatus.open.next == .done)
     #expect(AssignmentStatus.done.next == .open)
-    #expect(AssignmentStatus.open.label == "aberto")
-    #expect(AssignmentStatus.in_progress.label == "em andamento")
-    #expect(AssignmentStatus.done.label == "feito")
   }
 
   @Test("a entrega atrasada fica antes do dia de hoje")

@@ -198,16 +198,6 @@ enum StudyCalloutTone {
   }
 }
 
-extension AssignmentStatus {
-  var pillTone: StudyPillTone {
-    switch self {
-    case .open: .blue
-    case .in_progress: .yellow
-    case .done: .green
-    }
-  }
-}
-
 // MARK: - Tipografia de página
 
 struct StudyEyebrow: View {
@@ -614,12 +604,13 @@ struct StudyMetric: View {
 
 struct StudyTaskCard: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openURL) private var openURL
   let assignment: StudyAssignment
   let now: Date
-  var onToggle: ((AssignmentStatus) -> Void)?
-  var onOpen: (() -> Void)?
+  var onStatus: ((AssignmentStatus) -> Void)?
 
   private var done: Bool { assignment.status == .done }
+  private var link: URL? { assignment.url.flatMap(URL.init(string:)) }
 
   var body: some View {
     HStack(alignment: .top, spacing: 10) {
@@ -627,6 +618,7 @@ struct StudyTaskCard: View {
       VStack(alignment: .leading, spacing: 4) {
         Text(assignment.title)
           .font(.subheadline.weight(.medium))
+          .foregroundStyle(done ? Color.studyInk60 : Color.studyInk)
           .lineLimit(2)
           .strikethrough(done)
         StudyWrap(spacing: 6, lineSpacing: 6) {
@@ -634,28 +626,49 @@ struct StudyTaskCard: View {
           if let name = assignment.subjectName {
             StudyPill(color: assignment.subjectColor, text: name)
           }
-          Text(StudyFormat.due(assignment.dueAt, now: now))
-            .font(.caption)
-            .foregroundStyle(Color.studyInk60)
-            .monospacedDigit()
+          StudyDueLabel(dueAt: assignment.dueAt, urgency: assignment.urgency(at: now), now: now)
         }
         .padding(.top, 2)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      if let onOpen {
-        IconButton(title: "abrir entrega", systemImage: "arrow.right", size: 16, action: onOpen)
-          .tint(Color.studyInk60)
+      if let link {
+        IconButton(title: "abrir no moodle", systemImage: "arrow.up.right", size: 16) {
+          openURL(link)
+        }
+        .tint(Color.studyInk60)
       }
     }
     .padding(.vertical, 10)
     .padding(.horizontal, Space.m)
     .paperCard(radius: StudyRadius.inner)
-    .opacity(done ? 0.55 : 1)
+    .contentShape(.contextMenuPreview, .rect(cornerRadius: StudyRadius.inner))
+    .contextMenu { menu }
+  }
+
+  @ViewBuilder private var menu: some View {
+    if let onStatus {
+      if done {
+        Button("reabrir", systemImage: "arrow.uturn.backward.circle") { onStatus(.open) }
+      } else {
+        Button("concluir", systemImage: "checkmark.circle") { onStatus(.done) }
+        if assignment.status == .open {
+          Button("em andamento", systemImage: "circle.lefthalf.filled") { onStatus(.in_progress) }
+        }
+      }
+    }
+    if let link {
+      Button("abrir no moodle", systemImage: "arrow.up.right.square") { openURL(link) }
+    }
+    #if os(iOS)
+      Button("copiar título", systemImage: "doc.on.doc") {
+        UIPasteboard.general.string = assignment.title
+      }
+    #endif
   }
 
   /// O quadrado tem 20pt de desenho; o `slop` leva o alvo aos 44 da HIG.
   private var check: some View {
-    Button { onToggle?(assignment.status.next) } label: {
+    Button { onStatus?(assignment.status.next) } label: {
       RoundedRectangle(cornerRadius: 5)
         .fill(done ? Color.studyBlue : .white)
         .overlay(
@@ -669,15 +682,63 @@ struct StudyTaskCard: View {
               .foregroundStyle(.white)
               .offset(y: -0.5)
               .transition(.iconAppear)
+          } else if assignment.status == .in_progress {
+            Capsule()
+              .fill(StudyPillTone.yellow.foreground)
+              .frame(width: 8, height: 2)
+              .transition(.opacity)
           }
         }
-        .animation(reduceMotion ? nil : Motion.confirm, value: done)
+        .animation(reduceMotion ? nil : Motion.confirm, value: assignment.status)
         .frame(width: 20, height: 20)
     }
     .buttonStyle(StudyPressStyle(slop: 12))
-    .disabled(onToggle == nil)
+    .disabled(onStatus == nil)
     .accessibilityLabel(done ? "reabrir entrega" : "concluir entrega")
+    .accessibilityValue(assignment.status == .in_progress ? "em andamento" : "")
     .sensoryFeedback(.selection, trigger: done)
+  }
+}
+
+/// O prazo em cinza enquanto folga, marigold com relógio até 48 h, e coral com
+/// o tempo de atraso quando venceu. A grade do calendário usa a mesma régua.
+private struct StudyDueLabel: View {
+  let dueAt: Date
+  let urgency: AssignmentUrgency
+  let now: Date
+
+  var body: some View {
+    HStack(spacing: 3) {
+      if let icon {
+        Image(systemName: icon).imageScale(.small)
+      }
+      Text(urgency == .overdue
+        ? StudyFormat.relative(dueAt, now: now) : StudyFormat.due(dueAt, now: now))
+    }
+    .font(.caption)
+    .foregroundStyle(color)
+    .monospacedDigit()
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(
+      urgency == .overdue
+        ? "atrasada, prazo \(StudyFormat.due(dueAt, now: now))"
+        : "prazo \(StudyFormat.due(dueAt, now: now))")
+  }
+
+  private var icon: String? {
+    switch urgency {
+    case .overdue: "exclamationmark.circle.fill"
+    case .near: "clock.fill"
+    case .done, .later: nil
+    }
+  }
+
+  private var color: Color {
+    switch urgency {
+    case .overdue: StudyPillTone.coral.foreground
+    case .near: StudyPillTone.yellow.foreground
+    case .done, .later: .studyInk60
+    }
   }
 }
 

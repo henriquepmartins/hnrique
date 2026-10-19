@@ -57,6 +57,31 @@ struct AssignmentCalendarTests {
     #expect(late.hasOverdue)
   }
 
+  /// O relógio da tela era o meio-dia do dia. Por ele, uma entrega das 10:00
+  /// aparecia atrasada às 7:00, e uma das 18:00 seguia em dia às 23:00.
+  @Test("atrasada conta do instante do prazo, não do dia")
+  func overdueByInstant() {
+    let date = ISO8601DateFormatter()
+    // 10:00 e 18:00 em Fortaleza, UTC-3.
+    let morning = Self.assignment(id: "manha", due: "2026-09-10T13:00:00Z")
+    let evening = Self.assignment(id: "noite", due: "2026-09-10T21:00:00Z")
+    let early = date.date(from: "2026-09-10T10:00:00Z")!
+    let late = date.date(from: "2026-09-11T02:00:00Z")!
+
+    #expect(!morning.isOverdue(at: early))
+    #expect(morning.urgency(at: early) == .near)
+    #expect(evening.isOverdue(at: late))
+    #expect(evening.urgency(at: late) == .overdue)
+
+    var done = evening
+    done.status = .done
+    #expect(!done.isOverdue(at: late))
+    #expect(done.urgency(at: late) == .done)
+
+    let nextWeek = Self.assignment(id: "semana", due: "2026-09-17T13:00:00Z")
+    #expect(nextWeek.urgency(at: early) == .later)
+  }
+
   @Test("a grade cobre o mês em semanas de sete")
   func buildsMonthGrid() {
     let calendar = AssignmentCalendar(

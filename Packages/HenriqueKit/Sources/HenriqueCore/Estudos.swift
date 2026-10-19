@@ -199,14 +199,6 @@ public enum AssignmentStatus: String, Codable, Hashable, Sendable, CaseIterable 
   case in_progress
   case done
 
-  public var label: String {
-    switch self {
-    case .open: "aberto"
-    case .in_progress: "em andamento"
-    case .done: "feito"
-    }
-  }
-
   public var next: AssignmentStatus {
     switch self {
     case .open, .in_progress: .done
