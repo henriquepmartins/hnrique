@@ -46,6 +46,17 @@ private struct SaturationBrightnessPad: View {
     .accessibilityElement()
     .accessibilityLabel("saturação e brilho")
     .accessibilityValue("saturação \(Int(color.saturation * 100)) por cento, brilho \(Int(color.brightness * 100)) por cento")
+    // Sem arrastar, o VoiceOver muda o brilho deslizando para cima ou para
+    // baixo e a saturação pelas ações.
+    .accessibilityAdjustableAction { direction in
+      switch direction {
+      case .increment: color.brightness = min(1, color.brightness + 0.05)
+      case .decrement: color.brightness = max(0, color.brightness - 0.05)
+      @unknown default: break
+      }
+    }
+    .accessibilityAction(named: "mais saturação") { color.saturation = min(1, color.saturation + 0.05) }
+    .accessibilityAction(named: "menos saturação") { color.saturation = max(0, color.saturation - 0.05) }
   }
 }
 
@@ -75,6 +86,13 @@ private struct HueBar: View {
     .accessibilityElement()
     .accessibilityLabel("matiz")
     .accessibilityValue("\(Int(color.hue * 360)) graus")
+    .accessibilityAdjustableAction { direction in
+      switch direction {
+      case .increment: color.hue = min(1, color.hue + 1.0 / 36)
+      case .decrement: color.hue = max(0, color.hue - 1.0 / 36)
+      @unknown default: break
+      }
+    }
   }
 }
 
