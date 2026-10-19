@@ -204,8 +204,10 @@ private struct PlanMonthGrid: View {
   private var weekdayInitials: [(weekday: Int, initial: String)] {
     var calendar = Calendar.trainingWeek
     calendar.locale = locale
-    let symbols = textSize.isAccessibilitySize
-      ? calendar.veryShortStandaloneWeekdaySymbols : calendar.shortStandaloneWeekdaySymbols
+    // "seg." do sistema sem o ponto, como o resto do app escreve.
+    let symbols = (textSize.isAccessibilitySize
+      ? calendar.veryShortStandaloneWeekdaySymbols : calendar.shortStandaloneWeekdaySymbols)
+      .map { $0.replacingOccurrences(of: ".", with: "") }
     let first = calendar.firstWeekday - 1
     return (0..<7).map { weekday in ((first + weekday) % 7, symbols[(first + weekday) % 7]) }
   }

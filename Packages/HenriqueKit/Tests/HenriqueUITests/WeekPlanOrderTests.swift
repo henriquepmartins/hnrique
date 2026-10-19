@@ -40,4 +40,20 @@ struct WorkoutToneTests {
     let hex = WorkoutTone.all[2].hex
     #expect(item("pernas", [1], color: hex).tone.hex == hex)
   }
+
+  @Test("treinos sem cor salva nunca dividem a mesma cor, nem com a salva")
+  func colorlessWorkoutsGetDistinctColors() {
+    let saved = WorkoutTone.all[0].hex
+    let plan = (1..<WorkoutTone.all.count).map { item("treino-\($0)", [$0 % 7]) }
+      + [item("salvo", [1], color: saved)]
+    let hexes = plan.withResolvedColors().map(\.tone.hex)
+    #expect(Set(hexes).count == hexes.count)
+  }
+
+  @Test("a cor resolvida não muda quando o treino troca de dia")
+  func resolvedColorIgnoresWeekdays() {
+    let before = [item("pernas", [1]), item("superiores", [3])].withResolvedColors().map(\.color)
+    let after = [item("pernas", []), item("superiores", [1, 5])].withResolvedColors().map(\.color)
+    #expect(before == after)
+  }
 }

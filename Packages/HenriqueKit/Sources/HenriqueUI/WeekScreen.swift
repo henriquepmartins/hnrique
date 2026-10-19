@@ -170,10 +170,6 @@ extension [WeekPlanItem] {
 }
 
 extension WeekPlanItem {
-  /// Sem cor salva, a cor sai do id. Pela posição, apagar um card repintava os
-  /// seguintes; pelo dia, dar o dia a outro treino repintava a pasta e todos os
-  /// dias feitos dela no calendário. O id nunca muda, e o próximo salvar grava
-  /// essa cor no servidor.
   var tone: WorkoutTone {
     color.flatMap(WorkoutTone.from(hex:)) ?? .at(Int(Self.stableHash(id) % UInt64(WorkoutTone.all.count)))
   }
@@ -181,6 +177,31 @@ extension WeekPlanItem {
   /// FNV-1a sobre os bytes. `hashValue` muda a cada execução do app.
   static func stableHash(_ text: String) -> UInt64 {
     text.utf8.reduce(0xcbf2_9ce4_8422_2325) { ($0 ^ UInt64($1)) &* 0x100_0000_01b3 }
+  }
+}
+
+extension Array where Element == WeekPlanItem {
+  /// Treino sem cor salva ganha uma cor que não muda com o dia nem com a
+  /// posição: a do id ou, se outra pasta já usa, a próxima livre da paleta.
+  /// Pelo dia, dar o dia a outro treino repintava a pasta e os dias feitos;
+  /// só pelo id, dois treinos caíam na mesma cor. O próximo salvar grava a cor.
+  func withResolvedColors() -> [WeekPlanItem] {
+    let palette = WorkoutTone.all.map(\.hex)
+    var taken = Set(compactMap { $0.color?.lowercased() })
+    var resolved: [String: String] = [:]
+    for item in filter({ $0.color == nil }).sorted(by: { $0.id < $1.id }) {
+      let start = Int(WeekPlanItem.stableHash(item.id) % UInt64(palette.count))
+      let offsets = 0..<palette.count
+      let hex = offsets.lazy.map { palette[(start + $0) % palette.count] }
+        .first { !taken.contains($0) } ?? palette[start]
+      taken.insert(hex)
+      resolved[item.id] = hex
+    }
+    return map { item in
+      var copy = item
+      if copy.color == nil { copy.color = resolved[item.id] }
+      return copy
+    }
   }
 }
 

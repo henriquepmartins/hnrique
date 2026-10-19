@@ -91,6 +91,9 @@ public final class AcademiaStore {
   /// por pintura.
   public private(set) var dashboard: Dashboard? {
     didSet {
+      if let plan = dashboard?.weekPlan, plan.contains(where: { $0.color == nil }) {
+        dashboard?.weekPlan = plan.withResolvedColors()
+      }
       noteStart()
       refreshActivity()
     }
