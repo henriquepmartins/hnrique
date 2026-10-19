@@ -217,10 +217,10 @@ struct GapNote: View {
         .buttonStyle(.plain)
         .frame(minHeight: 44).contentShape(.rect)
     }
-    .foregroundStyle(Color(red: 0.54, green: 0.18, blue: 0.18))
+    .foregroundStyle(Color.danger)
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, Space.l).padding(.vertical, 13)
-    .background(Color(red: 0.99, green: 0.95, blue: 0.95), in: .rect(cornerRadius: 18))
+    .background(Color.danger.opacity(0.06), in: .rect(cornerRadius: 18))
     .accessibilityIdentifier("musculos.lacuna")
   }
 }

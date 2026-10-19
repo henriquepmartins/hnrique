@@ -308,7 +308,7 @@ struct TrainingSetRow: View {
           .overlay(alignment: .topTrailing) {
             if waiting {
               Image(systemName: "clock.fill")
-                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.orange)
+                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.warning)
                 .background(Circle().fill(.white).padding(-1))
                 .offset(x: 3, y: -3)
             }

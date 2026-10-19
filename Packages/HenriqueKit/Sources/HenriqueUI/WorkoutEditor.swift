@@ -231,7 +231,7 @@ struct WorkoutEditor: View {
       if let saveError {
         Label(saveError, systemImage: "exclamationmark.triangle.fill")
           .font(.footnote)
-          .foregroundStyle(.red)
+          .foregroundStyle(Color.danger)
           .padding(.horizontal, 16)
           .padding(.bottom, 8)
           .transition(.opacity)
