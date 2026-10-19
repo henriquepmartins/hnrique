@@ -40,7 +40,7 @@ private struct FocoAccessoryLabel: View {
     if let run = foco.ledger.running {
       // O botão inteiro mora dentro do tick: o rótulo falado lia o tempo do
       // último desenho completo e ficava minutos atrás do relógio.
-      FocoTicker(since: run.runningSince) { now in
+      FocoTicker(since: run.tickAnchor) { now in
         Button {
           foco.isShowingRun = true
         } label: {

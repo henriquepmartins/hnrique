@@ -67,7 +67,7 @@ private struct FocoTimerView: View {
       .padding(.leading, 16)
       .padding(.trailing, 3)
       Spacer(minLength: 0)
-      FocoTicker(since: run.runningSince) { now in
+      FocoTicker(since: run.tickAnchor) { now in
         let seconds = run.seconds(at: now)
         let today = foco.ledger.seconds(
           on: CalendarDate(now, in: StudyFormat.calendar), now: now,

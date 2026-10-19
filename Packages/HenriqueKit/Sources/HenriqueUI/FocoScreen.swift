@@ -34,9 +34,11 @@ enum FocoFormat {
 }
 
 /// O tick só existe enquanto uma corrida roda. Parado, o total já está no
-/// registro e redesenhar a cada segundo não mudaria nada. `since` é o início do
-/// trecho que corre: ancorado nele, o tick cai quando o dígito troca, e não até
-/// um segundo depois.
+/// registro e redesenhar a cada segundo não mudaria nada. `since` é um instante
+/// em que o relógio da corrida virou segundo cheio: ancorado nele, o tick cai
+/// quando o dígito troca, e não até um segundo depois. A leitura vem 10 ms
+/// depois do tick para o arredondamento para baixo não cair em cima do segundo
+/// exato e pular um dígito.
 struct FocoTicker<Content: View>: View {
   let since: Date?
   var every: TimeInterval = 1
@@ -45,11 +47,19 @@ struct FocoTicker<Content: View>: View {
   var body: some View {
     if let since {
       TimelineView(.periodic(from: since, by: every)) { context in
-        content(context.date)
+        content(context.date.addingTimeInterval(0.01))
       }
     } else {
       content(.now)
     }
+  }
+}
+
+extension FocoRun {
+  /// Onde o tick da corrida se ancora, nulo pausada. Os trechos já fechados
+  /// deixam um pedaço de segundo, e o relógio vira quando ele completa.
+  var tickAnchor: Date? {
+    runningSince.map { $0 - seconds(at: $0).truncatingRemainder(dividingBy: 1) }
   }
 }
 
@@ -70,8 +80,7 @@ public struct FocoScreen: View {
 
   private var calendar: Calendar { StudyFormat.calendar }
 
-  /// O início do trecho que corre agora, nulo parado ou pausado.
-  private var tickingSince: Date? { foco.ledger.running?.runningSince }
+  private var tickingSince: Date? { foco.ledger.running?.tickAnchor }
 
   public var body: some View {
     ScrollView {
@@ -475,7 +484,7 @@ struct FocoTodayCard: View {
   var body: some View {
     StudyCard {
       VStack(alignment: .leading, spacing: 12) {
-        FocoTicker(since: foco.ledger.running?.runningSince) { now in
+        FocoTicker(since: foco.ledger.running?.tickAnchor) { now in
           let ledger = foco.ledger
           let seconds = ledger.seconds(on: CalendarDate(now, in: calendar), now: now, calendar: calendar)
           let streak = ledger.streak(now: now, calendar: calendar)
