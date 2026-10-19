@@ -133,10 +133,17 @@ extension [WeekPlanItem] {
 }
 
 extension WeekPlanItem {
-  /// Sem cor escolhida, a cor vem do dia e não da posição na grade. Pela
-  /// posição, apagar um card repintava todos os que vinham depois.
+  /// Sem cor salva, a cor sai do id. Pela posição, apagar um card repintava os
+  /// seguintes; pelo dia, dar o dia a outro treino repintava a pasta e todos os
+  /// dias feitos dela no calendário. O id nunca muda, e o próximo salvar grava
+  /// essa cor no servidor.
   var tone: WorkoutTone {
-    color.flatMap(WorkoutTone.from(hex:)) ?? .at(weekdays.first ?? 0)
+    color.flatMap(WorkoutTone.from(hex:)) ?? .at(Int(Self.stableHash(id) % UInt64(WorkoutTone.all.count)))
+  }
+
+  /// FNV-1a sobre os bytes. `hashValue` muda a cada execução do app.
+  static func stableHash(_ text: String) -> UInt64 {
+    text.utf8.reduce(0xcbf2_9ce4_8422_2325) { ($0 ^ UInt64($1)) &* 0x100_0000_01b3 }
   }
 }
 

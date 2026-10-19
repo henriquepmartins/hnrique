@@ -18,3 +18,26 @@ struct WeekPlanOrderTests {
     #expect(ordered == ["segunda e sexta", "quarta", "domingo", "sem dia", "outro sem dia"])
   }
 }
+
+struct WorkoutToneTests {
+  private func item(_ id: String, _ weekdays: [Int], color: String? = nil) -> WeekPlanItem {
+    WeekPlanItem(
+      id: id, weekdays: weekdays, name: id, focus: "foco", exerciseCount: 0, exercises: [], color: color)
+  }
+
+  @Test("treino sem cor salva mantém a cor quando perde ou troca de dia")
+  func toneWithoutColorIgnoresWeekdays() {
+    let ids = ["pernas", "superiores", "b1f0c2a4-7e1d-4c55-9f3b-0d2a6e8c1f00"]
+    for id in ids {
+      let before = item(id, [1, 4]).tone
+      #expect(item(id, []).tone == before)
+      #expect(item(id, [3]).tone == before)
+    }
+  }
+
+  @Test("cor salva vence a do id")
+  func savedColorWins() {
+    let hex = WorkoutTone.all[2].hex
+    #expect(item("pernas", [1], color: hex).tone.hex == hex)
+  }
+}
