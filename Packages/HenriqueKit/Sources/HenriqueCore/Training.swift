@@ -197,8 +197,17 @@ extension DashboardExercise {
       return rampWeightKg(load, index: index, count: prescription.prepSets)
     }
     guard let top = previousTop, top > 0, load != top else { return last }
-    return max(0, (last * load / top / 2.5).rounded() * 2.5)
+    return roundedWarmUp(last * load / top, previous: last)
   }
+}
+
+/// Abaixo de 10 kg o aquecimento é halter leve, que anda de 0,5 em 0,5; a
+/// anilha de 2,5 transformaria 2 kg em 2,5 e 1 kg em 0. Um aquecimento que
+/// tinha peso não zera.
+private func roundedWarmUp(_ kilograms: Double, previous: Double) -> Double {
+  let step = kilograms >= 10 ? 2.5 : 0.5
+  let rounded = max(0, (kilograms / step).rounded() * step)
+  return previous > 0 ? max(0.5, rounded) : rounded
 }
 
 /// A fração da carga em cada aquecimento, igual à do servidor. Acima de três,

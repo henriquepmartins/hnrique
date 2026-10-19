@@ -102,6 +102,15 @@ struct ExerciseLoadTests {
     #expect(scaled.applyingLoad(50).sets.prep.map(\.weightKg) == [25, 37.5])
     #expect(scaled.applyingLoad(40).sets.prep.map(\.weightKg) == [20, 30])
   }
+
+  @Test(
+    "aquecimento leve escala de 0,5 em 0,5 e não zera",
+    arguments: [(2.0, 11.0, 2.0), (1, 9, 1), (1, 2, 0.5), (20, 11, 22.5)])
+  func lightWarmUpScales(previous: Double, load: Double, expected: Double) {
+    let opened = exercise(plan: 10, previous: [10], previousPrep: [previous], prepRows: [previous])
+      .applyingLoad(load)
+    #expect(opened.sets.prep.map(\.weightKg) == [expected])
+  }
 }
 
 @Suite("O editor salvando a carga")
