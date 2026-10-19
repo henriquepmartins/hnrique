@@ -17,12 +17,18 @@ struct WorkoutRecapSheet: View {
       ScrollView {
         VStack(alignment: .leading, spacing: Space.l) {
           Text("treino encerrado").font(.title2.weight(.medium)).tracking(-0.8)
-          HStack(alignment: .top, spacing: Space.m) {
-            stat(duration, caption: "de treino")
-            stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume", delta: delta)
-            stat("\(recap.doneSets)/\(recap.totalSets)", caption: "séries valendo")
+          SyncStatusLine()
+          if recap.doneSets == 0 {
+            ContentUnavailableView("nenhuma série valendo", systemImage: "dumbbell")
+              .revealEntrance(index: 0, shown: shown)
+          } else {
+            HStack(alignment: .top, spacing: Space.m) {
+              stat(duration, caption: "de treino")
+              stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume", delta: delta)
+              stat("\(recap.doneSets)/\(recap.totalSets)", caption: "séries valendo")
+            }
+            .revealEntrance(index: 0, shown: shown)
           }
-          .revealEntrance(index: 0, shown: shown)
           if !recap.records.isEmpty {
             VStack(spacing: Space.s) {
               ForEach(Array(recap.records.enumerated()), id: \.element.id) { index, item in
@@ -31,13 +37,15 @@ struct WorkoutRecapSheet: View {
               }
             }
           }
-          VStack(spacing: 0) {
-            ForEach(recap.exercises) { line in
-              exerciseLine(line)
-              if line.id != recap.exercises.last?.id { Divider() }
+          if recap.doneSets > 0 {
+            VStack(spacing: 0) {
+              ForEach(recap.exercises) { line in
+                exerciseLine(line)
+                if line.id != recap.exercises.last?.id { Divider() }
+              }
             }
+            .revealEntrance(index: recap.records.count + 1, shown: shown)
           }
-          .revealEntrance(index: recap.records.count + 1, shown: shown)
         }
         .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -164,6 +172,7 @@ struct RestChip: View {
         .font(.subheadline.weight(.medium)).foregroundStyle(.white)
         .padding(.horizontal, 14).padding(.vertical, 9)
         .background(remaining > 0 ? accent.deep : accent.base, in: .capsule)
+        .sensoryFeedback(.success, trigger: remaining <= 0) { _, over in over }
       }
     }
     .buttonStyle(PressScaleStyle())
@@ -183,7 +192,14 @@ struct SyncStatusLine: View {
         Label(notice, systemImage: "exclamationmark.triangle.fill")
           .foregroundStyle(Color.orange).lineLimit(2)
         Spacer(minLength: 4)
-        Button("ok") { store.notice = nil }.font(.caption.weight(.semibold))
+        Button {
+          store.notice = nil
+        } label: {
+          Image(systemName: "xmark").font(.caption.weight(.semibold)).foregroundStyle(Color.mutedInk)
+            .frame(width: 44, height: 44).contentShape(.rect)
+            .padding(.vertical, -14)
+        }
+        .accessibilityLabel("dispensar aviso")
       }
       .font(.caption)
       .accessibilityIdentifier("fila.aviso")

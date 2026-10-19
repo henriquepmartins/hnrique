@@ -67,6 +67,7 @@ struct RestTimerBar: View {
   /// O fim de descanso que já passou. Guardar o fim, e não um "acabou", impede
   /// que um descanso novo na mesma barra herde o estado do anterior por um quadro.
   @State private var finished: Date?
+  @State private var adjustments = 0
 
   private var over: Bool { finished == rest.endsAt }
 
@@ -98,16 +99,17 @@ struct RestTimerBar: View {
           .accessibilityLabel(spokenNext)
       }
       WeightedRow(weights: [1, 1, 1.3], spacing: 8) {
-        step("−15s") { onAdjust(-15) }
-        step("+15s") { onAdjust(15) }
+        step("−15s", spoken: "menos 15 segundos") { onAdjust(-15) }
+        step("+15s", spoken: "mais 15 segundos") { onAdjust(15) }
         Button(action: onDismiss) {
           Text(over ? "fechar" : "pular")
             .font(.system(size: buttonSize, weight: .semibold)).foregroundStyle(accent.deep)
-            .padding(.vertical, 9).frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background(accent.acid, in: .capsule)
         }
         .buttonStyle(PressScaleStyle())
       }
+      .sensoryFeedback(.selection, trigger: adjustments)
     }
     .padding(12)
     .background {
@@ -115,7 +117,7 @@ struct RestTimerBar: View {
         .fill(over ? accent.base : accent.deep)
         .shadow(color: accent.deep.opacity(0.75), radius: 24, y: 12)
     }
-    .animation(reduceMotion ? nil : Motion.crossfade, value: over)
+    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: over)
     .sensoryFeedback(.success, trigger: over) { _, fired in fired }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("descanso")
@@ -124,8 +126,14 @@ struct RestTimerBar: View {
       let left = rest.remaining(at: .now)
       if left > 0 {
         guard (try? await Task.sleep(for: .seconds(left))) != nil else { return }
+        AccessibilityNotification.Announcement("descanso completo").post()
       }
       finished = rest.endsAt
+    }
+    .task(id: rest.startedAt) {
+      // O cartão volta a montar quando o teclado fecha; só o começo de verdade é anunciado.
+      guard Date.now.timeIntervalSince(rest.startedAt) < 2 else { return }
+      AccessibilityNotification.Announcement("descanso de \(restClock(rest.total))").post()
     }
   }
 
@@ -153,15 +161,19 @@ struct RestTimerBar: View {
     }
   }
 
-  private func step(_ title: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
+  private func step(_ title: String, spoken: String, action: @escaping () -> Void) -> some View {
+    Button {
+      action()
+      adjustments += 1
+    } label: {
       Text(title)
         .font(.system(size: buttonSize, weight: .medium)).monospacedDigit()
         .foregroundStyle(Color.white.opacity(0.93))
-        .padding(.vertical, 9).frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 44)
         .background(Color.white.opacity(0.12), in: .capsule)
     }
     .buttonStyle(PressScaleStyle())
+    .accessibilityLabel(spoken)
   }
 }
 

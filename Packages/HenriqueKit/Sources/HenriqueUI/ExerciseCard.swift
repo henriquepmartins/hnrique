@@ -115,7 +115,6 @@ enum SetRowScale {
   case list, session
 
   var check: CGFloat { self == .list ? 44 : 46 }
-  var value: Font { self == .list ? .subheadline : .system(size: 19, weight: .medium) }
   var padding: CGFloat { self == .list ? 6 : 8 }
   var radius: CGFloat { Radius.concentric(Radius.field, padding: padding) }
 }
@@ -124,8 +123,10 @@ struct TrainingSetRow: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var typeSize
   @ScaledMetric(relativeTo: .body) private var tileHeight = 46.0
   @ScaledMetric(relativeTo: .footnote) private var indexSize = 13.0
+  @ScaledMetric(relativeTo: .title3) private var valueSize = 19.0
   @State private var weightDraft: Double?
   @State private var repsDraft: Int?
   @FocusState private var focused: Field?
@@ -149,10 +150,19 @@ struct TrainingSetRow: View {
   /// onde a última vez foi 25.
   var reference: WeightReference? = nil
 
-  private var fieldID: String { "set.\(key.exerciseId).\(kind == .prep ? "prep" : "work").\(index)" }
+  private var fieldID: String { setRowID(key.exerciseId, kind, index) }
   /// "aquecimento 1" ou "série 1". O leitor de tela lia as duas linhas iguais.
   private var spokenName: String { kind == .prep ? "aquecimento \(index)" : "série \(index)" }
   private var waiting: Bool { store.isWaiting(key) }
+  private var valueFont: Font {
+    scale == .list ? .subheadline : .system(size: valueSize, weight: .medium)
+  }
+  /// Nos tamanhos de acessibilidade a coluna "anterior" não cabe ao lado dos
+  /// números; ela sai da linha e fica no rótulo do índice.
+  private var showsPrevious: Bool { !typeSize.isAccessibilitySize }
+  private var canCommit: Bool {
+    Limits.setWeightKg.contains(weightDraft ?? -1) && Limits.reps.contains(repsDraft ?? 0)
+  }
   private var currentDone: Bool {
     guard store.dashboard?.date == key.date, store.dashboard?.workout?.id == key.templateId,
       let current = store.dashboard?.workout?.exercises.first(where: { $0.id == key.exerciseId }) else { return done }
@@ -172,17 +182,39 @@ struct TrainingSetRow: View {
       }
       fields
     }
+    .id(fieldID)
     .font(.subheadline).monospacedDigit().multilineTextAlignment(.center)
     .modifier(RowChrome(scale: scale, kind: kind, done: done, isNext: isNext, accent: accent))
-    .animation(reduceMotion ? nil : Motion.crossfade, value: isNext)
+    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: isNext)
     .onChange(of: weight, initial: true) { if focused == nil { weightDraft = weight } }
     .onChange(of: repetitions, initial: true) { if focused == nil { repsDraft = repetitions } }
     .onChange(of: focused) { old, new in
-      if old != nil { commit(completed: currentDone) }
+      if old != nil {
+        // Campo apagado volta ao valor gravado, senão o "0" do vazio fica na tela.
+        weightDraft = weightDraft ?? weight
+        repsDraft = repsDraft ?? repetitions
+        commit(completed: currentDone)
+      }
       if new == nil { submitted = nil }
       if new != nil { selectAllInFocusedField() }
     }
     .onSubmit { commit(completed: currentDone); focused = nil }
+    #if os(iOS)
+    .toolbar {
+      ToolbarItemGroup(placement: .keyboard) {
+        if scale == .session, focused == .weight {
+          Button("próximo", systemImage: "chevron.right") { focused = .reps }
+        } else if scale == .session, focused == .reps, !currentDone {
+          Button("feito", systemImage: "checkmark") {
+            commit(completed: true)
+            focused = nil
+            tapCount += 1
+          }
+          .disabled(!canCommit)
+        }
+      }
+    }
+    #endif
   }
 
   private var fields: some View {
@@ -201,12 +233,17 @@ struct TrainingSetRow: View {
         .frame(width: 30)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(failure ? "\(spokenName), até a falha" : spokenName)
-        Text(previous ?? "–")
-          .font(.system(size: indexSize)).monospacedDigit()
-          .foregroundStyle(done ? accent.deep.opacity(0.6) : Color.mutedInk)
-          .lineLimit(1).minimumScaleFactor(0.8)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityLabel(previous.map { "anterior \($0)" } ?? "sem registro anterior")
+        .accessibilityValue(showsPrevious ? "" : spokenPrevious)
+        if showsPrevious {
+          Text(previous ?? "–")
+            .font(.system(size: indexSize)).monospacedDigit()
+            .foregroundStyle(done ? accent.deep.opacity(0.6) : Color.mutedInk)
+            .lineLimit(1).minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel(spokenPrevious)
+        } else {
+          Spacer(minLength: 0)
+        }
       }
       cell {
         TextField("0", value: $weightDraft, format: .number.precision(.fractionLength(0...2)))
@@ -215,7 +252,7 @@ struct TrainingSetRow: View {
           #endif
           .focused($focused, equals: .weight)
           .submitLabel(.done)
-          .font(scale.value)
+          .font(valueFont)
           .accessibilityIdentifier(fieldID + ".weight")
           .accessibilityLabel("Peso \(kind == .prep ? "do" : "da") \(spokenName)")
       }
@@ -226,7 +263,7 @@ struct TrainingSetRow: View {
           #endif
           .focused($focused, equals: .reps)
           .submitLabel(.done)
-          .font(scale.value)
+          .font(valueFont)
           .accessibilityIdentifier(fieldID + ".reps")
           .accessibilityLabel("Repetições \(kind == .prep ? "do" : "da") \(spokenName)")
           .onChange(of: repsDraft) { _, new in
@@ -242,12 +279,17 @@ struct TrainingSetRow: View {
         // lia como já marcado. A próxima ganha a borda verde, que convida ao
         // toque. Enquanto a marcação não chegou ao servidor o visto fica vazado,
         // com borda tracejada e um relógio no canto.
-        Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
-          .foregroundStyle(waiting ? accent.base : Color.white)
-          .opacity(done ? 1 : 0)
-          .offset(y: -0.5)
+        ZStack {
+          if done {
+            Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+              .foregroundStyle(waiting ? accent.base : Color.white)
+              .offset(y: -0.5)
+              .transition(reduceMotion ? .opacity : AnyTransition(.iconAppear))
+          }
+        }
           .frame(width: scale.check, height: scale.check)
           .background(done && !waiting ? accent.base : .white, in: .circle)
+          .opacity(canCommit || done ? 1 : 0.4)
           .overlay {
             if waiting {
               Circle().strokeBorder(accent.base, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
@@ -267,16 +309,23 @@ struct TrainingSetRow: View {
       }
       // O check encolhe mais que os outros botões, como no board.
       .buttonStyle(PressScaleStyle(scale: 0.92))
-      .disabled(!Limits.setWeightKg.contains(weightDraft ?? -1) || !Limits.reps.contains(repsDraft ?? 0))
+      .disabled(!canCommit)
         .accessibilityIdentifier(fieldID + ".completion")
-        .animation(reduceMotion ? nil : Motion.confirm, value: done)
+        .animation(Motion.resolve(Motion.confirm, reduceMotion), value: done)
         .accessibilityLabel(done ? "Desmarcar \(spokenName)" : "Concluir \(spokenName)")
-        .accessibilityValue(waiting ? "esperando enviar" : "")
+        .accessibilityValue(waiting ? "esperando enviar" : spokenLoad)
+        .accessibilityHint(canCommit ? "" : "preencha carga e repetições")
         // O VoiceOver lia "Selecionado" em todo visto, feito ou não.
         .accessibilityRemoveTraits(done ? [] : .isSelected)
         .accessibilityAddTraits(done ? .isSelected : [])
         .sensoryFeedback(currentDone ? .success : .impact(weight: .light), trigger: tapCount)
     }
+  }
+
+  private var spokenPrevious: String { previous.map { "anterior \($0)" } ?? "sem registro anterior" }
+  private var spokenLoad: String {
+    guard let kilograms = weightDraft, let reps = repsDraft else { return "" }
+    return "\(Formatting.trim(kilograms)) quilos, \(reps) repetições"
   }
 
   /// O número inteiro selecionado ao entrar no campo, para digitar "10" trocar o
@@ -318,6 +367,11 @@ struct TrainingSetRow: View {
     store.record(key: key,
       weightKg: draft.weightKg, reps: draft.reps, completed: completed, toFailure: failure)
   }
+}
+
+/// O id da linha de série, que a sessão usa para rolar até a próxima.
+func setRowID(_ exerciseId: String, _ kind: SetKind, _ index: Int) -> String {
+  "set.\(exerciseId).\(kind == .prep ? "prep" : "work").\(index)"
 }
 
 /// O fundo da linha. Na lista de hoje é a cor do tipo de série; na sessão é o
