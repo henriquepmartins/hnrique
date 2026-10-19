@@ -617,7 +617,7 @@ private struct Pulse: ViewModifier {
     content
       .opacity(on ? 0.35 : 1)
       .scaleEffect(on && !reduceMotion ? 0.8 : 1)
-      .animation(on ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : nil, value: on)
+      .animation(on ? Motion.breathe : nil, value: on)
       .onChange(of: active, initial: true) { _, active in on = active }
   }
 }

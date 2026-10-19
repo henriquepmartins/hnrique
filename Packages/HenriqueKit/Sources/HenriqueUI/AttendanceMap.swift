@@ -89,7 +89,7 @@ private struct AttendanceHeader: View {
         withAnimation(Motion.swap) { period = period.next }
       }
         .disabled(nextIsFuture)
-      Picker("Escala", selection: scope) {
+      Picker("escala", selection: scope) {
         Text("mês").tag(AttendanceScope.month).accessibilityIdentifier("frequencia.mes")
         Text("ano").tag(AttendanceScope.year).accessibilityIdentifier("frequencia.ano")
       }
@@ -398,7 +398,7 @@ private struct SkeletonSquare: View {
       .fill(Color.surfaceMuted)
       .opacity(dim ? 0.5 : 1)
       .animation(
-        dim ? .easeInOut(duration: 1).repeatForever(autoreverses: true).delay(Double(week + day) * 0.012) : nil,
+        dim ? Motion.breathe.delay(Double(week + day) * 0.012) : nil,
         value: dim
       )
       .onAppear { if !reduceMotion { dim = true } }
