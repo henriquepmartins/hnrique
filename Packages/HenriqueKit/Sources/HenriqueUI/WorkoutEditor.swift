@@ -165,10 +165,13 @@ struct WorkoutEditor: View {
           Button("continuar editando", role: .cancel) {}
         }
         Spacer()
+        // Para no primeiro tamanho de acessibilidade, como o x ao lado; acima
+        // disso "concluir" quebrava em "con-cluir" dentro do botão.
         Button("concluir", systemImage: "checkmark", action: attemptSave)
           .buttonStyle(.glassProminent)
           .controlSize(.large)
           .tint(accent.deep)
+          .dynamicTypeSize(...DynamicTypeSize.accessibility1)
           .disabled(isSaving)
       }
       .padding(.horizontal, Space.l)
@@ -190,36 +193,22 @@ struct WorkoutEditor: View {
           .transition(.opacity)
       }
 
-      ZStack {
-        RoundButton(systemImage: "arrow.left", fill: Color.ink, ink: .white, label: "voltar", nudge: 0.5) {
-          go(to: step.previous)
+      // Nos tamanhos de acessibilidade os três não cabem numa linha, e os
+      // botões cobriam o nome do passo; aí os pontos descem para a linha de baixo.
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 0) {
+          backButton.frame(maxWidth: .infinity, alignment: .leading)
+          StepDots(current: step, go: go(to:)).fixedSize()
+          organizeSlot.frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .opacity(step.previous == nil ? 0 : 1)
-        .disabled(step.previous == nil || isSaving)
-        StepDots(current: step, go: go(to:))
-        #if os(iOS)
-        if step == .exercicios, draft.exercises.count > 1 || isOrganizing {
-          RoundButton(
-            systemImage: isOrganizing ? "checkmark" : "arrow.up.arrow.down",
-            fill: isOrganizing ? Color.ink : Color.surfaceMuted,
-            ink: isOrganizing ? .white : Color.ink,
-            label: isOrganizing ? "concluir ordem" : "ordenar exercícios"
-          ) {
-            dismissKeyboard()
-            withAnimation(Motion.resolve(Motion.expand, reduceMotion)) {
-              editMode = isOrganizing ? .inactive : .active
-            }
+        VStack(spacing: Space.s) {
+          HStack {
+            backButton
+            Spacer(minLength: 0)
+            organizeSlot
           }
-          .accessibilityHint(isOrganizing
-            ? "Voltar aos ajustes dos exercícios"
-            : "Mostrar alças para arrastar os exercícios")
-          .sensoryFeedback(.selection, trigger: isOrganizing)
-          .frame(maxWidth: .infinity, alignment: .trailing)
-          .disabled(isSaving)
-          .transition(.opacity)
+          StepDots(current: step, go: go(to:))
         }
-        #endif
       }
       .padding(.horizontal, Space.l)
       .padding(.vertical, Space.m)
@@ -291,6 +280,42 @@ struct WorkoutEditor: View {
           .padding(Space.l)
           .disabled(isSaving)
       }
+    }
+  }
+
+  private var backButton: some View {
+    RoundButton(systemImage: "arrow.left", fill: Color.ink, ink: .white, label: "voltar", nudge: 0.5) {
+      go(to: step.previous)
+    }
+    .opacity(step.previous == nil ? 0 : 1)
+    .disabled(step.previous == nil || isSaving)
+  }
+
+  /// Um `HStack` mesmo vazio, para a linha dos pontos reservar o lado direito
+  /// e os pontos ficarem no meio.
+  private var organizeSlot: some View {
+    HStack {
+      #if os(iOS)
+      if step == .exercicios, draft.exercises.count > 1 || isOrganizing {
+        RoundButton(
+          systemImage: isOrganizing ? "checkmark" : "arrow.up.arrow.down",
+          fill: isOrganizing ? Color.ink : Color.surfaceMuted,
+          ink: isOrganizing ? .white : Color.ink,
+          label: isOrganizing ? "concluir ordem" : "ordenar exercícios"
+        ) {
+          dismissKeyboard()
+          withAnimation(Motion.resolve(Motion.expand, reduceMotion)) {
+            editMode = isOrganizing ? .inactive : .active
+          }
+        }
+        .accessibilityHint(isOrganizing
+          ? "Voltar aos ajustes dos exercícios"
+          : "Mostrar alças para arrastar os exercícios")
+        .sensoryFeedback(.selection, trigger: isOrganizing)
+        .disabled(isSaving)
+        .transition(.opacity)
+      }
+      #endif
     }
   }
 
@@ -396,9 +421,6 @@ struct WorkoutEditor: View {
 }
 
 private struct RoundButton: View {
-  /// O círculo cresce com o texto, e o ícone cresce junto dentro dele. Os dois
-  /// param no primeiro tamanho de acessibilidade, que já é o dobro do padrão.
-  @ScaledMetric(relativeTo: .body) private var side = 44.0
   let systemImage: String
   let fill: Color
   let ink: Color
@@ -408,20 +430,36 @@ private struct RoundButton: View {
 
   var body: some View {
     Button(action: action) {
-      Circle()
-        .fill(fill)
-        .frame(width: side, height: side)
-        .overlay {
-          Image(systemName: systemImage)
-            .font(.system(.body, weight: .semibold))
-            .foregroundStyle(ink)
-            .contentTransition(.symbolEffect(.replace))
-            .offset(x: nudge)
-        }
+      RoundButtonFace(systemImage: systemImage, fill: fill, ink: ink, nudge: nudge)
     }
     .buttonStyle(StudyPressStyle())
     .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     .accessibilityLabel(label)
+  }
+}
+
+/// O círculo cresce com o texto, e o ícone cresce junto dentro dele. Os dois
+/// param no primeiro tamanho de acessibilidade, que já é o dobro do padrão. O
+/// `@ScaledMetric` lê o tamanho do texto de onde a view está, então ele mora
+/// aqui dentro, abaixo do limite que o botão põe.
+private struct RoundButtonFace: View {
+  @ScaledMetric(relativeTo: .body) private var side = 44.0
+  let systemImage: String
+  let fill: Color
+  let ink: Color
+  let nudge: CGFloat
+
+  var body: some View {
+    Circle()
+      .fill(fill)
+      .frame(width: side, height: side)
+      .overlay {
+        Image(systemName: systemImage)
+          .font(.system(.body, weight: .semibold))
+          .foregroundStyle(ink)
+          .contentTransition(.symbolEffect(.replace))
+          .offset(x: nudge)
+      }
   }
 }
 
