@@ -26,6 +26,16 @@
       "versions": [
         {
           "version": "0.1",
+          "buildVersion": "44",
+          "date": "2026-10-19T10:18:56-03:00",
+          "localizedDescription": "• fix(rest): cap the ring at 30 fps and key the done state to the rest end\n• fix(review): enable swipe grading only once the back is on screen\n• fix(attendance): run the year wave from the trailing edge and only once\n• fix(foco): anchor each clock tick on the total it displays\n• fix(insignia): rasterize with headroom so the overshoot is not clipped\n• Merge branch 'anim-curves'\n• Merge branch 'anim-perf'\n• feat(recap): reveal stats and medals after the sheet settles\n• fix(session): anchor the clock, gate the pulse and press the exercise tile\n• perf(focus): tick once a second on the digit flip and buzz when done\n• perf(daystrip): report geometry only from the selected chip\n• perf(rest): redraw only the ring per frame and the digits per second\n• fix(foco): tick where the digit flips instead of when the timer started\n• feat(motion): crossfade the idiomas review loop\n• feat(motion): mark a cleared queue and a finished day\n• perf(motion): flip flashcards with one interruptible spring\n• feat(motion): slide workout editor steps in the direction of travel\n• perf(foco): tick only the live numbers and drop the per-frame aura blur\n• perf(insignia): flatten the badge and pause the clock once settled\n• perf(attendance): lazy weeks, opacity-only twinkle and glow in the fill\n• fix(motion): replace literal curves with motion tokens\n• fix(motion): fade study screens in instead of blurring them\n• refactor(motion): drop bounce from grow and expand, add resolve helper",
+          "downloadURL": "https://github.com/henriquepmartins/henrique-ios/releases/download/build-44/Henrique.ipa",
+          "size": 6453474,
+          "sha256": "188dfa641e299a5cca0ee0a60b1f986a20541018a64d2d449d98a1bec8c5fce5",
+          "minOSVersion": "26.0"
+        },
+        {
+          "version": "0.1",
           "buildVersion": "43",
           "date": "2026-09-26T17:45:39-03:00",
           "localizedDescription": "• fix: center the kg and reps labels over their fields\n• fix: sit the workout name mid-card without the color dot",
