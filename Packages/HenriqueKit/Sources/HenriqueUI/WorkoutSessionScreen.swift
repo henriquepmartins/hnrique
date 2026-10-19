@@ -1,5 +1,8 @@
 import HenriqueCore
 import SwiftUI
+#if canImport(UIKit)
+  import UIKit
+#endif
 
 /// Quanto do treino já foi. Derivado do painel a cada pintura, então a sessão e
 /// a tela de hoje nunca mostram contagens diferentes.
@@ -69,6 +72,8 @@ struct WorkoutSessionScreen: View {
   @State private var holding: String?
   @State private var entered = false
   @State private var adding = false
+  /// Com o teclado aberto o cartão do descanso subia junto e comia a lista.
+  @State private var keyboardUp = false
   @State private var confirmingFinish = false
   @State private var recap: RecapPresentation?
   /// O resumo veio do "encerrar": fechar ele fecha a sessão junto, porque o
@@ -130,7 +135,7 @@ struct WorkoutSessionScreen: View {
           // Inset, e não overlay: a lista encolhe junto com a barra e a última
           // série continua alcançável com o descanso aberto.
           .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let rest = store.rest, rest.key.date == data.date {
+            if let rest = store.rest, rest.key.date == data.date, !keyboardUp {
               RestTimerBar(
                 rest: rest, next: store.nextSet(after: rest),
                 onAdjust: { store.adjustRest(by: $0) }, onDismiss: { store.endRest() }
@@ -200,13 +205,21 @@ struct WorkoutSessionScreen: View {
     .onChange(of: store.dashboard?.workout == nil, initial: true) { _, gone in
       if gone { onClose() }
     }
+    #if canImport(UIKit)
+    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+      keyboardUp = true
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+      keyboardUp = false
+    }
+    #endif
+    .onAppear { RestAlarmPresenter.shared.sessionOnScreen = true }
+    .onDisappear { RestAlarmPresenter.shared.sessionOnScreen = false }
   }
 
   private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
     let closedAt = store.finishedAt(workout.id, on: date)
     let complete = progress.total > 0 && progress.done >= progress.total
-    .onAppear { RestAlarmPresenter.shared.sessionOnScreen = true }
-    .onDisappear { RestAlarmPresenter.shared.sessionOnScreen = false }
     return VStack(spacing: 14) {
       HStack(spacing: Space.m) {
         Button(action: onClose) {
@@ -592,24 +605,9 @@ private struct OpenExerciseState: Equatable {
 
 private struct RecapPresentation: Identifiable {
   let id = UUID()
+  let date: CalendarDate
   let recap: WorkoutRecap
 }
-
-extension Array {
-  subscript(safe index: Int) -> Element? {
-    indices.contains(index) ? self[index] : nil
-  }
-}
-
-/// O relógio do treino, com o ponto que pulsa enquanto a sessão está aberta. Um
-/// treino encerrado mostra o tempo parado, sem o ponto.
-private struct SessionClock: View {
-  @Environment(\.accent) private var accent
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @ScaledMetric(relativeTo: .largeTitle) private var clockSize = 30.0
-  let date: CalendarDate
-  let timing: WorkoutSessionTiming?
-  let name: String
 
 @MainActor
 private func sessionRecap(_ store: AcademiaStore, on date: CalendarDate) -> WorkoutRecap? {
@@ -631,6 +629,21 @@ private struct LiveWorkoutRecap: View {
     WorkoutRecapSheet(recap: sessionRecap(store, on: date) ?? opened)
   }
 }
+
+extension Array {
+  subscript(safe index: Int) -> Element? {
+    indices.contains(index) ? self[index] : nil
+  }
+}
+
+/// O relógio do treino, com o ponto que pulsa enquanto a sessão está aberta. Um
+/// treino encerrado mostra o tempo parado, sem o ponto.
+private struct SessionClock: View {
+  @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .largeTitle) private var clockSize = 30.0
+  let timing: WorkoutSessionTiming?
+  let name: String
 
   var body: some View {
     if let timing, timing.finishedAt == nil {
