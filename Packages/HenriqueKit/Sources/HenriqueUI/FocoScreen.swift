@@ -55,11 +55,14 @@ struct FocoTicker<Content: View>: View {
   }
 }
 
-extension FocoRun {
-  /// Onde o tick da corrida se ancora, nulo pausada. Os trechos já fechados
-  /// deixam um pedaço de segundo, e o relógio vira quando ele completa.
-  var tickAnchor: Date? {
-    runningSince.map { $0 - seconds(at: $0).truncatingRemainder(dividingBy: 1) }
+extension FocoLedger {
+  /// Onde se ancora o tick de um relógio que mostra `shown`, nulo pausado. A
+  /// corrida, o total do dia e o total da matéria somam trechos fechados com
+  /// pedaços de segundo diferentes, então cada relógio vira quando o pedaço do
+  /// que ele mesmo mostra completa.
+  func tickAnchor(now: Date = .now, showing shown: (Date) -> TimeInterval) -> Date? {
+    guard running?.runningSince != nil else { return nil }
+    return now - shown(now).truncatingRemainder(dividingBy: 1)
   }
 }
 
@@ -80,7 +83,19 @@ public struct FocoScreen: View {
 
   private var calendar: Calendar { StudyFormat.calendar }
 
-  private var tickingSince: Date? { foco.ledger.running?.tickAnchor }
+  private var todayAnchor: Date? {
+    let ledger = foco.ledger
+    return ledger.tickAnchor { ledger.seconds(on: CalendarDate($0, in: calendar), now: $0, calendar: calendar) }
+  }
+
+  /// A linha da matéria que corre é a única que muda a cada segundo.
+  private var trackAnchor: Date? {
+    let ledger = foco.ledger
+    guard let id = ledger.running?.track.id else { return nil }
+    return ledger.tickAnchor {
+      ledger.seconds(on: CalendarDate($0, in: calendar), track: id, now: $0, calendar: calendar)
+    }
+  }
 
   public var body: some View {
     ScrollView {
@@ -89,22 +104,22 @@ public struct FocoScreen: View {
       VStack(alignment: .leading, spacing: 20) {
         StudyHeading(title: "foco")
           .staggeredEntrance(index: 0, isReady: true)
-        FocoTicker(since: tickingSince) { now in
+        FocoTicker(since: todayAnchor) { now in
           clockCard(ledger: foco.ledger, today: CalendarDate(now, in: calendar), now: now)
         }
         .staggeredEntrance(index: 1, isReady: true)
-        FocoTicker(since: tickingSince) { now in
+        FocoTicker(since: todayAnchor) { now in
           let ledger = foco.ledger
           streakRow(
             ledger.streak(now: now, calendar: calendar), ledger: ledger,
             today: CalendarDate(now, in: calendar), now: now)
         }
         .staggeredEntrance(index: 2, isReady: true)
-        FocoTicker(since: tickingSince) { now in
+        FocoTicker(since: trackAnchor) { now in
           tracksSection(ledger: foco.ledger, today: CalendarDate(now, in: calendar), now: now)
         }
         .staggeredEntrance(index: 3, isReady: true)
-        FocoTicker(since: tickingSince, every: 60) { now in
+        FocoTicker(since: todayAnchor, every: 60) { now in
           let today = CalendarDate(now, in: calendar)
           FocoGrid(days: foco.ledger.days(endingOn: today, count: 84, now: now, calendar: calendar), today: today)
         }
@@ -481,10 +496,15 @@ struct FocoTodayCard: View {
 
   private var calendar: Calendar { StudyFormat.calendar }
 
+  private var todayAnchor: Date? {
+    let ledger = foco.ledger
+    return ledger.tickAnchor { ledger.seconds(on: CalendarDate($0, in: calendar), now: $0, calendar: calendar) }
+  }
+
   var body: some View {
     StudyCard {
       VStack(alignment: .leading, spacing: 12) {
-        FocoTicker(since: foco.ledger.running?.tickAnchor) { now in
+        FocoTicker(since: todayAnchor) { now in
           let ledger = foco.ledger
           let seconds = ledger.seconds(on: CalendarDate(now, in: calendar), now: now, calendar: calendar)
           let streak = ledger.streak(now: now, calendar: calendar)

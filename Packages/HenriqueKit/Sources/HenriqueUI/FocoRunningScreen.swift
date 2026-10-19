@@ -67,11 +67,15 @@ private struct FocoTimerView: View {
       .padding(.leading, 16)
       .padding(.trailing, 3)
       Spacer(minLength: 0)
-      FocoTicker(since: run.tickAnchor) { now in
+      FocoTicker(since: foco.ledger.tickAnchor { run.seconds(at: $0) }) { now in
         let seconds = run.seconds(at: now)
-        let today = foco.ledger.seconds(
+        // O que veio antes da corrida entra arredondado ao segundo mais próximo,
+        // para o total de hoje virar junto com o relógio grande. Para baixo, um
+        // zero que o ponto flutuante deixa em -0,0000001 perderia 1 s.
+        let before = foco.ledger.seconds(
           on: CalendarDate(now, in: StudyFormat.calendar), now: now,
-          calendar: StudyFormat.calendar)
+          calendar: StudyFormat.calendar) - seconds
+        let today = before.rounded() + seconds
         VStack(spacing: 12) {
           Text(FocoFormat.clock(seconds))
             .font(.system(size: timerSize, weight: .semibold).leading(.tight))
