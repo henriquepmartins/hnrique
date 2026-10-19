@@ -149,7 +149,7 @@ struct TrainingSetRow: View {
   /// onde a última vez foi 25.
   var reference: WeightReference? = nil
 
-  private var fieldID: String { "set.\(key.exerciseId).\(kind == .prep ? "prep" : "work").\(index)" }
+  private var fieldID: String { setRowID(key.exerciseId, kind, index) }
   /// "aquecimento 1" ou "série 1". O leitor de tela lia as duas linhas iguais.
   private var spokenName: String { kind == .prep ? "aquecimento \(index)" : "série \(index)" }
   private var waiting: Bool { store.isWaiting(key) }
@@ -172,6 +172,7 @@ struct TrainingSetRow: View {
       }
       fields
     }
+    .id(fieldID)
     .font(.subheadline).monospacedDigit().multilineTextAlignment(.center)
     .modifier(RowChrome(scale: scale, kind: kind, done: done, isNext: isNext, accent: accent))
     .animation(reduceMotion ? nil : Motion.crossfade, value: isNext)
@@ -318,6 +319,11 @@ struct TrainingSetRow: View {
     store.record(key: key,
       weightKg: draft.weightKg, reps: draft.reps, completed: completed, toFailure: failure)
   }
+}
+
+/// O id da linha de série, que a sessão usa para rolar até a próxima.
+func setRowID(_ exerciseId: String, _ kind: SetKind, _ index: Int) -> String {
+  "set.\(exerciseId).\(kind == .prep ? "prep" : "work").\(index)"
 }
 
 /// O fundo da linha. Na lista de hoje é a cor do tipo de série; na sessão é o

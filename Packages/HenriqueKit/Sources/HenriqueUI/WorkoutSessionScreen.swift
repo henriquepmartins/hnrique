@@ -64,6 +64,9 @@ struct WorkoutSessionScreen: View {
   @ScaledMetric(relativeTo: .title) private var nameSize = 27.0
   @ScaledMetric(relativeTo: .body) private var collapsedNameSize = 17.0
   @State private var open: String?
+  /// O exercício que acabou de fechar, ainda aberto para o visto da última série
+  /// aparecer antes de o próximo tomar o lugar.
+  @State private var holding: String?
   @State private var entered = false
   @State private var adding = false
   @State private var confirmingFinish = false
@@ -140,11 +143,24 @@ struct WorkoutSessionScreen: View {
           // O cartão do descanso encolhe a área da lista. Sem rolar, o "+ série" e
           // o próximo exercício ficavam atrás dele.
           .onChange(of: store.rest?.startedAt) { _, started in
-            guard started != nil, let openId else { return }
+            guard started != nil, let rest = store.rest, let openId else { return }
+            let next = store.nextSet(after: rest)
+            // O exercício acabou e o próximo abre depois da espera, que rola até ele.
+            if let next, next.exerciseId != openId { return }
             Task {
               try? await Task.sleep(for: .milliseconds(120))
-              withAnimation(glide) { proxy.scrollTo(openId, anchor: .bottom) }
+              withAnimation(glide) {
+                if let next {
+                  proxy.scrollTo(setRowID(next.exerciseId, next.kind, next.index), anchor: .center)
+                } else {
+                  proxy.scrollTo(openId, anchor: .bottom)
+                }
+              }
             }
+          }
+          .onChange(of: OpenExerciseState(openId, in: workout)) { old, new in
+            guard let id = new.id, old.id == id, !old.complete, new.complete else { return }
+            hold(id, proxy: proxy)
           }
         }
         .animation(reduceMotion ? nil : Motion.subtleEntrance, value: openId)
@@ -181,7 +197,9 @@ struct WorkoutSessionScreen: View {
         }
       }
     }
-    .task { if store.dashboard?.workout == nil { onClose() } }
+    .onChange(of: store.dashboard?.workout == nil, initial: true) { _, gone in
+      if gone { onClose() }
+    }
   }
 
   private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
@@ -272,6 +290,7 @@ struct WorkoutSessionScreen: View {
   /// próximo aparelho vale a caminhada.
   private func collapsed(exercise: DashboardExercise) -> some View {
     Button {
+      holding = nil
       open = exercise.id
     } label: {
       HStack(spacing: 14) {
@@ -519,8 +538,26 @@ struct WorkoutSessionScreen: View {
   /// treino a cada pintura: amarrar isso a `onAppear` deixava a lista toda fechada
   /// quando o painel ainda não tinha chegado na primeira vez que a tela apareceu.
   private func openExercise(in workout: WorkoutSummary) -> String? {
+    if let holding, workout.exercises.contains(where: { $0.id == holding }) { return holding }
     if let open, workout.exercises.contains(where: { $0.id == open }) { return open }
     return workout.exercises[safe: firstOpenExercise(in: workout)]?.id
+  }
+
+  /// O exercício aberto acabou. A escolha explícita sai junto, senão o cartão
+  /// terminado ficava preso aberto pelo resto do treino, e o próximo em aberto
+  /// assume depois de o visto aparecer.
+  private func hold(_ id: String, proxy: ScrollViewProxy) {
+    holding = id
+    open = nil
+    Task {
+      try? await Task.sleep(for: .milliseconds(700))
+      guard holding == id else { return }
+      holding = nil
+      guard let workout = store.dashboard?.workout, let next = openExercise(in: workout), next != id
+      else { return }
+      try? await Task.sleep(for: .milliseconds(120))
+      withAnimation(glide) { proxy.scrollTo(next, anchor: .top) }
+    }
   }
 
   private func openSetsQuestion(_ open: Int) -> String {
@@ -539,6 +576,18 @@ struct WorkoutSessionScreen: View {
       finishedAt: store.finishedAt(workout.id, on: data.date))
     recap = RecapPresentation(
       recap: WorkoutRecap(workout, timing: timing, records: data.records ?? [], on: data.date))
+  }
+}
+
+/// O exercício aberto e se ele acabou, para notar a última série marcada nele
+/// sem confundir com a troca para um exercício que já estava completo.
+private struct OpenExerciseState: Equatable {
+  let id: String?
+  let complete: Bool
+
+  init(_ id: String?, in workout: WorkoutSummary) {
+    self.id = id
+    complete = workout.exercises.first { $0.id == id }?.isComplete ?? false
   }
 }
 
