@@ -30,7 +30,7 @@ private enum StudyReviewState {
     case .advance(let total):
       let next = index + 1
       guard next < total else { return .done }
-      return .card(index: next, phase: .front, hints: hints, failed: false)
+      return .card(index: next, phase: .front, hints: [:], failed: false)
     case .hint(let rating, let interval):
       var updated = hints
       updated[rating] = Self.intervalHint(interval)
@@ -76,6 +76,12 @@ public struct StudyReviewScreen: View {
   /// O verso já está na tela, isto é, o giro passou da metade. A fase troca no
   /// toque, antes disso.
   @State private var showsBack = false
+  /// Conta as respostas gravadas, para a vibração disparar a cada uma.
+  @State private var gradeTick = 0
+  @State private var lastRating: FlashcardRating?
+  @ScaledMetric(relativeTo: .title) private var frontSize = 26.0
+  @ScaledMetric(relativeTo: .body) private var backSize = 16.0
+  @ScaledMetric(relativeTo: .footnote) private var instructionSize = 13.0
   private let onWrite: (() -> Void)?
 
   public init(onWrite: (() -> Void)? = nil) {
@@ -112,6 +118,32 @@ public struct StudyReviewScreen: View {
       guard deck == nil, let queue = store.queue.value else { return }
       adopt(queue)
     }
+    // A fila do disco entra antes da rede. Quando a nova chega e o dono ainda
+    // não começou, ela toma o lugar da cópia velha.
+    .onChange(of: store.queue.value?.cards.map(\.id)) { _, ids in
+      guard let ids, let queue = store.queue.value, adoptsFresh(ids) else { return }
+      adopt(queue)
+    }
+    .sensoryFeedback(trigger: gradeTick) { _, _ in
+      switch lastRating {
+      case .errei: .warning
+      case .facil: .success
+      case .dificil, nil: .selection
+      }
+    }
+  }
+
+  /// O cartão da frente, ainda sem resposta, ou uma fila vazia ou limpa que
+  /// ganhou cartão novo. Uma fila que só encolheu é o próprio `grade` tirando
+  /// o que já foi respondido, e não muda a cópia.
+  private func adoptsFresh(_ ids: [String]) -> Bool {
+    guard let deck, ids != deck.cards.map(\.id), !grading else { return false }
+    switch state {
+    case .card(let index, let phase, _, let failed):
+      return index == 0 && phase == .front && !failed
+    case .empty, .done:
+      return !Set(ids).isSubset(of: deck.cards.map(\.id))
+    }
   }
 
   @ViewBuilder private var ready: some View {
@@ -132,7 +164,8 @@ public struct StudyReviewScreen: View {
           grades(phase: phase, hints: hints)
         }
       }
-      if !deck.bySubject.isEmpty { queueList(deck.bySubject) }
+      let counts = store.queue.value?.bySubject ?? deck.bySubject
+      if !counts.isEmpty { queueList(counts) }
     }
   }
 
@@ -145,10 +178,18 @@ public struct StudyReviewScreen: View {
       StudySectionHeading(title: "por matéria")
       StudyDbList {
         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-          StudyDbRow(dot: row.color, title: row.name, end: { Text("\(row.count)").monospacedDigit() })
-            .staggeredEntrance(index: index, isReady: true)
+          StudyDbRow(
+            dot: row.color, title: row.name,
+            end: {
+              Text("\(row.count)")
+                .monospacedDigit()
+                .contentTransition(.numericText(value: Double(row.count)))
+            }
+          )
+          .staggeredEntrance(index: index, isReady: true)
         }
       }
+      .animation(Motion.resolve(Motion.swap, reduceMotion), value: rows)
     }
   }
 
@@ -192,12 +233,43 @@ public struct StudyReviewScreen: View {
     StudyReviewFlip(angle: flipAngle, onTurn: { showsBack = $0 }) { turned in
       side(card: card, index: index, total: total, back: reduceMotion ? phase == .back : turned)
     }
+    .overlay(alignment: .bottom) { swipeHint }
     .rotationEffect(.degrees(tilt))
     .offset(x: dragX, y: cardY)
     .opacity(cardOpacity)
     .onTapGesture { flip() }
     .gesture(swipe, isEnabled: swipeEnabled)
+    .sensoryFeedback(.impact(weight: .light), trigger: pastThreshold) { _, past in past }
+    .accessibilityElement(children: .ignore)
     .accessibilityAddTraits(.isButton)
+    .accessibilityLabel(phase == .back ? "\(card.front). resposta: \(card.back)" : card.front)
+    .accessibilityValue("\(index + 1) de \(total)")
+    .accessibilityHint(phase == .front ? "toque duas vezes para virar" : "")
+    .accessibilityAction { flip() }
+    .accessibilityActions {
+      Button("virar") { flip() }
+      if phase == .back {
+        Button("errei") { Task { await grade(.errei, fling: nil) } }
+        Button("fácil") { Task { await grade(.facil, fling: nil) } }
+      }
+    }
+  }
+
+  private var pastThreshold: Bool { abs(dragX) > StudyReviewSwipe.distance }
+
+  /// A nota que o arrasto vai dar, acendendo conforme o cartão se afasta.
+  private var swipeHint: some View {
+    let toRight = dragX > 0
+    return Label(toRight ? "fácil" : "errei", systemImage: toRight ? "checkmark" : "xmark")
+      .font(.subheadline.weight(.semibold))
+      .foregroundStyle(toRight ? Color.studyBlue : StudyPillTone.coral.foreground)
+      .padding(.horizontal, 12)
+      .frame(minHeight: 32)
+      .background(toRight ? Color.studySky : StudyPillTone.coral.background, in: .capsule)
+      .padding(.bottom, 12)
+      .opacity(swiping ? min(abs(dragX) / StudyReviewSwipe.distance, 1) : 0)
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
   }
 
   private func side(card: Flashcard, index: Int, total: Int, back: Bool) -> some View {
@@ -217,13 +289,13 @@ public struct StudyReviewScreen: View {
             .foregroundStyle(Color.studyInk40)
         }
         Text(card.front)
-          .font(.system(size: 26, weight: .semibold).leading(.tight))
-          .tracking(-0.52)
+          .font(.system(size: frontSize, weight: .semibold).leading(.tight))
+          .tracking(-frontSize * 0.02)
           .fixedSize(horizontal: false, vertical: true)
           .padding(.top, 36)
         if back {
           Text(card.back)
-            .font(.system(size: 16))
+            .font(.system(size: backSize))
             .foregroundStyle(Color.studyGraphite)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 16)
@@ -231,7 +303,7 @@ public struct StudyReviewScreen: View {
         }
         Spacer(minLength: 28)
         Text(back ? "← errei · fácil →" : "toque para virar")
-          .font(.system(size: 13))
+          .font(.system(size: instructionSize))
           .foregroundStyle(Color.studyInk40)
           .multilineTextAlignment(.center)
           .frame(maxWidth: .infinity, alignment: .center)
@@ -351,6 +423,12 @@ public struct StudyReviewScreen: View {
     do {
       let result = try await store.grade(card: card, rating: rating)
       dispatch(.hint(rating: rating, interval: result.interval))
+      // O último cartão já vibra com a fila limpa; duas vibrações seguidas
+      // contariam a mesma coisa.
+      if index + 1 < deck.cards.count {
+        lastRating = rating
+        gradeTick += 1
+      }
       if fling == nil {
         withAnimation(Motion.plain) {
           if !reduceMotion { cardY = -14 }
@@ -465,14 +543,16 @@ private struct StudyReviewGradeButton: View {
   let hint: String?
   let isDisabled: Bool
   let action: () -> Void
+  @ScaledMetric(relativeTo: .subheadline) private var labelSize = 14.0
+  @ScaledMetric(relativeTo: .caption2) private var hintSize = 11.0
 
   var body: some View {
     Button(action: action) {
       VStack(spacing: 2) {
-        Text(rating.label).font(.system(size: 14, weight: .semibold))
+        Text(rating.label).font(.system(size: labelSize, weight: .semibold))
         if let hint {
           Text(hint)
-            .font(.system(size: 11))
+            .font(.system(size: hintSize))
             .monospacedDigit()
             .foregroundStyle(hintColor)
         }
