@@ -51,7 +51,7 @@ public struct RootView: View {
   @State private var showingApps = false
   @State private var sessionRequested = false
   @State private var sawSignIn = false
-  @State private var foco: FocoStore
+  private let foco: FocoStore
   private let store: AcademiaStore
   private let estudos: EstudosStore
   private let idiomas: IdiomasStore
@@ -60,7 +60,7 @@ public struct RootView: View {
   private let openWrite: Bool
 
   public init(
-    store: AcademiaStore, estudos: EstudosStore, idiomas: IdiomasStore,
+    store: AcademiaStore, estudos: EstudosStore, idiomas: IdiomasStore, foco: FocoStore,
     initialSection: AppSection? = nil,
     initialTab: AcademiaTab = .hoje, initialEstudosTab: EstudosTab = .hoje,
     initialIdiomasTab: IdiomasTab = .rotina,
@@ -75,7 +75,7 @@ public struct RootView: View {
     tab = initialTab
     estudosTab = initialEstudosTab
     idiomasTab = initialIdiomasTab
-    foco = FocoStore(estudos: estudos)
+    self.foco = foco
   }
 
   public var body: some View {

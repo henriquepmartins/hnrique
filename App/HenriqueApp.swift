@@ -16,6 +16,7 @@ struct HenriqueApp: App {
         store: stores.academia,
         estudos: stores.estudos,
         idiomas: stores.idiomas,
+        foco: stores.foco,
         initialSection: AppConfiguration.launch.section,
         initialTab: AppConfiguration.launch.academiaTab,
         initialEstudosTab: AppConfiguration.launch.estudosTab,
@@ -91,14 +92,16 @@ enum AppConfiguration {
   @MainActor static let shared = makeStores()
 
   /// Os três apps dividem o mesmo `APIClient` para uma sessão só valer para
-  /// todos e o logout de um derrubar os outros.
+  /// todos e o logout de um derrubar os outros. O foco nasce aqui, uma vez,
+  /// porque o `init` dele fecha o bloco vencido, grava o disco e chama a rede.
   @MainActor static func makeStores() -> (
-    academia: AcademiaStore, estudos: EstudosStore, idiomas: IdiomasStore
+    academia: AcademiaStore, estudos: EstudosStore, idiomas: IdiomasStore, foco: FocoStore
   ) {
     let client = makeClient()
+    let estudos = EstudosStore(client: client)
     let stores = (
-      academia: AcademiaStore(client: client), estudos: EstudosStore(client: client),
-      idiomas: IdiomasStore(client: client)
+      academia: AcademiaStore(client: client), estudos: estudos,
+      idiomas: IdiomasStore(client: client), foco: FocoStore(estudos: estudos)
     )
     #if DEBUG
       stores.academia.insigniaMonthsOverride = launch.insigniaMonths
