@@ -11,17 +11,31 @@ struct AttendanceMap: View {
   @State private var grid = AttendanceGrid(period: .year(CalendarDate.today.year), attendance: [:])
   @State private var answered = false
   @State private var loaded: AttendancePeriod?
+  @State private var failed = false
+  @State private var attempt = 0
   let attendance: [CalendarDate: AttendanceDay]
-  let load: (CalendarDate, CalendarDate) async -> Void
+  /// Falso quando o servidor não respondeu, e aí o mapa pede outra tentativa em
+  /// vez de pintar o período como se ninguém tivesse treinado.
+  let load: (CalendarDate, CalendarDate) async -> Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      AttendanceHeader(period: $period, title: period.title(locale: locale))
-      AttendanceCount(total: grid.total, name: period.name(locale: locale), answered: answered)
+      // No ano corrente o ano no título só ocupa o espaço que falta ao mês.
+      AttendanceHeader(
+        period: $period,
+        title: period.year == CalendarDate.today.year ? period.name(locale: locale) : period.title(locale: locale))
+      if failed {
+        AttendanceFailure { attempt += 1 }
+      } else {
+        AttendanceCount(
+          total: grid.total, name: period.name(locale: locale), answered: answered,
+          isPast: period.range().upperBound < .today)
+      }
       // Trocar de período monta a grade de novo, e a onda de entrada corre outra
       // vez. As casas só nascem quando a frequência daquele período chegou;
       // antes disso a grade pulsa vazia, com o mesmo desenho.
-      AttendanceGraph(grid: grid, ready: loaded == period, scrolls: period.isYear)
+      AttendanceGraph(
+        grid: grid, name: period.name(locale: locale), ready: loaded == period, scrolls: period.isYear)
         .id(period)
         .transition(.opacity)
       AttendanceLegend()
@@ -32,18 +46,50 @@ struct AttendanceMap: View {
     .subtleEntrance()
     .onChange(of: period) { grid = AttendanceGrid(period: period, attendance: attendance) }
     .onChange(of: attendance, initial: true) { grid = AttendanceGrid(period: period, attendance: attendance) }
-    .task(id: period) {
+    .task(id: AttendanceRequest(period: period, attempt: attempt)) {
+      failed = false
       let range = period.range()
-      await load(range.lowerBound, range.upperBound)
+      let ok = await load(range.lowerBound, range.upperBound)
+      guard !Task.isCancelled else { return }
+      failed = !ok
+      guard ok else { return }
       answered = true
       loaded = period
     }
   }
 }
 
+struct AttendanceRequest: Equatable {
+  let period: AttendancePeriod
+  let attempt: Int
+}
+
 extension AttendancePeriod {
   fileprivate var isYear: Bool {
     if case .year = self { true } else { false }
+  }
+
+  fileprivate var year: Int {
+    switch self {
+    case .month(let year, _), .year(let year): year
+    }
+  }
+}
+
+/// O período que não carregou, com a nova tentativa. O mapa e o calendário do
+/// plano usam o mesmo aviso.
+struct AttendanceFailure: View {
+  let retry: () -> Void
+
+  var body: some View {
+    HStack(spacing: Space.m) {
+      Label("não carregou", systemImage: "wifi.exclamationmark")
+        .font(.subheadline.weight(.medium)).foregroundStyle(Color.mutedInk)
+      Spacer(minLength: 8)
+      Button("tentar de novo", systemImage: "arrow.clockwise", action: retry)
+        .font(.subheadline.weight(.medium))
+        .buttonStyle(.glass)
+    }
   }
 }
 
@@ -80,7 +126,7 @@ private struct AttendanceHeader: View {
   var body: some View {
     HStack(spacing: 8) {
       Text(title).font(.subheadline).foregroundStyle(Color.ink)
-        .lineLimit(1).minimumScaleFactor(0.8)
+        .lineLimit(1).minimumScaleFactor(0.7)
       Spacer(minLength: 4)
       IconButton(title: "Período anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) {
         withAnimation(Motion.swap) { period = period.previous }
@@ -103,6 +149,7 @@ private struct AttendanceCount: View {
   let total: Int
   let name: String
   let answered: Bool
+  let isPast: Bool
 
   var body: some View {
     Text(text)
@@ -114,7 +161,7 @@ private struct AttendanceCount: View {
 
   private var text: String {
     switch total {
-    case 0: "nenhum treino ainda"
+    case 0: isPast ? "nenhum treino" : "nenhum treino ainda"
     case 1: "1 treino em \(name)"
     default: "\(total) treinos em \(name)"
     }
@@ -129,6 +176,8 @@ private enum GraphMetrics {
   static let gap: CGFloat = 4
   static let radius: CGFloat = 3
   static var pitch: CGFloat { side + gap }
+  /// A linha dos meses em cima da fita do ano.
+  static let monthRow: CGFloat = 14
 }
 
 /// A casa sob o dedo, pela coluna da semana e pela linha do dia.
@@ -151,7 +200,11 @@ private struct AttendanceGraph: View {
   /// A onda já passou. Na fita do ano a LazyHStack recria as colunas que voltam
   /// à tela, e sem isso a onda tocava de novo debaixo do dedo.
   @State private var entered = false
+  /// A semana que o VoiceOver está lendo, andando de uma em uma pelo gesto de
+  /// ajuste. Nula enquanto ele só ouviu o total.
+  @State private var spokenWeek: Int?
   let grid: AttendanceGrid
+  let name: String
   let ready: Bool
   let scrolls: Bool
 
@@ -163,18 +216,60 @@ private struct AttendanceGraph: View {
   }
 
   var body: some View {
-    if scrolls {
-      ScrollView(.horizontal) {
+    HStack(alignment: .top, spacing: 6) {
+      weekdayLabels
+      if scrolls {
+        ScrollView(.horizontal) {
+          VStack(alignment: .leading, spacing: GraphMetrics.gap) {
+            monthLabels
+            board
+          }
+          .padding(.vertical, Space.s)
+        }
+        .scrollIndicators(.hidden)
+        .defaultScrollAnchor(.trailing)
+        .onScrollGeometryChange(for: CGRect.self, of: \.visibleRect) { _, visible in
+          viewport = visible
+        }
+      } else {
         board.padding(.vertical, Space.s)
       }
-      .scrollIndicators(.hidden)
-      .defaultScrollAnchor(.trailing)
-      .onScrollGeometryChange(for: CGRect.self, of: \.visibleRect) { _, visible in
-        viewport = visible
-      }
-    } else {
-      board.padding(.vertical, Space.s)
     }
+  }
+
+  /// Segunda, quarta e sexta, nas linhas da semana que começa na segunda. Fora
+  /// da rolagem, para continuarem na tela com a fita em qualquer mês.
+  private var weekdayLabels: some View {
+    VStack(alignment: .leading, spacing: GraphMetrics.gap) {
+      ForEach(0..<7, id: \.self) { row in
+        Text(row.isMultiple(of: 2) && row < 6 ? ["seg", "qua", "sex"][row / 2] : "")
+          .frame(height: GraphMetrics.side)
+      }
+    }
+    .padding(.top, Space.s + (scrolls ? GraphMetrics.monthRow + GraphMetrics.gap : 0))
+    .font(.caption2).foregroundStyle(Color.mutedInk)
+    .dynamicTypeSize(...DynamicTypeSize.large)
+    .accessibilityHidden(true)
+  }
+
+  /// O mês abreviado em cima da coluna em que cai o dia 1.
+  private var monthLabels: some View {
+    let style = Date.FormatStyle(locale: locale).month(.abbreviated)
+    let starts = weeks.enumerated().compactMap { index, week in
+      week.cells.first { $0.date?.day == 1 }?.date.map { (week: index, name: $0.date().formatted(style)) }
+    }
+    return ZStack(alignment: .topLeading) {
+      ForEach(starts, id: \.week) { start in
+        Text(start.name).fixedSize()
+          .offset(x: CGFloat(start.week) * GraphMetrics.pitch)
+      }
+    }
+    .frame(
+      width: CGFloat(weeks.count) * GraphMetrics.pitch, height: GraphMetrics.monthRow,
+      alignment: .topLeading)
+    .font(.caption2).foregroundStyle(Color.mutedInk)
+    .dynamicTypeSize(...DynamicTypeSize.large)
+    .accessibilityHidden(true)
   }
 
   private var board: some View {
@@ -206,7 +301,21 @@ private struct AttendanceGraph: View {
     }
     .simultaneousGesture(scrub)
     .sensoryFeedback(.selection, trigger: focus) { _, new in new != nil }
-    .accessibilityElement(children: .contain)
+    // Uma casa por elemento fazia o VoiceOver atravessar o ano inteiro para
+    // chegar à legenda. A grade é um elemento só, e o ajuste anda de semana em
+    // semana para quem quer o detalhe.
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("frequência de \(name)")
+    .accessibilityValue(spokenValue)
+    .accessibilityAdjustableAction { direction in
+      guard !weeks.isEmpty else { return }
+      let current = spokenWeek ?? weeks.count
+      switch direction {
+      case .increment: spokenWeek = min(current + 1, weeks.count - 1)
+      case .decrement: spokenWeek = max(current - 1, 0)
+      @unknown default: break
+      }
+    }
     .task(id: ready) {
       guard ready, !entered else { return }
       // A onda leva 0,25 s para atravessar e cada casa entra em 0,3 s.
@@ -230,6 +339,21 @@ private struct AttendanceGraph: View {
         }
       }
     }
+  }
+
+  private var spokenValue: String {
+    guard ready else { return "carregando" }
+    guard let index = spokenWeek, weeks.indices.contains(index) else {
+      return grid.total == 1 ? "1 treino" : "\(grid.total) treinos"
+    }
+    let days = weeks[index].cells.filter { $0.date != nil }
+    let trained = days.count { $0.workSets > 0 }
+    let sets = days.reduce(0) { $0 + $1.workSets }
+    let start = (days.first?.date ?? weeks[index].start).date()
+      .formatted(Date.FormatStyle(locale: locale).day().month(.wide))
+    let workouts = trained == 1 ? "1 treino" : "\(trained) treinos"
+    let series = sets == 1 ? "1 série" : "\(sets) séries"
+    return "semana de \(start), \(workouts), \(series)"
   }
 
   private var scrub: some Gesture {
@@ -308,7 +432,6 @@ private struct AttendanceGraph: View {
 /// camada mexe só em opacidade, escala ou na cor do preenchimento.
 private struct GraphCell: View {
   @Environment(\.accent) private var accent
-  @Environment(\.locale) private var locale
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var shown = false
   @State private var twinkling = false
@@ -329,17 +452,6 @@ private struct GraphCell: View {
       }
     }
     .frame(width: GraphMetrics.side, height: GraphMetrics.side)
-    // O elemento de acessibilidade é o quadro fixo de 18 pontos, não o quadrado
-    // que cintila. Com a escala animando para sempre, o quadro do elemento mudava
-    // a cada frame, e o VoiceOver e o XCUITest nunca achavam a árvore parada.
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(accessibilityText)
-    .accessibilityHidden(cell.date == nil || !ready)
-  }
-
-  private var accessibilityText: String {
-    guard let date = cell.date else { return "" }
-    return label(for: date)
   }
 
   private var square: some View {
@@ -373,15 +485,6 @@ private struct GraphCell: View {
     let cycle = 2 + seed * 1.4
     return .easeInOut(duration: cycle / 2).repeatForever(autoreverses: true)
       .delay(entrance + seed * 0.85)
-  }
-
-  private func label(for date: CalendarDate) -> String {
-    let day = date.date().formatted(Date.FormatStyle(locale: locale).day().month(.wide))
-    switch cell.workSets {
-    case 0: return "\(day), sem treino"
-    case 1: return "\(day), 1 série"
-    default: return "\(day), \(cell.workSets) séries"
-    }
   }
 }
 
@@ -439,7 +542,7 @@ private struct AttendanceLegend: View {
 #if DEBUG
   #Preview("Mapa com dados") {
     ScrollView {
-      AttendanceMap(attendance: AttendancePreview.sample) { _, _ in }
+      AttendanceMap(attendance: AttendancePreview.sample) { _, _ in true }
         .padding(16)
     }
     .environment(\.locale, Locale(identifier: "pt_BR"))
