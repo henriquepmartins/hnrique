@@ -2,14 +2,85 @@ import Charts
 import HenriqueCore
 import SwiftUI
 
+/// Uma medida do corpo. O editor pede as seis; a tela mostra cada uma que já
+/// teve valor no histórico, com a variação desde o registro anterior.
+enum BodyMetric: String, CaseIterable, Identifiable {
+  case weight, bodyFat, leanMass, waist, chest, arm, thigh
+
+  var id: Self { self }
+
+  var title: String {
+    switch self {
+    case .weight: "peso"
+    case .bodyFat: "gordura"
+    case .leanMass: "massa magra"
+    case .waist: "cintura"
+    case .chest: "peito"
+    case .arm: "braço"
+    case .thigh: "coxa"
+    }
+  }
+
+  var unit: String {
+    switch self {
+    case .weight, .leanMass: "kg"
+    case .bodyFat: "%"
+    case .waist, .chest, .arm, .thigh: "cm"
+    }
+  }
+
+  var symbol: String {
+    switch self {
+    case .weight: "scalemass"
+    case .bodyFat: "figure"
+    case .leanMass: "figure.strengthtraining.traditional"
+    case .waist: "ruler"
+    case .chest: "ruler"
+    case .arm: "figure.arms.open"
+    case .thigh: "figure.walk"
+    }
+  }
+
+  func value(in measurement: BodyMeasurement) -> Double? {
+    switch self {
+    case .weight: measurement.weightKg
+    case .bodyFat: measurement.bodyFatPercent
+    case .leanMass: measurement.bodyFatPercent.map { measurement.weightKg * (1 - $0 / 100) }
+    case .waist: measurement.waistCm
+    case .chest: measurement.chestCm
+    case .arm: measurement.armCm
+    case .thigh: measurement.thighCm
+    }
+  }
+
+  /// Os valores da medida em ordem de data, só os dias que a têm.
+  func series(_ measurements: [BodyMeasurement]) -> [(date: CalendarDate, value: Double)] {
+    measurements.sorted { $0.date < $1.date }.compactMap { item in
+      value(in: item).map { (date: item.date, value: $0) }
+    }
+  }
+
+  func label(_ value: Double) -> String {
+    let number = value.formatted(.number.precision(.fractionLength(0...1)))
+    return unit == "%" ? "\(number)%" : "\(number) \(unit)"
+  }
+}
+
 struct MeasurementsScreen: View {
   @Environment(AcademiaStore.self) private var store
   @State private var isAdding = false
   @State private var editing: BodyMeasurement?
+  @State private var charted: BodyMetric = .weight
   @Environment(\.dynamicTypeSize) private var textSize
 
   private var measurements: [BodyMeasurement] {
     (store.dashboard?.measurements ?? []).sorted { $0.date > $1.date }
+  }
+
+  /// As medidas com pelo menos um valor no histórico. O peso é obrigatório e
+  /// sempre entra.
+  private var recorded: [BodyMetric] {
+    BodyMetric.allCases.filter { metric in measurements.contains { metric.value(in: $0) != nil } }
   }
 
   var body: some View {
@@ -25,25 +96,41 @@ struct MeasurementsScreen: View {
         }
       }.padding(16).padding(.bottom, 32)
     }
+    // Sem título na barra, o voltar flutuava por cima do número rolado.
+    .scrollEdgeEffectStyle(.soft, for: .top)
     .refreshable { await store.load() }
     .sheet(isPresented: $isAdding) { MeasurementEditor(previous: measurements.first) }
     .sheet(item: $editing) { MeasurementEditor(editing: $0) }
   }
 
   @ViewBuilder private var content: some View {
-    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: textSize.isAccessibilitySize ? 1 : 2), spacing: Space.m) {
-      MeasurementMetric(title: "peso", value: measurements.first?.weightKg, unit: "kg", symbol: "scalemass")
-        .staggeredEntrance(index: 0, columns: textSize.isAccessibilitySize ? 1 : 2, isReady: true)
-      MeasurementMetric(title: "gordura", value: measurements.first?.bodyFatPercent, unit: "%", symbol: "figure")
-        .staggeredEntrance(index: 1, columns: textSize.isAccessibilitySize ? 1 : 2, isReady: true)
-      MeasurementMetric(title: "cintura", value: measurements.first?.waistCm, unit: "cm", symbol: "ruler")
-        .staggeredEntrance(index: 2, columns: textSize.isAccessibilitySize ? 1 : 2, isReady: true)
-      MeasurementMetric(title: "massa magra", value: leanMass, unit: "kg", symbol: "figure.strengthtraining.traditional")
-        .staggeredEntrance(index: 3, columns: textSize.isAccessibilitySize ? 1 : 2, isReady: true)
+    let columns = textSize.isAccessibilitySize ? 1 : 2
+    let recorded = recorded
+    LazyVGrid(
+      columns: Array(repeating: GridItem(.flexible(), spacing: Space.m), count: columns),
+      spacing: Space.m
+    ) {
+      ForEach(Array(recorded.enumerated()), id: \.element) { index, metric in
+        let series = metric.series(measurements)
+        MeasurementMetric(
+          metric: metric, value: series.last?.value,
+          previous: series.count > 1 ? series[series.count - 2].value : nil)
+          .staggeredEntrance(index: index, columns: columns, isReady: true)
+      }
     }
     VStack(alignment: .leading, spacing: 16) {
-      SectionHeading(title: "peso", systemImage: "scalemass", font: .title2.weight(.medium), tracking: 0)
-      WeightChart(measurements: measurements.sorted { $0.date < $1.date }).frame(height: 220)
+      HStack(alignment: .firstTextBaseline) {
+        SectionHeading(
+          title: charted.title, systemImage: charted.symbol, font: .title2.weight(.medium), tracking: 0)
+        Spacer(minLength: Space.s)
+        if recorded.count > 1 {
+          Picker("medida do gráfico", selection: $charted) {
+            ForEach(recorded) { Text($0.title).tag($0) }
+          }
+          .pickerStyle(.menu)
+        }
+      }
+      MeasurementChart(metric: charted, points: charted.series(measurements)).frame(height: 220)
     }.padding(Space.xl).paperCard()
       .staggeredEntrance(index: 2, isReady: true)
     VStack(alignment: .leading, spacing: 16) {
@@ -62,10 +149,6 @@ struct MeasurementsScreen: View {
     }.padding(Space.xl).paperCard()
       .staggeredEntrance(index: 3, isReady: true)
   }
-  private var leanMass: Double? {
-    guard let item = measurements.first, let fat = item.bodyFatPercent else { return nil }
-    return item.weightKg * (1 - fat / 100)
-  }
 }
 
 /// A porta das medidas dentro de progresso. Medidas deixou de ser aba, então o
@@ -80,7 +163,6 @@ struct MeasurementsLink: View {
     NavigationLink {
       MeasurementsScreen()
         .background(Color.canvas.ignoresSafeArea())
-        .navigationTitle("")
         .toolbarTitleDisplayMode(.inline)
         // O cartão cresce e vira a tela, o mesmo gesto do botão de começar
         // treino. Empurrar de lado fazia um resumo e o detalhe dele parecerem
@@ -103,7 +185,7 @@ struct MeasurementsLink: View {
               .accessibilityLabel("sem medidas")
           }
           if let latest {
-            Text(latest.date.date(), format: .dateTime.day().month(.wide))
+            Text(Formatting.shortDate(latest.date))
               .font(.subheadline).foregroundStyle(Color.mutedInk)
           }
         }
@@ -135,43 +217,70 @@ struct MeasurementsLink: View {
 struct MeasurementMetric: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  let title: String
+  let metric: BodyMetric
   let value: Double?
-  let unit: String
-  let symbol: String
+  /// O registro anterior da mesma medida, para a variação.
+  let previous: Double?
+
+  private var delta: Double? {
+    guard let value, let previous, abs(value - previous) >= 0.05 else { return nil }
+    return value - previous
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Image(systemName: symbol).foregroundStyle(accent.base).frame(height: 24)
-      Text(title).font(.caption).foregroundStyle(Color.mutedInk)
+      Image(systemName: metric.symbol).foregroundStyle(accent.base).frame(height: 24)
+      Text(metric.title).font(.caption).foregroundStyle(Color.mutedInk)
       HStack(alignment: .firstTextBaseline, spacing: 4) {
-        Text(value.map { $0.formatted(.number.precision(.fractionLength(0...1))) } ?? "sem registro")
+        Text(value.map { $0.formatted(.number.precision(.fractionLength(0...1))) } ?? "–")
           .font(.title2.weight(.medium)).monospacedDigit()
+          .foregroundStyle(value == nil ? Color.mutedInk : Color.ink)
           .contentTransition(.numericText(value: value ?? 0))
           .animation(Motion.resolve(Motion.roll, reduceMotion), value: value)
-        if value != nil { Text(unit).font(.caption).foregroundStyle(Color.mutedInk) }
+        if value != nil { Text(metric.unit).font(.caption).foregroundStyle(Color.mutedInk) }
+      }
+      // Sem verde nem vermelho: descer é bom na cintura e ruim no braço.
+      if let delta {
+        Label {
+          Text(delta.formatted(.number.sign(strategy: .always()).precision(.fractionLength(0...1))))
+        } icon: {
+          Image(systemName: delta < 0 ? "arrow.down.right" : "arrow.up.right")
+        }
+        .font(.caption.monospacedDigit()).foregroundStyle(Color.mutedInk)
       }
     }.frame(maxWidth: .infinity, minHeight: 110, alignment: .leading).padding(Space.l).paperCard(radius: Radius.tile)
-      .accessibilityElement(children: .combine)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(metric.title)
+      .accessibilityValue(spokenValue)
+  }
+
+  private var spokenValue: String {
+    guard let value else { return "sem registro" }
+    let now = metric.label(value)
+    guard let delta else { return now }
+    let change = metric.label(abs(delta))
+    return "\(now), \(delta < 0 ? "desceu" : "subiu") \(change) desde a anterior"
   }
 }
 
-struct WeightChart: View {
+struct MeasurementChart: View {
   @Environment(\.accent) private var accent
   @State private var selectedDate: Date?
-  let measurements: [BodyMeasurement]
+  let metric: BodyMetric
+  let points: [(date: CalendarDate, value: Double)]
 
-  /// O eixo começa um quilo abaixo da menor pesagem, e a área sobe dali. Com a
+  /// O eixo começa uma unidade abaixo do menor valor, e a área sobe dali. Com a
   /// área partindo do zero, ela descia por baixo do eixo.
   private var domain: ClosedRange<Double> {
-    let weights = measurements.map(\.weightKg)
-    let lower = ((weights.min() ?? 0) - 1).rounded(.down)
-    let upper = ((weights.max() ?? 0) + 1).rounded(.up)
+    let values = points.map(\.value)
+    let lower = ((values.min() ?? 0) - 1).rounded(.down)
+    let upper = ((values.max() ?? 0) + 1).rounded(.up)
     return lower...upper
   }
 
-  private var selected: BodyMeasurement? {
+  private var selected: (date: CalendarDate, value: Double)? {
     guard let selectedDate else { return nil }
-    return measurements.min {
+    return points.min {
       abs($0.date.date().timeIntervalSince(selectedDate)) < abs($1.date.date().timeIntervalSince(selectedDate))
     }
   }
@@ -179,26 +288,22 @@ struct WeightChart: View {
   var body: some View {
     let domain = domain
     Chart {
-      ForEach(measurements) { measurement in
+      ForEach(points, id: \.date) { point in
         AreaMark(
-          x: .value("dia", measurement.date.date()),
-          yStart: .value("base", domain.lowerBound), yEnd: .value("peso", measurement.weightKg)
+          x: .value("dia", point.date.date()),
+          yStart: .value("base", domain.lowerBound), yEnd: .value(metric.title, point.value)
         )
         .interpolationMethod(.monotone)
         .foregroundStyle(accent.pale.opacity(0.4))
 
-        LineMark(
-          x: .value("dia", measurement.date.date()), y: .value("peso", measurement.weightKg)
-        )
-        .interpolationMethod(.monotone)
-        .foregroundStyle(accent.base)
+        LineMark(x: .value("dia", point.date.date()), y: .value(metric.title, point.value))
+          .interpolationMethod(.monotone)
+          .foregroundStyle(accent.base)
 
-        // Com uma pesagem só, a linha não tem o que ligar; o ponto mostra que ela existe.
-        PointMark(
-          x: .value("dia", measurement.date.date()), y: .value("peso", measurement.weightKg)
-        )
-        .symbolSize(30)
-        .foregroundStyle(accent.base)
+        // Com um registro só, a linha não tem o que ligar; o ponto mostra que ele existe.
+        PointMark(x: .value("dia", point.date.date()), y: .value(metric.title, point.value))
+          .symbolSize(30)
+          .foregroundStyle(accent.base)
       }
       if let selected {
         RuleMark(x: .value("dia", selected.date.date()))
@@ -207,14 +312,15 @@ struct WeightChart: View {
             position: .top, spacing: 4,
             overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
           ) {
-            ChartReadout(value: selected.weightKg, date: selected.date)
+            ChartReadout(value: metric.label(selected.value), date: selected.date)
           }
       }
     }
     .chartYScale(domain: domain)
-    .chartYAxisLabel("kg")
+    .chartYAxisLabel(metric.unit)
     .chartXSelection(value: $selectedDate)
     .sensoryFeedback(.selection, trigger: selected?.date)
+    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
   }
 }
 
@@ -223,7 +329,7 @@ struct MeasurementRow: View {
 
   var body: some View {
     HStack(alignment: .firstTextBaseline) {
-      Text(measurement.date.date(), format: .dateTime.day().month(.abbreviated))
+      Text(Formatting.shortDate(measurement.date))
         .font(.callout)
       Spacer()
       VStack(alignment: .trailing, spacing: 2) {
@@ -231,6 +337,7 @@ struct MeasurementRow: View {
           .font(.callout.weight(.medium))
         if !extras.isEmpty {
           Text(extras).font(.footnote).foregroundStyle(Color.mutedInk)
+            .multilineTextAlignment(.trailing)
         }
       }
       .monospacedDigit()
@@ -240,11 +347,11 @@ struct MeasurementRow: View {
   }
 
   private var extras: String {
-    let number = FloatingPointFormatStyle<Double>.number.precision(.fractionLength(0...1))
-    return [
-      measurement.bodyFatPercent.map { "\($0.formatted(number))%" },
-      measurement.waistCm.map { "\($0.formatted(number)) cm de cintura" },
-    ].compactMap { $0 }.joined(separator: " · ")
+    [BodyMetric.bodyFat, .waist, .chest, .arm, .thigh].compactMap { metric in
+      metric.value(in: measurement).map {
+        metric == .bodyFat ? metric.label($0) : "\(metric.title) \(metric.label($0))"
+      }
+    }.joined(separator: " · ")
   }
 }
 
@@ -363,7 +470,7 @@ struct OptionalField: View {
   let unit: String
   let range: ClosedRange<Double>
   @Binding var value: Double?
-  @FocusState private var focused: Bool
+  @FocusState private var focused: Bool?
 
   private var outOfRange: Bool { value.map { !range.contains($0) } ?? false }
 
@@ -372,11 +479,16 @@ struct OptionalField: View {
       HStack {
         Text(label)
         Spacer()
-        TextField("–", value: $value, format: .number.precision(.fractionLength(0...2)))
+        // Lido a cada tecla: com `value:format:` o número só chegava ao valor
+        // quando o campo perdia o foco, e salvar com o teclado aberto gravava
+        // a medida da semana passada.
+        TypedNumberField(
+          placeholder: "–", value: $value, focus: $focused, field: true,
+          parse: parseDecimal, format: formatPrepWeight
+        )
           .submitLabel(.done)
           .decimalInput().multilineTextAlignment(.trailing)
           .foregroundStyle(outOfRange ? .red : .primary)
-          .focused($focused)
           .fixedSize()
           .frame(minWidth: 64, alignment: .trailing)
           .accessibilityLabel("\(label) em \(unit)")

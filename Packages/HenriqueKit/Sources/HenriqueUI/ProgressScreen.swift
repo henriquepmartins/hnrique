@@ -393,7 +393,7 @@ struct VolumeChart: View {
               position: .top, spacing: 4,
               overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
             ) {
-              ChartReadout(value: selected.volumeKg, date: selected.date)
+              ChartReadout(value: weightLabel(selected.volumeKg), date: selected.date)
             }
         }
       }
@@ -406,11 +406,11 @@ struct VolumeChart: View {
 
 /// O valor e o dia do ponto sob o dedo, em cima da régua.
 struct ChartReadout: View {
-  let value: Double
+  let value: String
   let date: CalendarDate
 
   var body: some View {
-    Text("\(weightLabel(value)) · \(Formatting.shortDate(date))")
+    Text("\(value) · \(Formatting.shortDate(date))")
       .font(.caption.weight(.medium)).monospacedDigit()
       .foregroundStyle(Color.ink)
       .padding(.horizontal, 8).padding(.vertical, 4)
