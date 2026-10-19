@@ -18,12 +18,17 @@ struct WorkoutRecapSheet: View {
         VStack(alignment: .leading, spacing: Space.l) {
           Text("treino encerrado").font(.title2.weight(.medium)).tracking(-0.8)
           SyncStatusLine()
-          HStack(alignment: .top, spacing: Space.m) {
-            stat(duration, caption: "de treino")
-            stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume", delta: delta)
-            stat("\(recap.doneSets)/\(recap.totalSets)", caption: "séries valendo")
+          if recap.doneSets == 0 {
+            ContentUnavailableView("nenhuma série valendo", systemImage: "dumbbell")
+              .revealEntrance(index: 0, shown: shown)
+          } else {
+            HStack(alignment: .top, spacing: Space.m) {
+              stat(duration, caption: "de treino")
+              stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume", delta: delta)
+              stat("\(recap.doneSets)/\(recap.totalSets)", caption: "séries valendo")
+            }
+            .revealEntrance(index: 0, shown: shown)
           }
-          .revealEntrance(index: 0, shown: shown)
           if !recap.records.isEmpty {
             VStack(spacing: Space.s) {
               ForEach(Array(recap.records.enumerated()), id: \.element.id) { index, item in
@@ -32,13 +37,15 @@ struct WorkoutRecapSheet: View {
               }
             }
           }
-          VStack(spacing: 0) {
-            ForEach(recap.exercises) { line in
-              exerciseLine(line)
-              if line.id != recap.exercises.last?.id { Divider() }
+          if recap.doneSets > 0 {
+            VStack(spacing: 0) {
+              ForEach(recap.exercises) { line in
+                exerciseLine(line)
+                if line.id != recap.exercises.last?.id { Divider() }
+              }
             }
+            .revealEntrance(index: recap.records.count + 1, shown: shown)
           }
-          .revealEntrance(index: recap.records.count + 1, shown: shown)
         }
         .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
