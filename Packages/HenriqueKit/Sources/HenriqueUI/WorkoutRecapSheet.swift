@@ -166,7 +166,7 @@ struct RestChip: View {
         .background(remaining > 0 ? accent.deep : accent.base, in: .capsule)
       }
     }
-    .buttonStyle(PressScaleStyle())
+    .buttonStyle(StudyPressStyle())
     .accessibilityIdentifier("descanso.chip")
   }
 }

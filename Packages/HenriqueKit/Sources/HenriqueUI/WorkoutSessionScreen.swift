@@ -196,7 +196,7 @@ struct WorkoutSessionScreen: View {
             .background(.white, in: .circle)
             .overlay(Circle().strokeBorder(hairline))
         }
-        .buttonStyle(PressScaleStyle())
+        .buttonStyle(StudyPressStyle())
         .accessibilityLabel("fechar")
         .accessibilityIdentifier("sessao.fechar")
         SessionClock(
@@ -219,7 +219,7 @@ struct WorkoutSessionScreen: View {
             .overlay(Capsule().strokeBorder(complete ? .clear : hairline))
             .animation(glide, value: complete)
         }
-        .buttonStyle(PressScaleStyle())
+        .buttonStyle(StudyPressStyle())
         .sensoryFeedback(.success, trigger: complete) { old, new in !old && new }
         .accessibilityIdentifier("sessao.encerrar")
       }
@@ -299,7 +299,7 @@ struct WorkoutSessionScreen: View {
       .paperCard(radius: Radius.tile)
       .contentShape(.rect)
     }
-    .buttonStyle(PressScaleStyle())
+    .buttonStyle(StudyPressStyle())
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(exercise.name.lowercased())
     .accessibilityValue(spokenSummary(exercise))
@@ -415,7 +415,7 @@ struct WorkoutSessionScreen: View {
           .padding(11)
           .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(hairline))
       }
-      .buttonStyle(PressScaleStyle())
+      .buttonStyle(StudyPressStyle())
       .disabled(count >= Limits.workSets.upperBound)
       .accessibilityLabel("adicionar série")
       .accessibilityIdentifier("sessao.adicionar-serie.\(exercise.id)")
@@ -428,7 +428,7 @@ struct WorkoutSessionScreen: View {
             .font(.system(size: 15, weight: .medium)).foregroundStyle(Color.mutedInk)
             .frame(width: 44, height: 44)
         }
-        .buttonStyle(PressScaleStyle())
+        .buttonStyle(StudyPressStyle())
         .accessibilityLabel("tirar uma série")
         .accessibilityIdentifier("sessao.remover-serie.\(exercise.id)")
       }
@@ -503,7 +503,7 @@ struct WorkoutSessionScreen: View {
         .padding(16)
         .overlay(RoundedRectangle(cornerRadius: Radius.row).strokeBorder(hairline))
     }
-    .buttonStyle(PressScaleStyle())
+    .buttonStyle(StudyPressStyle())
     .accessibilityIdentifier("sessao.adicionar-exercicio")
   }
 

@@ -266,7 +266,7 @@ struct TrainingSetRow: View {
           }
       }
       // O check encolhe mais que os outros botões, como no board.
-      .buttonStyle(PressScaleStyle(scale: 0.92))
+      .buttonStyle(StudyPressStyle(scale: 0.92))
       .disabled(!Limits.setWeightKg.contains(weightDraft ?? -1) || !Limits.reps.contains(repsDraft ?? 0))
         .accessibilityIdentifier(fieldID + ".completion")
         .animation(reduceMotion ? nil : Motion.confirm, value: done)
