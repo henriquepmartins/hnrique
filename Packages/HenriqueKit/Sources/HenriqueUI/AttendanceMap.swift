@@ -148,6 +148,9 @@ private struct AttendanceGraph: View {
   @State private var scrubbed = false
   /// O trecho da fita do ano que está na tela, em coordenadas da grade.
   @State private var viewport: CGRect?
+  /// A onda já passou. Na fita do ano a LazyHStack recria as colunas que voltam
+  /// à tela, e sem isso a onda tocava de novo debaixo do dedo.
+  @State private var entered = false
   let grid: AttendanceGrid
   let ready: Bool
   let scrolls: Bool
@@ -204,17 +207,24 @@ private struct AttendanceGraph: View {
     .simultaneousGesture(scrub)
     .sensoryFeedback(.selection, trigger: focus) { _, new in new != nil }
     .accessibilityElement(children: .contain)
+    .task(id: ready) {
+      guard ready, !entered else { return }
+      // A onda leva 0,25 s para atravessar e cada casa entra em 0,3 s.
+      try? await Task.sleep(for: .seconds(0.6))
+      entered = true
+    }
   }
 
   private var columns: some View {
-    // A onda atravessa a grade inteira em 0,25 s, seja um mês ou um ano.
+    // A onda atravessa a grade inteira em 0,25 s, seja um mês ou um ano. A fita
+    // do ano abre na borda direita, então a onda parte de lá.
     let span = Double(max(weeks.count - 1, 1) + 6)
     return ForEach(Array(weeks.enumerated()), id: \.element.id) { week, column in
       VStack(spacing: GraphMetrics.gap) {
         ForEach(Array(column.cells.enumerated()), id: \.element.id) { day, cell in
           GraphCell(
-            cell: cell, week: week, day: day, ready: ready,
-            delay: 0.25 * Double(week + day) / span,
+            cell: cell, week: week, day: day, ready: ready, entered: entered,
+            delay: 0.25 * Double((scrolls ? weeks.count - 1 - week : week) + day) / span,
             glow: glow(week: week, day: day)
           )
         }
@@ -306,6 +316,7 @@ private struct GraphCell: View {
   let week: Int
   let day: Int
   let ready: Bool
+  let entered: Bool
   let delay: Double
   let glow: Double
 
@@ -344,7 +355,7 @@ private struct GraphCell: View {
       // ciclo para as casas vizinhas não piscarem juntas.
       .opacity(twinkling ? 1 - 0.34 * 0.65 : 1)
       .animation(twinkle(after: delay), value: twinkling)
-      .animation(Motion.entrance.delay(delay)) {
+      .animation(entered ? nil : Motion.entrance.delay(delay)) {
         $0.opacity(visible ? 1 : 0).scaleEffect(visible ? 1 : 0.95)
       }
       .onAppear {
