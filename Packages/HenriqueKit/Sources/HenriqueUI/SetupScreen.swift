@@ -170,9 +170,9 @@ struct SetupScreen: View {
     VStack(alignment: .leading, spacing: 8) {
       Text(title).font(.caption).foregroundStyle(Color.mutedInk)
       HStack {
-        TextField("", value: value, format: .number.precision(.fractionLength(0...2)))
+        DecimalField(placeholder: "", value: value)
           .submitLabel(.done)
-          .decimalInput().accessibilityLabel(title)
+          .accessibilityLabel(title)
         Text(unit).foregroundStyle(Color.mutedInk)
       }
     }

@@ -476,9 +476,7 @@ func formatPrepWeight(_ value: Double) -> String {
 /// Vírgula ou ponto, porque o teclado decimal em português dá vírgula. Vazio
 /// ou ilegível é "calcular sozinho".
 func parsePrepWeight(_ text: String) -> Double? {
-  let trimmed = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
-  guard let value = Double(trimmed), value.isFinite else { return nil }
-  return value.clamped(to: Limits.startingWeightKg)
+  parseDecimal(text)?.clamped(to: Limits.startingWeightKg)
 }
 
 /// O descanso entre séries desse exercício, de 15 em 15 segundos.

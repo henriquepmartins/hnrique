@@ -22,3 +22,13 @@ struct PrepWeightFieldTests {
     #expect(formatPrepWeight(12.25) == "12,25")
   }
 }
+
+struct DecimalFieldTests {
+  @Test("o campo decimal aceita vírgula e não corta pela faixa da carga")
+  func parsesWithoutClamping() {
+    #expect(parseDecimal("72,4") == 72.4)
+    #expect(parseDecimal(" 1500 ") == 1500)
+    #expect(parseDecimal("") == nil)
+    #expect(parseDecimal("1,2,3") == nil)
+  }
+}
