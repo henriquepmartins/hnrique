@@ -8,19 +8,27 @@ public struct SetActivityAttributes: Codable, Hashable, Sendable {
   public var workoutName: String
   /// `#rrggbb` da cor do treino.
   public var toneHex: String?
+  /// A primeira série marcada, para o relógio do treino. Nulo numa atividade
+  /// pedida por uma versão anterior do app.
+  public var startedAt: Date?
 
-  public init(date: CalendarDate, templateId: String, workoutName: String, toneHex: String?) {
+  public init(
+    date: CalendarDate, templateId: String, workoutName: String, toneHex: String?,
+    startedAt: Date? = nil
+  ) {
     self.date = date
     self.templateId = templateId
     self.workoutName = workoutName
     self.toneHex = toneHex
+    self.startedAt = startedAt
   }
 
   public typealias ContentState = SetActivityState
 }
 
 public struct SetActivityState: Codable, Hashable, Sendable {
-  /// A série que o botão "feito" marca. Nula quando as séries valendo acabaram.
+  /// A série que o botão "feito" marca. Nula quando as séries valendo acabaram
+  /// ou o treino foi encerrado.
   public struct Up: Codable, Hashable, Sendable {
     public var exerciseName: String
     /// "A1" no aquecimento, "2" na valendo.
@@ -36,9 +44,15 @@ public struct SetActivityState: Codable, Hashable, Sendable {
   public var rest: ClosedRange<Date>?
   public var done: Int
   public var total: Int
+  /// O fim do treino: o "encerrar" ou a última série valendo. Com ele a
+  /// atividade só mostra o placar e o tempo parado, sem nada para tocar.
+  public var finishedAt: Date?
 
-  public init(workout: WorkoutSummary, date: CalendarDate, next: NextSet?, rest: ClosedRange<Date>?) {
-    let open = workout.exercises.contains { !$0.sets.work.allSatisfy(\.isDone) }
+  public init(
+    workout: WorkoutSummary, date: CalendarDate, next: NextSet?, rest: ClosedRange<Date>?,
+    finishedAt: Date? = nil
+  ) {
+    let open = finishedAt == nil && workout.exercises.contains { !$0.sets.work.allSatisfy(\.isDone) }
     up = next.flatMap { next in
       guard open else { return nil }
       return Up(
@@ -50,9 +64,10 @@ public struct SetActivityState: Codable, Hashable, Sendable {
           date: date, templateId: workout.id, exerciseId: next.exerciseId, kind: next.kind,
           index: next.index))
     }
-    self.rest = rest
+    self.rest = finishedAt == nil ? rest : nil
     done = workout.completedWorkSetCount
     total = workout.workSetCount
+    self.finishedAt = finishedAt
   }
 }
 

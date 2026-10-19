@@ -136,16 +136,16 @@ struct StoreRestTests {
     let store = await lojaComPainel(alarm: alarm)
     _ = await store.record(key: workKey("supino-reto", 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
       .value
-    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · A1 · 10 kg")
+    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · A1 · 10 kg × 12")
 
     _ = await store.record(key: workKey("desenvolvimento", 2), weightKg: 16.5, reps: 10, completed: false, toFailure: false)?
       .value
     _ = await store.record(key: workKey("desenvolvimento", 1), weightKg: 14, reps: 12, completed: true, toFailure: false)?
       .value
-    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · 16,5 kg")
+    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · 16,5 kg × 10")
 
     store.adjustRest(by: 15)
-    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · 16,5 kg")
+    #expect(restAlarmBody(alarm.next) == "desenvolvimento com halteres · 16,5 kg × 10")
     #expect(restAlarmBody(nil) == "hora da próxima série")
   }
 

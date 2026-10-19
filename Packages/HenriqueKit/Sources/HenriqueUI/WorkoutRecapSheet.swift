@@ -7,11 +7,22 @@ struct WorkoutRecapSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var typeSize
   @ScaledMetric(relativeTo: .caption) private var badgeSize = 11.0
   @ScaledMetric(relativeTo: .caption) private var medalSize = 36.0
   @State private var shown = false
   @State private var history: ExerciseHistoryTarget?
   let recap: WorkoutRecap
+  /// O "fechar" do resumo que veio do "encerrar". Fecha a sessão inteira de uma
+  /// vez, com a folha junto; sem ele o botão só fecha a folha.
+  var onClose: (() -> Void)? = nil
+
+  /// Em tamanho de acessibilidade os três números não cabem lado a lado.
+  private var statsLayout: AnyLayout {
+    typeSize.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.m))
+      : AnyLayout(HStackLayout(alignment: .top, spacing: Space.m))
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -23,7 +34,7 @@ struct WorkoutRecapSheet: View {
             ContentUnavailableView("nenhuma série valendo", systemImage: "dumbbell")
               .revealEntrance(index: 0, shown: shown)
           } else {
-            HStack(alignment: .top, spacing: Space.m) {
+            statsLayout {
               stat(duration, caption: "de treino")
               stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume", delta: delta)
               stat("\(recap.doneSets)/\(recap.totalSets)", caption: "séries valendo")
@@ -43,6 +54,8 @@ struct WorkoutRecapSheet: View {
               }
             }
           }
+          RestAlarmOffer()
+            .revealEntrance(index: recap.records.count + 2, shown: shown)
           if recap.doneSets > 0 {
             VStack(spacing: 0) {
               ForEach(recap.exercises) { line in
@@ -56,14 +69,16 @@ struct WorkoutRecapSheet: View {
         .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      Button("fechar", systemImage: "checkmark") { dismiss() }
+      Button("fechar", systemImage: "checkmark") { (onClose ?? { dismiss() })() }
         .buttonStyle(.glassProminent).tint(accent.deep).controlSize(.large)
         .frame(maxWidth: .infinity)
         .accessibilityIdentifier("resumo.fechar")
         .padding(.horizontal, Space.xl).padding(.bottom, Space.l)
     }
     .background(Color.canvas.ignoresSafeArea())
-    .presentationDetents([.medium, .large])
+    // Na altura média, com texto grande, o "fechar" ficava em cima dos números.
+    .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+    .sensoryFeedback(.success, trigger: shown && !recap.records.isEmpty) { _, new in new }
     .exerciseHistorySheet(item: $history)
     // Os números entram depois de a folha parar de subir; junto com a subida,
     // a cascata corria por baixo do movimento e ninguém via.
@@ -74,15 +89,14 @@ struct WorkoutRecapSheet: View {
   }
 
   private var duration: String {
-    guard let seconds = recap.durationSeconds else { return "0:00" }
-    return Duration.seconds(seconds).formatted(
-      .time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond(padMinuteToLength: 2)))
+    HeroModel.clock(TimeInterval(recap.durationSeconds ?? 0))
   }
 
   /// A diferença para a última vez, nos exercícios que têm histórico. Zero não
-  /// aparece: "o mesmo volume" era uma frase inteira para dizer nada.
+  /// aparece: "o mesmo volume" era uma frase inteira para dizer nada. Treino
+  /// pela metade também não: a conta saía sempre negativa.
   private var delta: Double? {
-    guard let comparison = recap.comparison else { return nil }
+    guard recap.doneSets >= recap.totalSets, let comparison = recap.comparison else { return nil }
     let delta = (comparison.today - comparison.previous).rounded()
     return delta == 0 ? nil : delta
   }
@@ -93,7 +107,7 @@ struct WorkoutRecapSheet: View {
         .lineLimit(1).minimumScaleFactor(0.7)
       Text(caption).font(.caption).foregroundStyle(Color.mutedInk)
       if let delta {
-        Text("\(delta > 0 ? "+" : "−")\(Formatting.trim(abs(delta))) kg")
+        Text("\(delta > 0 ? "+" : "−")\(Formatting.trim(abs(delta))) kg vs. último")
           .font(.caption.weight(.medium)).monospacedDigit()
           .foregroundStyle(delta > 0 ? accent.base : Color.mutedInk)
           .padding(.top, 2)

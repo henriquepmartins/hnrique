@@ -68,6 +68,56 @@ public struct PersonalRecord: Codable, Hashable, Sendable, Identifiable {
   }
 }
 
+/// Peso e repetições de uma série, na ordem em que a academia compara: a mais
+/// pesada ganha, e no empate a de mais repetições.
+public struct SetMark: Hashable, Sendable, Comparable {
+  public var weightKg: Double
+  public var reps: Int
+
+  public init(weightKg: Double, reps: Int) {
+    self.weightKg = weightKg
+    self.reps = reps
+  }
+
+  public static func < (a: SetMark, b: SetMark) -> Bool {
+    (a.weightKg, a.reps) < (b.weightKg, b.reps)
+  }
+}
+
+extension PreviousWorkSets {
+  /// A melhor série da última vez. O servidor antigo não manda `sets`: aí vale
+  /// a maior carga com as repetições da primeira série.
+  public var top: SetMark? {
+    if let best = sets?.map({ SetMark(weightKg: $0.weightKg, reps: $0.reps) }).max() { return best }
+    return reps.first.map { SetMark(weightKg: weightKg, reps: $0) }
+  }
+}
+
+extension DashboardExercise {
+  /// As séries valendo de `date` que passaram a melhor marca de antes delas. A
+  /// marca começa no recorde do painel anterior a `date` e no topo da última
+  /// vez, e sobe com cada série feita hoje, na ordem em que foram marcadas. O
+  /// recorde de `date` fica de fora porque o servidor já conta a série que se
+  /// está julgando. Sem marca anterior é a estreia, que não vira recorde aqui:
+  /// toda série da primeira vez passaria.
+  public func recordSets(records: [PersonalRecord], on date: CalendarDate) -> Set<Int> {
+    let earlier = records.filter { $0.exerciseId == id && $0.date < date }
+      .map { SetMark(weightKg: $0.weightKg, reps: $0.reps) }
+    guard var best = (earlier + [previous?.top].compactMap { $0 }).max() else { return [] }
+    var beaten: Set<Int> = []
+    let done = sets.work.compactMap { set in set.completedAt.map { (set, $0) } }
+      .sorted { ($0.1, $0.0.index) < ($1.1, $1.0.index) }
+    for (set, _) in done {
+      let mark = SetMark(weightKg: set.weightKg, reps: set.reps)
+      if mark > best {
+        beaten.insert(set.index)
+        best = mark
+      }
+    }
+    return beaten
+  }
+}
+
 public enum Formatting {
   /// 26.0 vira "26", 27.5 continua "27,5" e 1008 vira "1.008". Meio quilo
   /// existe nas anilhas, o ",0" não.

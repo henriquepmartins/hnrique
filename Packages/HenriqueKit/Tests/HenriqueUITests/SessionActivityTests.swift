@@ -180,6 +180,42 @@ extension PendingSetQueueTests {
       #expect(activity.current == nil)
     }
 
+    @Test("encerrar com série em aberto deixa a atividade no placar, sem série para marcar")
+    func finishLeavesNoTarget() async throws {
+      let activity = FakeSessionActivity()
+      let store = await storeWithDashboard(activity)
+      _ = await store.record(
+        key: key("supino-reto", .work, 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
+        .value
+      #expect(activity.state?.up != nil)
+
+      store.finishWorkout()
+
+      let last = try #require(activity.ended.last)
+      #expect(!last.immediately)
+      #expect(last.state?.up == nil)
+      #expect(last.state?.rest == nil)
+      #expect(last.state?.finishedAt != nil)
+      #expect(activity.current == nil)
+    }
+
+    @Test("o feito de um treino encerrado não marca nem reabre o treino")
+    func finishedWorkoutIgnoresDone() async throws {
+      let activity = FakeSessionActivity()
+      let store = await storeWithDashboard(activity)
+      _ = await store.record(
+        key: key("supino-reto", .work, 2), weightKg: 42.5, reps: 8, completed: true, toFailure: true)?
+        .value
+      store.finishWorkout()
+      let unsent = store.unsentCount
+
+      await store.completeFromActivity(key("desenvolvimento", .work, 1))
+
+      #expect(!isDone(store, key("desenvolvimento", .work, 1)))
+      #expect(store.unsentCount == unsent)
+      #expect(store.finishedAt("tpl-terca", on: .today) != nil)
+    }
+
     @Test("sair da conta fecha a atividade na hora")
     func signOutEndsImmediately() async {
       let activity = FakeSessionActivity()

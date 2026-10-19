@@ -15,11 +15,13 @@ public struct NextSet: Equatable, Sendable {
   /// "A1" no aquecimento, "2" na valendo.
   public var label: String { kind == .prep ? "A\(index)" : "\(index)" }
 
-  /// "puxada alta · 48 kg", ou "puxada alta · A1 · 35 kg" no aquecimento. A
-  /// valendo vai sem índice porque o descanso só precisa do peso.
+  /// "puxada alta · 48 kg × 8", ou "puxada alta · A1 · 35 kg × 12" no
+  /// aquecimento, como a Live Activity. A valendo vai sem índice porque o
+  /// descanso só precisa do peso. No peso corporal sobram as repetições.
   public var summary: String {
     let warmup = kind == .prep ? " · \(label)" : ""
-    return "\(exerciseName.lowercased())\(warmup) · \(Formatting.trim(weightKg)) kg"
+    let load = weightKg > 0 ? "\(Formatting.trim(weightKg)) kg × \(reps)" : "\(reps) reps"
+    return "\(exerciseName.lowercased())\(warmup) · \(load)"
   }
 
   /// A primeira série não feita depois da última feita no exercício. Um

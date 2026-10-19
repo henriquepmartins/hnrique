@@ -42,15 +42,6 @@ func previousLabel(_ previous: PreviousWorkSets?, index: Int) -> String? {
   return "\(Formatting.trim(previous.weightKg)) × \(previous.reps[index - 1])"
 }
 
-/// A melhor série da última vez, a mais pesada e no empate a de mais repetições.
-func previousTop(_ previous: PreviousWorkSets?) -> (weightKg: Double, reps: Int)? {
-  guard let previous else { return nil }
-  if let top = previous.sets?.max(by: { ($0.weightKg, $0.reps) < ($1.weightKg, $1.reps) }) {
-    return (top.weightKg, top.reps)
-  }
-  return previous.reps.first.map { (previous.weightKg, $0) }
-}
-
 /// O mesmo para o aquecimento, que guarda carga por série.
 func previousLabel(_ previous: PreviousPrepSets?, index: Int) -> String? {
   guard let set = previous?.set(index) else { return nil }
@@ -72,6 +63,7 @@ struct WorkoutSessionScreen: View {
   @ScaledMetric(relativeTo: .subheadline) private var actionSize = 14.0
   @ScaledMetric(relativeTo: .subheadline) private var addSetSize = 14.5
   @ScaledMetric(relativeTo: .subheadline) private var addExerciseSize = 15.0
+  @ScaledMetric(relativeTo: .footnote) private var indexColumn = SetRowScale.indexColumn
   @State private var open: String?
   /// O exercício que acabou de fechar, ainda aberto para o visto da última série
   /// aparecer antes de o próximo tomar o lugar.
@@ -92,10 +84,18 @@ struct WorkoutSessionScreen: View {
   /// digitado; salvo, a fonte volta a ser o painel.
   @State private var noteDrafts: [String: String] = [:]
   @FocusState private var noteFocus: String?
+  /// A linha de série cujo campo acabou de ganhar foco, para a lista rolar até
+  /// ela acima do teclado.
+  @State private var focusedRow: String?
   @State private var history: ExerciseHistoryTarget?
   let onClose: () -> Void
 
   private var hairline: Color { Color.ink.opacity(0.08) }
+  /// A cor do treino, a mesma da pasta no plano e da Live Activity.
+  private var tint: SessionTint {
+    let tone = store.dashboard.flatMap { data in data.workout.flatMap { data.tone(forWorkout: $0.id) } }
+    return SessionTint(hex: tone?.hex, accent: accent)
+  }
   private var glide: Animation { Motion.resolve(Motion.glide, reduceMotion) }
 
   var body: some View {
@@ -138,6 +138,9 @@ struct WorkoutSessionScreen: View {
             .padding(.bottom, Space.page)
           }
           .scrollDismissesKeyboard(.interactively)
+          // A barra do teclado flutua acima dele e a área segura só desconta o
+          // teclado; sem a folga, a série em edição ficava atrás da barra.
+          .safeAreaPadding(.bottom, keyboardUp ? 48 : 0)
           .safeAreaInset(edge: .top, spacing: 0) {
             top(workout: workout, progress: progress, date: data.date)
               .revealEntrance(index: 0, shown: entered)
@@ -173,6 +176,15 @@ struct WorkoutSessionScreen: View {
               }
             }
           }
+          .onChange(of: focusedRow) { _, id in
+            guard let id else { return }
+            Task {
+              // Espera o teclado subir, senão o centro é o da tela inteira.
+              try? await Task.sleep(for: .milliseconds(320))
+              withAnimation(glide) { proxy.scrollTo(id, anchor: .center) }
+              focusedRow = nil
+            }
+          }
           // O exercício derivado vira escolha fixa assim que aparece. Sem isso, a
           // última série dele levava o derivado direto ao próximo no mesmo desenho,
           // e o visto e a espera não aconteciam.
@@ -185,12 +197,25 @@ struct WorkoutSessionScreen: View {
           }
         }
         .animation(Motion.resolve(Motion.subtleEntrance, reduceMotion), value: openId)
+        .environment(\.sessionTint, tint)
         // As peças só começam a aparecer quando o cartão já cresceu o bastante
         // para elas caberem dentro dele.
         .task {
           if !reduceMotion { try? await Task.sleep(for: .milliseconds(180)) }
           entered = true
         }
+        #if os(iOS)
+        .toolbar {
+          // O "concluído" é só da anotação, de várias linhas, onde o retorno
+          // quebra linha. A linha de série tem a barra dela.
+          ToolbarItemGroup(placement: .keyboard) {
+            if noteFocus != nil {
+              Spacer()
+              KeyboardDoneButton()
+            }
+          }
+        }
+        #endif
         .onChange(of: noteFocus) { old, _ in
           guard let old, let exercise = workout.exercises.first(where: { $0.id == old }) else { return }
           saveNote(exercise: exercise, date: data.date, templateId: workout.id)
@@ -202,8 +227,12 @@ struct WorkoutSessionScreen: View {
           Button("encerrar treino", role: .destructive) { finish() }
           Button("continuar treinando", role: .cancel) {}
         }
+        // O "fechar" do resumo do encerrar fecha a sessão direto, e a folha vai
+        // junto num movimento só. O `onDismiss` fica para o arrastar para baixo.
         .sheet(item: $recap, onDismiss: { if closesAfterRecap { onClose() } }) { presentation in
-          LiveWorkoutRecap(date: presentation.date, opened: presentation.recap)
+          LiveWorkoutRecap(
+            date: presentation.date, opened: presentation.recap,
+            onClose: closesAfterRecap ? onClose : nil)
         }
         .sheet(isPresented: $adding) {
           SessionExercisePicker(
@@ -254,7 +283,7 @@ struct WorkoutSessionScreen: View {
         SessionClock(
           timing: WorkoutSessionTiming(
             workout, anchor: store.startedAt(workout.id, on: date), finishedAt: closedAt),
-          name: workout.name)
+          name: workout.name, tint: tint.fill)
           .frame(maxWidth: .infinity, alignment: .leading)
         Button {
           if closedAt != nil || complete {
@@ -263,20 +292,24 @@ struct WorkoutSessionScreen: View {
             confirmingFinish = true
           }
         } label: {
+          // Com texto de acessibilidade o rótulo quebrava em "en / cer / rar"
+          // dentro do botão; fica o ícone, e o nome segue no VoiceOver.
           Label(
             closedAt == nil ? "encerrar" : "resumo",
             systemImage: closedAt == nil ? "flag.checkered" : "list.bullet.rectangle"
           )
-            .labelStyle(.titleAndIcon)
+            .labelStyle(TopActionLabelStyle(iconOnly: typeSize.isAccessibilitySize))
             .font(.system(size: actionSize, weight: .medium))
             .foregroundStyle(complete ? Color.white : Color.ink)
-            .padding(.horizontal, Space.l).frame(minHeight: 44)
+            .padding(.horizontal, typeSize.isAccessibilitySize ? Space.m : Space.l)
+            .frame(minWidth: 44, minHeight: 44)
             .background(complete ? accent.base : .white, in: .capsule)
             .overlay(Capsule().strokeBorder(complete ? .clear : hairline))
             .animation(glide, value: complete)
         }
         .buttonStyle(StudyPressStyle())
         .sensoryFeedback(.success, trigger: complete) { old, new in !old && new }
+        .accessibilityLabel(closedAt == nil ? "encerrar" : "resumo")
         .accessibilityIdentifier("sessao.encerrar")
       }
       VStack(spacing: 6) {
@@ -301,7 +334,7 @@ struct WorkoutSessionScreen: View {
         GeometryReader { geo in
           Capsule().fill(Color.surfaceMuted)
             .overlay(alignment: .leading) {
-              Capsule().fill(accent.signal)
+              Capsule().fill(tint.fill)
                 // Zero séries é barra vazia. A ponta mínima existe para uma
                 // série feita não sumir, não para fingir progresso que não há.
                 .frame(width: progress.done == 0 ? 0 : max(6, geo.size.width * progress.fraction))
@@ -332,17 +365,19 @@ struct WorkoutSessionScreen: View {
       open = exercise.id
     } label: {
       HStack(spacing: 14) {
-        // O board pinta a barra com a cor do treino. O modelo não tem cor por
-        // exercício, então ela continua dizendo só se o exercício acabou.
-        Capsule().fill(exercise.isComplete ? accent.base : Color.ink.opacity(0.12))
+        Capsule().fill(exercise.isComplete ? tint.fill : Color.ink.opacity(0.12))
           .frame(width: 4, height: 36)
         VStack(alignment: .leading, spacing: 2) {
           Text(exercise.name.lowercased())
             .font(.system(size: collapsedNameSize, weight: .medium)).tracking(collapsedNameSize * -0.015)
             .foregroundStyle(Color.ink).lineLimit(1)
-          // A carga de hoje, a mesma do cartão de hoje. A última vez fica na
-          // coluna "anterior" do cartão aberto e no VoiceOver.
-          if exercise.prescription.startingWeightKg > 0 {
+          // Terminado, o que vale é o que saiu, como no resumo. Antes, a carga
+          // de hoje, a mesma do cartão de hoje; a última vez fica na coluna
+          // "anterior" do cartão aberto e no VoiceOver.
+          if exercise.isComplete, let top = bestDone(exercise) {
+            Text(setLabel(top))
+              .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk).lineLimit(1)
+          } else if exercise.prescription.startingWeightKg > 0 {
             Text(weightLabel(exercise.prescription.startingWeightKg))
               .font(.system(size: 13)).monospacedDigit().foregroundStyle(Color.mutedInk).lineLimit(1)
           }
@@ -350,7 +385,7 @@ struct WorkoutSessionScreen: View {
         Spacer(minLength: Space.s)
         if exercise.isComplete {
           Image(systemName: "checkmark.circle.fill")
-            .font(.title3).foregroundStyle(accent.base)
+            .font(.title3).foregroundStyle(tint.fill)
         } else {
           Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
             .font(.system(.caption, design: .monospaced)).foregroundStyle(Color.mutedInk)
@@ -371,24 +406,41 @@ struct WorkoutSessionScreen: View {
     .accessibilityIdentifier("sessao.exercicio.\(exercise.id)")
   }
 
+  private func bestDone(_ exercise: DashboardExercise) -> SetMark? {
+    exercise.sets.work.filter(\.isDone).map { SetMark(weightKg: $0.weightKg, reps: $0.reps) }.max()
+  }
+
+  /// "64 × 8", ou "PC × 15" no peso corporal, como a coluna de carga.
+  private func setLabel(_ mark: SetMark) -> String {
+    "\(mark.weightKg > 0 ? Formatting.trim(mark.weightKg) : "PC") × \(mark.reps)"
+  }
+
   private func spokenSummary(_ exercise: DashboardExercise) -> String {
+    if exercise.isComplete, let top = bestDone(exercise) {
+      let load = top.weightKg > 0 ? "\(Formatting.trim(top.weightKg)) quilos" : "peso corporal"
+      return "\(exercise.sets.completedWorkCount) de \(exercise.prescription.workSets) séries, melhor série \(load) por \(top.reps)"
+    }
     let load = exercise.prescription.startingWeightKg
     let count = "\(exercise.sets.completedWorkCount) de \(exercise.prescription.workSets) séries"
       + (load > 0 ? ", \(Formatting.trim(load)) quilos" : "")
-    guard let top = previousTop(exercise.previous) else { return count }
+    guard let top = exercise.previous?.top else { return count }
     return "\(count), \(Formatting.trim(top.weightKg)) quilos por \(top.reps) da última vez"
   }
 
   private func card(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
     let next = NextSet.next(in: exercise)
+    let records = exercise.recordSets(records: store.dashboard?.records ?? [], on: date)
     return VStack(alignment: .leading, spacing: 0) {
       if exercise.isFromSession {
         onlyTodayChip(exercise: exercise, date: date, templateId: templateId)
           .padding(.bottom, Space.m)
       }
       HStack(alignment: .top, spacing: Space.s) {
+        // O nome para de crescer onde a palavra mais comprida ainda cabe na
+        // linha: maior que isso, "agachamento" quebrava no meio.
         Text(exercise.name.lowercased())
-          .font(.system(size: nameSize, weight: .semibold)).tracking(nameSize * -0.045)
+          .font(.system(size: min(nameSize, 44), weight: .semibold)).tracking(min(nameSize, 44) * -0.045)
+          .lineLimit(3).minimumScaleFactor(0.6)
           .fixedSize(horizontal: false, vertical: true)
           .frame(maxWidth: .infinity, alignment: .leading)
         IconButton(title: "histórico", systemImage: "chart.line.uptrend.xyaxis") {
@@ -404,12 +456,12 @@ struct WorkoutSessionScreen: View {
         ForEach(exercise.sets.prep) { set in
           row(exercise: exercise, date: date, templateId: templateId, kind: .prep,
             index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone, failure: false,
-            next: next)
+            next: next, isRecord: false)
         }
         ForEach(exercise.sets.work) { set in
           row(exercise: exercise, date: date, templateId: templateId, kind: .work,
             index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone,
-            failure: set.toFailure, next: next)
+            failure: set.toFailure, next: next, isRecord: records.contains(set.index))
         }
       }
       .animation(Motion.resolve(Motion.expand, reduceMotion), value: exercise.sets.work.count)
@@ -449,7 +501,7 @@ struct WorkoutSessionScreen: View {
   /// cair em cima do que nomeia.
   private var header: some View {
     HStack(spacing: Space.s) {
-      Text("#").frame(width: 30)
+      Text("#").frame(width: SetRowScale.indexWidth(indexColumn))
       if typeSize.isAccessibilitySize {
         Spacer(minLength: 0)
       } else {
@@ -461,12 +513,13 @@ struct WorkoutSessionScreen: View {
     }
     .padding(.horizontal, 2)
     .font(.system(.caption2, design: .monospaced)).foregroundStyle(Color.mutedInk)
+    .lineLimit(1).minimumScaleFactor(0.5)
     .accessibilityHidden(true)
   }
 
   private func row(
     exercise: DashboardExercise, date: CalendarDate, templateId: String, kind: SetKind,
-    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool, next: NextSet?
+    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool, next: NextSet?, isRecord: Bool
   ) -> some View {
     let isNext = next?.kind == kind && next?.index == index
     return TrainingSetRow(
@@ -476,7 +529,9 @@ struct WorkoutSessionScreen: View {
       previous: kind == .prep
         ? previousLabel(exercise.previousPrep, index: index)
         : previousLabel(exercise.previous, index: index),
-      reference: setReference(exercise, kind: kind, index: index))
+      reference: setReference(exercise, kind: kind, index: index),
+      isRecord: isRecord,
+      onFocus: { focusedRow = $0 })
   }
 
   /// Mais ou menos uma série valendo. Tirar só aparece enquanto a última ainda
@@ -551,9 +606,6 @@ struct WorkoutSessionScreen: View {
         #endif
         .accessibilityLabel("anotação")
         .accessibilityIdentifier("sessao.nota.\(exercise.id)")
-        // Num campo de mais de uma linha o retorno quebra linha em vez de encerrar,
-        // então sem a barra a anotação prende o teclado aberto.
-        .keyboardDone()
     }
   }
 
@@ -706,9 +758,10 @@ private struct LiveWorkoutRecap: View {
   @Environment(AcademiaStore.self) private var store
   let date: CalendarDate
   let opened: WorkoutRecap
+  let onClose: (() -> Void)?
 
   var body: some View {
-    WorkoutRecapSheet(recap: sessionRecap(store, on: date) ?? opened)
+    WorkoutRecapSheet(recap: sessionRecap(store, on: date) ?? opened, onClose: onClose)
   }
 }
 
@@ -721,11 +774,11 @@ extension Array {
 /// O relógio do treino, com o ponto que pulsa enquanto a sessão está aberta. Um
 /// treino encerrado mostra o tempo parado, sem o ponto.
 private struct SessionClock: View {
-  @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .largeTitle) private var clockSize = 30.0
   let timing: WorkoutSessionTiming?
   let name: String
+  let tint: Color
 
   var body: some View {
     if let timing, timing.finishedAt == nil {
@@ -734,27 +787,26 @@ private struct SessionClock: View {
       TimelineView(.periodic(from: timing.startedAt, by: 1)) { context in
         readout(at: context.date + 0.01, timing: timing, live: true)
       }
-    } else if let timing {
-      readout(at: .now, timing: timing, live: false)
     } else {
-      Text(name.lowercased()).font(.headline.weight(.semibold))
-        .accessibilityValue("nenhuma série marcada")
+      // Antes da primeira série o relógio já ocupa o lugar, parado em "0:00":
+      // o topo não muda de altura quando a primeira série entra.
+      readout(at: .now, timing: timing, live: false)
     }
   }
 
-  private func readout(at now: Date, timing: WorkoutSessionTiming, live: Bool) -> some View {
-    let seconds = Int(timing.elapsed(at: now))
-    let time = Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600
-      ? .hourMinuteSecond : .minuteSecond(padMinuteToLength: 2)))
-    let start = timing.startedAt.formatted(.dateTime.hour().minute())
+  private func readout(at now: Date, timing: WorkoutSessionTiming?, live: Bool) -> some View {
+    let seconds = Int(timing?.elapsed(at: now) ?? 0)
+    let time = HeroModel.clock(TimeInterval(seconds))
+    let start = timing?.startedAt.formatted(.dateTime.hour().minute())
     return VStack(alignment: .leading, spacing: 1) {
       HStack(spacing: Space.s) {
         if live {
-          Circle().fill(accent.signal).frame(width: 8, height: 8)
+          Circle().fill(tint).frame(width: 8, height: 8)
             .offset(y: 1)
             .modifier(Pulse(active: live))
         }
         Text(time)
+          .foregroundStyle(timing == nil ? Color.mutedInk : Color.ink)
           .font(.system(size: clockSize, weight: .semibold)).monospacedDigit()
           .tracking(clockSize * -0.05)
           .contentTransition(.numericText(value: Double(seconds)))
@@ -764,8 +816,8 @@ private struct SessionClock: View {
         .font(.system(size: 13)).foregroundStyle(Color.mutedInk).lineLimit(1)
     }
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("tempo de treino")
-    .accessibilityValue("\(time), começou \(start)")
+    .accessibilityLabel(timing == nil ? name.lowercased() : "tempo de treino")
+    .accessibilityValue(start.map { "\(time), começou \($0)" } ?? "nenhuma série marcada")
     .accessibilityIdentifier("sessao.tempo")
   }
 }
@@ -784,5 +836,69 @@ private struct Pulse: ViewModifier {
       .scaleEffect(on && !reduceMotion ? 0.8 : 1)
       .animation(on ? Motion.breathe : nil, value: on)
       .onChange(of: active, initial: true) { _, active in on = active }
+  }
+}
+
+/// A cor que marca progresso na sessão: barra, marcador do exercício e visto.
+/// É a cor do treino escurecida no próprio matiz até dar 3:1 sobre o papel, que
+/// é o mínimo para um controle; `text` vai até 4,5:1 para letra pequena. Sem
+/// cor de treino, o acento do app.
+struct SessionTint: Equatable {
+  let fill: Color
+  /// O visto por cima de `fill`, escuro ou branco, pela conta da Live Activity.
+  let ink: Color
+  let text: Color
+
+  private init(fill: Color, ink: Color, text: Color) {
+    self.fill = fill
+    self.ink = ink
+    self.text = text
+  }
+
+  init(accent: Accent) {
+    self.init(fill: accent.base, ink: .white, text: accent.deep)
+  }
+
+  init(hex: String?, accent: Accent) {
+    guard let hex, let tone = ToneRGB(hex: hex) else {
+      self.init(accent: accent)
+      return
+    }
+    let paper = ToneRGB(red: 0xfa / 255, green: 0xf9 / 255, blue: 0xf7 / 255)
+    let fill = ToneContrast.legible(tone, on: paper, minimum: 3)
+    self.init(
+      fill: Color(fill), ink: Color(ToneContrast.ink(on: fill)),
+      text: Color(ToneContrast.legible(tone, on: paper, minimum: 4.5)))
+  }
+}
+
+extension Color {
+  init(_ rgb: ToneRGB) {
+    self.init(.sRGB, red: rgb.red, green: rgb.green, blue: rgb.blue)
+  }
+}
+
+private struct SessionTintKey: EnvironmentKey {
+  static let defaultValue: SessionTint? = nil
+}
+
+extension EnvironmentValues {
+  /// Nulo fora da sessão: a lista de hoje segue no acento do app.
+  var sessionTint: SessionTint? {
+    get { self[SessionTintKey.self] }
+    set { self[SessionTintKey.self] = newValue }
+  }
+}
+
+/// Título e ícone, ou só o ícone. Um estilo só para os dois casos, porque trocar
+/// de estilo com `if` recriava o botão.
+private struct TopActionLabelStyle: LabelStyle {
+  let iconOnly: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    HStack(spacing: 6) {
+      configuration.icon
+      if !iconOnly { configuration.title }
+    }
   }
 }

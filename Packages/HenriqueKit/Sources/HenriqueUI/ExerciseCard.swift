@@ -122,6 +122,10 @@ enum SetRowScale {
   case list, session
 
   var check: CGFloat { self == .list ? 44 : 46 }
+  /// A coluna do índice na sessão, que o cabeçalho repete. Cresce com o texto
+  /// até caber "A1" sem quebrar, e para aí para não comer os números.
+  static let indexColumn: CGFloat = 30
+  static func indexWidth(_ scaled: CGFloat) -> CGFloat { min(scaled, 52) }
   var padding: CGFloat { self == .list ? 6 : 8 }
   var radius: CGFloat { Radius.concentric(Radius.field, padding: padding) }
 }
@@ -131,14 +135,18 @@ struct TrainingSetRow: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var typeSize
+  @Environment(\.sessionTint) private var sessionTint
   @ScaledMetric(relativeTo: .body) private var tileHeight = 46.0
   @ScaledMetric(relativeTo: .footnote) private var indexSize = 13.0
+  @ScaledMetric(relativeTo: .footnote) private var indexColumn = SetRowScale.indexColumn
   @ScaledMetric(relativeTo: .title3) private var valueSize = 19.0
   @State private var weightDraft: Double?
   @State private var repsDraft: Int?
   @FocusState private var focused: Field?
   @State private var submitted: SetDraft?
   @State private var tapCount = 0
+  @State private var recordBeats = 0
+  @State private var recordSettles = 0
   private enum Field: Hashable { case weight, reps }
   let key: SetKey
   private var kind: SetKind { key.kind }
@@ -156,6 +164,14 @@ struct TrainingSetRow: View {
   /// A carga com que o campo compara o número digitado, para estranhar um 250
   /// onde a última vez foi 25.
   var reference: WeightReference? = nil
+  /// A série passou a melhor marca do exercício. Só a sessão sabe disso.
+  var isRecord: Bool = false
+  /// Chamado com o id da linha quando um campo dela ganha foco.
+  var onFocus: ((String) -> Void)? = nil
+
+  private var tint: SessionTint { sessionTint ?? SessionTint(accent: accent) }
+  /// Exercício de peso corporal: a carga zero não é carga esquecida.
+  private var bodyweight: Bool { weight == 0 }
 
   private var fieldID: String { setRowID(key.exerciseId, kind, index) }
   /// "aquecimento 1" ou "série 1". O leitor de tela lia as duas linhas iguais.
@@ -191,7 +207,7 @@ struct TrainingSetRow: View {
     }
     .id(fieldID)
     .font(.subheadline).monospacedDigit().multilineTextAlignment(.center)
-    .modifier(RowChrome(scale: scale, kind: kind, done: done, isNext: isNext, accent: accent))
+    .modifier(RowChrome(scale: scale, kind: kind, done: done, isNext: isNext, accent: accent, fill: tint.fill))
     .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: isNext)
     .onChange(of: weight, initial: true) { if focused == nil { weightDraft = weight } }
     .onChange(of: repetitions, initial: true) { if focused == nil { repsDraft = repetitions } }
@@ -203,21 +219,32 @@ struct TrainingSetRow: View {
         commit(completed: currentDone)
       }
       if new == nil { submitted = nil }
-      if new != nil { selectAllInFocusedField() }
+      if new != nil {
+        selectAllInFocusedField()
+        if old == nil { onFocus?(fieldID) }
+      }
     }
     .onSubmit { commit(completed: currentDone); focused = nil }
     #if os(iOS)
     .toolbar {
+      // Fechar o teclado é um ícone de um lado e a ação do campo fica do outro.
+      // "concluído" ao lado de "feito" eram dois rótulos quase iguais para
+      // ações diferentes: um só fecha, o outro marca a série.
       ToolbarItemGroup(placement: .keyboard) {
-        if scale == .session, focused == .weight {
-          Button("próximo", systemImage: "chevron.right") { focused = .reps }
-        } else if scale == .session, focused == .reps, !currentDone {
-          Button("feito", systemImage: "checkmark") {
-            commit(completed: true)
-            focused = nil
-            tapCount += 1
+        if scale == .session, focused != nil {
+          Button("fechar teclado", systemImage: "keyboard.chevron.compact.down") { focused = nil }
+            .accessibilityIdentifier("keyboard.done")
+          Spacer()
+          if focused == .weight {
+            Button("próximo", systemImage: "chevron.right") { focused = .reps }
+          } else if !currentDone {
+            Button("feito", systemImage: "checkmark") {
+              commit(completed: true)
+              focused = nil
+              tapCount += 1
+            }
+            .disabled(!canCommit)
           }
-          .disabled(!canCommit)
         }
       }
     }
@@ -234,17 +261,18 @@ struct TrainingSetRow: View {
         HStack(spacing: 2) {
           Text(kind == .prep ? "A\(index)" : "\(index)")
             .font(.system(size: indexSize, weight: isNext ? .medium : .regular, design: .monospaced))
-            .foregroundStyle(kind == .prep ? Color.orange : Color.ink)
+            .foregroundStyle(kind == .prep ? Color.prep : Color.ink)
+            .lineLimit(1).minimumScaleFactor(0.6)
           if failure { FailureMark() }
         }
-        .frame(width: 30)
+        .frame(width: SetRowScale.indexWidth(indexColumn))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(failure ? "\(spokenName), até a falha" : spokenName)
         .accessibilityValue(showsPrevious ? "" : spokenPrevious)
         if showsPrevious {
           Text(previous ?? "–")
             .font(.system(size: indexSize)).monospacedDigit()
-            .foregroundStyle(done ? accent.deep.opacity(0.6) : Color.mutedInk)
+            .foregroundStyle(done ? tint.text.opacity(0.6) : Color.mutedInk)
             .lineLimit(1).minimumScaleFactor(0.8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel(spokenPrevious)
@@ -253,14 +281,17 @@ struct TrainingSetRow: View {
         }
       }
       cell {
+        // No peso corporal o campo vazio vale zero e mostra "PC" na cor de
+        // dica: um "0" em tinta cheia em toda linha lia como carga esquecida.
         TypedNumberField(
-          placeholder: "0", value: $weightDraft, focus: $focused, field: .weight,
-          parse: parseDecimal, format: formatPrepWeight)
+          placeholder: bodyweight ? "PC" : "0", value: $weightDraft, focus: $focused, field: .weight,
+          parse: parseWeight, format: formatWeight)
           .decimalInput()
           .submitLabel(.done)
           .font(valueFont)
           .accessibilityIdentifier(fieldID + ".weight")
           .accessibilityLabel("Peso \(kind == .prep ? "do" : "da") \(spokenName)")
+          .accessibilityValue(spokenWeight)
       }
       cell {
         TypedNumberField(
@@ -277,62 +308,108 @@ struct TrainingSetRow: View {
             if let new, new > Limits.reps.upperBound { repsDraft = Limits.reps.upperBound }
           }
       }
-      Button {
-        commit(completed: !currentDone)
-        focused = nil
-        tapCount += 1
-      } label: {
-        // O visto só aparece na série feita: desenhado cinza em toda linha, ele
-        // lia como já marcado. A próxima ganha a borda verde, que convida ao
-        // toque. Enquanto a marcação não chegou ao servidor o visto fica vazado,
-        // com borda tracejada e um relógio no canto.
-        ZStack {
-          if done {
-            Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
-              .foregroundStyle(waiting ? accent.base : Color.white)
-              .offset(y: -0.5)
-              .transition(reduceMotion ? .opacity : AnyTransition(.iconAppear))
+      checkButton
+    }
+  }
+
+  private var checkButton: some View {
+    Button {
+      commit(completed: !currentDone)
+      focused = nil
+      tapCount += 1
+    } label: {
+      // O visto só aparece na série feita: desenhado cinza em toda linha, ele
+      // lia como já marcado. A próxima ganha a borda verde, que convida ao
+      // toque. Enquanto a marcação não chegou ao servidor o visto fica vazado,
+      // com borda tracejada e um relógio no canto.
+      ZStack {
+        if done {
+          Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(waiting ? tint.fill : tint.ink)
+            .offset(y: -0.5)
+            .transition(reduceMotion ? .opacity : AnyTransition(.iconAppear))
+        }
+      }
+        .frame(width: scale.check, height: scale.check)
+        .background(done && !waiting ? tint.fill : .white, in: .circle)
+        .opacity(canCommit || done ? 1 : 0.4)
+        .overlay {
+          if waiting {
+            Circle().strokeBorder(tint.fill, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+          } else if !done {
+            Circle().strokeBorder(
+              isNext ? tint.fill : Color.ink.opacity(0.16), lineWidth: isNext ? 2 : 1.5)
           }
         }
-          .frame(width: scale.check, height: scale.check)
-          .background(done && !waiting ? accent.base : .white, in: .circle)
-          .opacity(canCommit || done ? 1 : 0.4)
-          .overlay {
-            if waiting {
-              Circle().strokeBorder(accent.base, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
-            } else if !done {
-              Circle().strokeBorder(
-                isNext ? accent.base : Color.ink.opacity(0.16), lineWidth: isNext ? 2 : 1.5)
-            }
+        .overlay(alignment: .topTrailing) {
+          if waiting {
+            Image(systemName: "clock.fill")
+              .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.warning)
+              .background(Circle().fill(.white).padding(-1))
+              .offset(x: 3, y: -3)
+          } else if done && isRecord {
+            // O mesmo troféu do cabeçalho "recordes" da home.
+            Image(systemName: "trophy.fill")
+              .font(.system(size: 10, weight: .semibold)).foregroundStyle(tint.text)
+              .padding(3)
+              .background(Circle().fill(.white))
+              .overlay(Circle().strokeBorder(tint.fill.opacity(0.35)))
+              .offset(x: 5, y: -5)
+              .transition(reduceMotion ? .opacity : AnyTransition(.iconAppear))
+              .accessibilityHidden(true)
           }
-          .overlay(alignment: .topTrailing) {
-            if waiting {
-              Image(systemName: "clock.fill")
-                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.warning)
-                .background(Circle().fill(.white).padding(-1))
-                .offset(x: 3, y: -3)
-            }
-          }
-      }
-      // O check encolhe mais que os outros botões, como no board.
-      .buttonStyle(StudyPressStyle(scale: 0.92))
-      .disabled(!canCommit)
-        .accessibilityIdentifier(fieldID + ".completion")
-        .animation(Motion.resolve(Motion.confirm, reduceMotion), value: done)
-        .accessibilityLabel(done ? "Desmarcar \(spokenName)" : "Concluir \(spokenName)")
-        .accessibilityValue(waiting ? "esperando enviar" : spokenLoad)
-        .accessibilityHint(canCommit ? "" : "preencha carga e repetições")
-        // O VoiceOver lia "Selecionado" em todo visto, feito ou não.
-        .accessibilityRemoveTraits(done ? [] : .isSelected)
-        .accessibilityAddTraits(done ? .isSelected : [])
-        .sensoryFeedback(currentDone ? .success : .impact(weight: .light), trigger: tapCount)
+        }
+        .animation(Motion.resolve(Motion.confirm, reduceMotion), value: done && isRecord)
     }
+    // O check encolhe mais que os outros botões, como no board.
+    .buttonStyle(StudyPressStyle(scale: 0.92))
+    .disabled(!canCommit)
+      .accessibilityIdentifier(fieldID + ".completion")
+      .animation(Motion.resolve(Motion.confirm, reduceMotion), value: done)
+      .accessibilityLabel(done ? "Desmarcar \(spokenName)" : "Concluir \(spokenName)")
+      .accessibilityValue(spokenCheck)
+      .accessibilityHint(canCommit ? "" : "preencha carga e repetições")
+      // O VoiceOver lia "Selecionado" em todo visto, feito ou não.
+      .accessibilityRemoveTraits(done ? [] : .isSelected)
+      .accessibilityAddTraits(done ? .isSelected : [])
+      // O recorde tem o próprio toque, mais forte; o `.success` de toda
+      // série junto dele embolava os dois num só.
+      .sensoryFeedback(trigger: tapCount) { _, _ in tapFeedback }
+      .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordBeats)
+      .sensoryFeedback(.success, trigger: recordSettles)
+      .onChange(of: isRecord) { old, new in
+        guard new, !old, done else { return }
+        recordBeats += 1
+        AccessibilityNotification.Announcement("recorde").post()
+        Task {
+          try? await Task.sleep(for: .milliseconds(140))
+          recordSettles += 1
+        }
+      }
   }
 
   private var spokenPrevious: String { previous.map { "anterior \($0)" } ?? "sem registro anterior" }
   private var spokenLoad: String {
     guard let kilograms = weightDraft, let reps = repsDraft else { return "" }
-    return "\(Formatting.trim(kilograms)) quilos, \(reps) repetições"
+    return "\(kilograms == 0 ? "peso corporal" : "\(Formatting.trim(kilograms)) quilos"), \(reps) repetições"
+  }
+  private func parseWeight(_ text: String) -> Double? {
+    bodyweight ? parseBodyweight(text) : parseDecimal(text)
+  }
+  private func formatWeight(_ kilograms: Double) -> String {
+    bodyweight ? formatBodyweight(kilograms) : formatPrepWeight(kilograms)
+  }
+  private var spokenCheck: String {
+    if waiting { return "esperando enviar" }
+    return done && isRecord ? "\(spokenLoad), recorde" : spokenLoad
+  }
+  private var tapFeedback: SensoryFeedback? {
+    guard currentDone else { return .impact(weight: .light) }
+    return isRecord ? nil : .success
+  }
+  private var spokenWeight: String {
+    guard let kilograms = weightDraft else { return "" }
+    return kilograms == 0 && bodyweight ? "peso corporal" : Formatting.trim(kilograms)
   }
 
   /// O número inteiro selecionado ao entrar no campo, para digitar "10" trocar o
@@ -389,6 +466,7 @@ private struct RowChrome: ViewModifier {
   let done: Bool
   let isNext: Bool
   let accent: Accent
+  let fill: Color
 
   func body(content: Content) -> some View {
     switch scale {
@@ -397,7 +475,7 @@ private struct RowChrome: ViewModifier {
         .background(kind == .prep ? Color.surfaceMuted : accent.pale.opacity(0.5), in: .rect(cornerRadius: scale.radius))
     case .session:
       content.padding(.vertical, 7).padding(.horizontal, 2)
-        .background(done ? accent.base.opacity(0.06) : isNext ? Color.surfaceMuted : .clear, in: .rect(cornerRadius: 18))
+        .background(done ? fill.opacity(0.06) : isNext ? Color.surfaceMuted : .clear, in: .rect(cornerRadius: 18))
     }
   }
 }
@@ -446,6 +524,21 @@ func weightWarning(_ kilograms: Double?, reference: WeightReference?) -> String?
   }
   if kilograms > 400 { return "\(Formatting.trim(kilograms)) kg? confere o número" }
   return nil
+}
+
+/// O campo de carga do peso corporal: vazio é zero, e zero é vazio.
+func parseBodyweight(_ text: String) -> Double? {
+  text.trimmingCharacters(in: .whitespaces).isEmpty ? 0 : parseDecimal(text)
+}
+
+func formatBodyweight(_ kilograms: Double) -> String {
+  kilograms == 0 ? "" : formatPrepWeight(kilograms)
+}
+
+extension Color {
+  /// O aquecimento, "A1" e "A2". Âmbar escuro, 5:1 no branco; o `.orange` do
+  /// sistema dava 2,2.
+  static let prep = Color(hex: 0xb4_5309)
 }
 
 func weightLabel(_ kilograms: Double) -> String {

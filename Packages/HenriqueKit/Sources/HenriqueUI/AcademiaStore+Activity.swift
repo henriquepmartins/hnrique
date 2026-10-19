@@ -23,6 +23,13 @@ extension AcademiaStore {
       await activity.flush()
       return
     }
+    // Encerrado, o treino não reabre pela tela bloqueada. Um "feito" que sobrou
+    // de uma versão anterior só leva a atividade ao estado final.
+    guard finishedAt(target.templateId, on: target.date) == nil else {
+      endActivity(immediately: false)
+      await activity.flush()
+      return
+    }
     if selectedDate != target.date { selectedDate = target.date }
     if dashboard?.date != target.date { await fetchDay(target.date) }
     guard let dashboard, dashboard.date == target.date, let workout = dashboard.workout,
@@ -57,7 +64,7 @@ extension AcademiaStore {
     let tone = dashboard.tone(forWorkout: workout.id)
     let attributes = SetActivityAttributes(
       date: dashboard.date, templateId: workout.id, workoutName: workout.name.lowercased(),
-      toneHex: tone?.hex)
+      toneHex: tone?.hex, startedAt: startedAt(workout.id, on: dashboard.date) ?? .now)
     let state = activityState(workout, on: dashboard.date)
     guard state.up != nil else { return }
     activity.start(attributes, state)
@@ -93,9 +100,11 @@ extension AcademiaStore {
     let resting = rest.flatMap { $0.key.date == date && !$0.isExpired(at: .now) ? $0 : nil }
     let anchor = resting?.exerciseId ?? lastMarkedExercise(in: workout)
     let index = anchor.flatMap { id in workout.exercises.firstIndex { $0.id == id } } ?? 0
+    let timing = WorkoutSessionTiming(
+      workout, anchor: startedAt(workout.id, on: date), finishedAt: finishedAt(workout.id, on: date))
     return SetActivityState(
       workout: workout, date: date, next: NextSet(from: index, in: workout),
-      rest: resting.map { $0.startedAt...$0.endsAt })
+      rest: resting.map { $0.startedAt...$0.endsAt }, finishedAt: timing?.finishedAt)
   }
 
   private func lastMarkedExercise(in workout: WorkoutSummary) -> String? {

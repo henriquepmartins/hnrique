@@ -2,7 +2,6 @@ import ActivityKit
 import AppIntents
 import HenriqueCore
 import SwiftUI
-import UIKit
 import WidgetKit
 
 struct SetActivityWidget: Widget {
@@ -15,12 +14,19 @@ struct SetActivityWidget: Widget {
       let state = context.state
       return DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          if let up = state.up {
-            SetLabel(text: up.setLabel, tone: tone).padding(.leading, 6)
+          VStack(alignment: .leading, spacing: 4) {
+            if let up = state.up {
+              SetLabel(text: up.setLabel, tone: tone)
+              Elapsed(startedAt: context.attributes.startedAt, state: state)
+                .font(.caption).foregroundStyle(.secondary)
+            } else if state.finishedAt != nil {
+              FinishedMark(tone: tone)
+            }
           }
+          .padding(.leading, 6)
         }
         DynamicIslandExpandedRegion(.trailing) {
-          Countdown(state: state, isStale: context.isStale)
+          Countdown(startedAt: context.attributes.startedAt, state: state, isStale: context.isStale)
             .font(.title3.weight(.semibold))
             .padding(.trailing, 6)
         }
@@ -36,6 +42,7 @@ struct SetActivityWidget: Widget {
               Spacer()
               DoneButton(target: up.target, exerciseName: up.exerciseName, tone: tone)
             } else {
+              Score(done: state.done, total: state.total, tone: tone)
               Progress(done: state.done, total: state.total, tone: tone)
             }
           }
@@ -45,7 +52,7 @@ struct SetActivityWidget: Widget {
         if let up = state.up {
           SetLabel(text: up.setLabel, tone: tone)
         } else {
-          Image(systemName: "checkmark").foregroundStyle(tone.fill)
+          FinishedMark(tone: tone)
         }
       } compactTrailing: {
         if let rest = state.rest, !context.isStale {
@@ -54,12 +61,17 @@ struct SetActivityWidget: Widget {
             .frame(maxWidth: 44)
         } else if let up = state.up {
           Text(up.weight).monospacedDigit()
+        } else {
+          Text("\(state.done)/\(state.total)").monospacedDigit()
+            .accessibilityLabel("\(state.done) de \(state.total) séries")
         }
       } minimal: {
         if let rest = state.rest, !context.isStale {
           ProgressView(timerInterval: rest, countsDown: true) { EmptyView() }
             .progressViewStyle(.circular)
             .tint(tone.fill)
+        } else if state.up == nil {
+          FinishedMark(tone: tone)
         } else {
           Image(systemName: "dumbbell.fill").foregroundStyle(tone.fill)
         }
@@ -82,7 +94,7 @@ private struct LockScreenView: View {
           .font(.headline)
           .lineLimit(1)
         Spacer(minLength: 8)
-        Countdown(state: state, isStale: context.isStale)
+        Countdown(startedAt: context.attributes.startedAt, state: state, isStale: context.isStale)
           .font(.title2.weight(.semibold))
       }
       if let up = state.up {
@@ -92,21 +104,33 @@ private struct LockScreenView: View {
           Spacer(minLength: 8)
           DoneButton(target: up.target, exerciseName: up.exerciseName, tone: tone)
         }
+      } else {
+        Score(done: state.done, total: state.total, tone: tone)
       }
-      Progress(done: state.done, total: state.total, tone: tone)
+      HStack(spacing: 10) {
+        Progress(done: state.done, total: state.total, tone: tone)
+        if state.finishedAt == nil {
+          Elapsed(startedAt: context.attributes.startedAt, state: state)
+            .font(.caption).foregroundStyle(.secondary)
+        }
+      }
     }
     .padding(16)
     .accessibilityElement(children: .contain)
   }
 }
 
-/// O contador do descanso. Passado o fim, a atividade fica velha e troca para "vai".
+/// O contador do descanso. Passado o fim, a atividade fica velha e troca para
+/// "vai". No treino acabado, o tempo final parado.
 private struct Countdown: View {
+  let startedAt: Date?
   let state: SetActivityState
   let isStale: Bool
 
   var body: some View {
-    if let rest = state.rest, !isStale {
+    if state.finishedAt != nil {
+      Elapsed(startedAt: startedAt, state: state)
+    } else if let rest = state.rest, !isStale {
       Text(timerInterval: rest, countsDown: true)
         .monospacedDigit()
         .multilineTextAlignment(.trailing)
@@ -115,6 +139,56 @@ private struct Countdown: View {
     } else if state.up != nil {
       Text("vai")
     }
+  }
+}
+
+/// O tempo de treino desde a primeira série: correndo durante o treino, parado
+/// no fim. Some numa atividade que não sabe o começo.
+private struct Elapsed: View {
+  let startedAt: Date?
+  let state: SetActivityState
+
+  var body: some View {
+    if let startedAt {
+      Group {
+        if let end = state.finishedAt {
+          Text(timerInterval: startedAt...max(startedAt, end), pauseTime: max(startedAt, end), countsDown: false)
+        } else {
+          Text(timerInterval: startedAt...Date.distantFuture, countsDown: false)
+        }
+      }
+      .monospacedDigit()
+      .multilineTextAlignment(.trailing)
+      .frame(maxWidth: 80, alignment: .trailing)
+      .accessibilityLabel("tempo de treino")
+    }
+  }
+}
+
+/// O placar do treino acabado, no lugar da linha da série.
+private struct Score: View {
+  let done: Int
+  let total: Int
+  let tone: Tone
+
+  var body: some View {
+    Label {
+      Text("\(done)/\(total)").monospacedDigit()
+    } icon: {
+      Image(systemName: "checkmark.circle.fill").foregroundStyle(tone.fill)
+    }
+    .font(.body.weight(.medium))
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("treino encerrado, \(done) de \(total) séries")
+  }
+}
+
+private struct FinishedMark: View {
+  let tone: Tone
+
+  var body: some View {
+    Image(systemName: "checkmark.circle.fill").foregroundStyle(tone.fill)
+      .accessibilityLabel("treino encerrado")
   }
 }
 
@@ -194,50 +268,21 @@ private struct Progress: View {
   }
 }
 
-/// A cor do treino e a tinta que vai por cima dela: tinta escura do mesmo matiz
-/// ou branca, a que tiver mais contraste. O contraste é o do APCA, que pesa como
-/// o olho lê cor saturada; pela conta do WCAG 2 o vermelho ficava com a tinta
-/// escura, que some nele.
+/// A cor do treino e a tinta que vai por cima dela, pela mesma conta que a
+/// sessão no app usa.
 private struct Tone {
   let fill: Color
   let ink: Color
 
   init(hex: String?) {
-    var digits = Substring(hex ?? "")
-    if digits.hasPrefix("#") { digits = digits.dropFirst() }
-    let rgb = digits.count == 6 ? UInt32(digits, radix: 16) ?? 0x22_c55e : 0x22_c55e
-    let color = UIColor(
-      red: CGFloat((rgb >> 16) & 0xff) / 255, green: CGFloat((rgb >> 8) & 0xff) / 255,
-      blue: CGFloat(rgb & 0xff) / 255, alpha: 1)
-    var hue: CGFloat = 0
-    var saturation: CGFloat = 0
-    var brightness: CGFloat = 0
-    color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: nil)
-    fill = Color(uiColor: color)
-    let dark = UIColor(
-      hue: hue, saturation: min(1, saturation * 1.1), brightness: brightness * 0.26, alpha: 1)
-    ink = abs(apcaContrast(text: dark, on: color)) > abs(apcaContrast(text: .white, on: color))
-      ? Color(uiColor: dark) : .white
+    let fill = hex.flatMap(ToneRGB.init(hex:)) ?? ToneRGB(hex: "22c55e")!
+    self.fill = Color(fill)
+    ink = Color(ToneContrast.ink(on: fill))
   }
 }
 
-/// O Lc do APCA 0.0.98G: positivo para texto escuro em fundo claro, negativo ao contrário.
-private func apcaContrast(text: UIColor, on background: UIColor) -> Double {
-  func luminance(_ color: UIColor) -> Double {
-    var red: CGFloat = 0
-    var green: CGFloat = 0
-    var blue: CGFloat = 0
-    color.getRed(&red, green: &green, blue: &blue, alpha: nil)
-    let y = 0.2126729 * pow(Double(red), 2.4) + 0.7151522 * pow(Double(green), 2.4)
-      + 0.0721750 * pow(Double(blue), 2.4)
-    return y > 0.022 ? y : y + pow(0.022 - y, 1.414)
+extension Color {
+  fileprivate init(_ rgb: ToneRGB) {
+    self.init(.sRGB, red: rgb.red, green: rgb.green, blue: rgb.blue)
   }
-  let text = luminance(text)
-  let background = luminance(background)
-  if background > text {
-    let contrast = (pow(background, 0.56) - pow(text, 0.57)) * 1.14
-    return contrast < 0.1 ? 0 : (contrast - 0.027) * 100
-  }
-  let contrast = (pow(background, 0.65) - pow(text, 0.62)) * 1.14
-  return contrast > -0.1 ? 0 : (contrast + 0.027) * 100
 }
