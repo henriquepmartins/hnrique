@@ -1,5 +1,6 @@
 import Foundation
 import HenriqueCore
+import SwiftUI
 import UserNotifications
 
 /// O aviso do fim do descanso com o app no fundo. Protocolo para os testes da
@@ -25,24 +26,34 @@ final class AcademiaRestAlarm: RestAlarm {
 
   /// O executável de teste não é um app, e a central derruba o processo sem
   /// identificador de pacote.
-  private var isApp: Bool { Bundle.main.bundleURL.pathExtension == "app" }
+  nonisolated static var isApp: Bool { Bundle.main.bundleURL.pathExtension == "app" }
 
   init() {
-    if isApp { UNUserNotificationCenter.current().delegate = RestAlarmPresenter.shared }
+    if Self.isApp { UNUserNotificationCenter.current().delegate = RestAlarmPresenter.shared }
   }
 
+  /// Nulo fora de um app.
+  static func authorizationStatus() async -> UNAuthorizationStatus? {
+    guard isApp else { return nil }
+    return await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+  }
+
+  static func requestAuthorization() async -> UNAuthorizationStatus? {
+    guard isApp else { return nil }
+    _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+    return await authorizationStatus()
+  }
+
+  /// Só agenda com a permissão dada. O pedido sai do resumo, fora do treino:
+  /// no primeiro "feito" o alerta do sistema caía em cima das séries.
   func schedule(at date: Date, next: NextSet?) {
-    guard isApp else { return }
+    guard Self.isApp else { return }
     let previous = tail
     tail = Task {
       await previous?.value
       let center = UNUserNotificationCenter.current()
       let status = await center.notificationSettings().authorizationStatus
-      if status == .notDetermined {
-        guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
-      } else if status == .denied {
-        return
-      }
+      guard status == .authorized || status == .provisional else { return }
       let interval = date.timeIntervalSinceNow
       guard interval >= 1 else {
         center.removePendingNotificationRequests(withIdentifiers: [Self.identifier])
@@ -60,7 +71,7 @@ final class AcademiaRestAlarm: RestAlarm {
   }
 
   func cancel() {
-    guard isApp else { return }
+    guard Self.isApp else { return }
     let previous = tail
     tail = Task {
       await previous?.value
@@ -83,5 +94,34 @@ final class RestAlarmPresenter: NSObject, UNUserNotificationCenterDelegate {
   ) async -> UNNotificationPresentationOptions {
     guard notification.request.identifier == AcademiaRestAlarm.identifier else { return [] }
     return await sessionOnScreen ? [.sound, .list] : [.banner, .sound, .list]
+  }
+}
+
+/// O convite para o aviso do fim do descanso, no resumo do treino. Só aparece
+/// enquanto o sistema ainda não perguntou; respondido, some de vez.
+struct RestAlarmOffer: View {
+  @Environment(\.accent) private var accent
+  @State private var status: UNAuthorizationStatus?
+
+  var body: some View {
+    Group {
+      if status == .notDetermined {
+        HStack(spacing: Space.m) {
+          Label("avisar quando o descanso acabar", systemImage: "bell.badge")
+            .font(.subheadline).foregroundStyle(Color.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          Button("ativar") {
+            Task { status = await AcademiaRestAlarm.requestAuthorization() }
+          }
+          .buttonStyle(.bordered).tint(accent.deep)
+          .accessibilityIdentifier("resumo.aviso-descanso")
+        }
+        .padding(Space.m)
+        .background(Color.surfaceMuted, in: .rect(cornerRadius: Radius.row))
+        .transition(.opacity)
+      }
+    }
+    .animation(Motion.plain, value: status)
+    .task { status = await AcademiaRestAlarm.authorizationStatus() }
   }
 }
