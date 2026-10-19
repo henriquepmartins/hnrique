@@ -74,6 +74,7 @@ public struct FocoScreen: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @ScaledMetric(relativeTo: .largeTitle) private var clockSize = 64.0
   @State private var selectedDay: CalendarDate?
 
@@ -144,6 +145,13 @@ public struct FocoScreen: View {
       }
     }
     .animation(reduceMotion ? nil : Motion.crossfade, value: foco.undoable)
+    .sensoryFeedback(.start, trigger: foco.ledger.running?.startedAt) { _, new in new != nil }
+    .sensoryFeedback(.impact(weight: .medium), trigger: foco.undoable?.id) { _, new in new != nil }
+    .onChange(of: foco.undoable?.id) { _, id in
+      guard id != nil, let entry = foco.undoable else { return }
+      AccessibilityNotification.Announcement("sessão de \(entry.track.name) apagada, desfazer disponível")
+        .post()
+    }
     .task {
       await estudos.loadSubjects()
       if foco.takeResume() { foco.isShowingRun = true }
@@ -175,14 +183,19 @@ public struct FocoScreen: View {
           .accessibilityLabel("\(FocoFormat.spoken(seconds)) hoje")
         FocoGoalBar(fraction: fraction, color: .studyBlue)
         Menu {
-          ForEach(1...8, id: \.self) { hours in
-            Button("\(hours) h") { foco.setGoal(minutes: hours * 60) }
+          Picker(
+            "meta do dia",
+            selection: Binding(
+              get: { ledger.dailyGoalMinutes / 60 }, set: { foco.setGoal(minutes: $0 * 60) })
+          ) {
+            ForEach(1...8, id: \.self) { hours in Text("\(hours) h").tag(hours) }
           }
         } label: {
           HStack(spacing: 4) {
             Text("\(percent)% de \(FocoFormat.short(minutes: ledger.dailyGoalMinutes))")
               .monospacedDigit()
               .contentTransition(.numericText())
+              .animation(reduceMotion ? nil : Motion.roll, value: percent)
             Image(systemName: "chevron.up.chevron.down").imageScale(.small)
           }
           // Menu não aceita ButtonStyle, então o alvo de 44 cresce no rótulo.
@@ -191,6 +204,7 @@ public struct FocoScreen: View {
         .font(.caption)
         .foregroundStyle(Color.studyInk60)
         .accessibilityHint("troca a meta do dia")
+        .sensoryFeedback(.selection, trigger: ledger.dailyGoalMinutes)
         let shares = trackShares(ledger: ledger, today: today, now: now)
         if !shares.isEmpty {
           FocoDayBand(shares: shares)
@@ -217,28 +231,36 @@ public struct FocoScreen: View {
     let done = streak.isTodayDone
     let missing = FocoLedger.dayCountsMinutes
       - Int(ledger.seconds(on: today, now: now, calendar: calendar) / 60)
+    // No texto de acessibilidade o recorde desce para baixo do resto, senão
+    // rouba a largura e a linha de baixo quebra em três.
+    let layout =
+      dynamicTypeSize.isAccessibilitySize
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+      : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
     return StudyCard {
-      HStack(alignment: .center, spacing: 12) {
-        Image(systemName: "flame.fill")
-          .font(.system(size: 26))
-          .foregroundStyle(done ? Color.studyCoral : Color.studyInk20)
-          .symbolEffect(.bounce, value: streak.current)
-          .animation(reduceMotion ? nil : Motion.crossfade, value: done)
-        VStack(alignment: .leading, spacing: 2) {
-          HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("\(streak.current)")
-              .font(.title2.weight(.semibold))
+      layout {
+        HStack(alignment: .center, spacing: 12) {
+          Image(systemName: "flame.fill")
+            .font(.system(size: 26))
+            .foregroundStyle(done ? Color.studyCoral : Color.studyInk20)
+            .animation(reduceMotion ? nil : Motion.crossfade, value: done)
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+              Text("\(streak.current)")
+                .font(.title2.weight(.semibold))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : Motion.grow, value: streak.current)
+              Text("dias seguidos").font(.subheadline).foregroundStyle(Color.studyInk60)
+            }
+            Text(done ? "hoje já conta" : streak.current > 0 ? "faltam \(max(missing, 1)) min para manter" : "\(FocoLedger.dayCountsMinutes) min contam o dia")
+              .font(.caption)
+              .foregroundStyle(Color.studyInk60)
               .monospacedDigit()
-              .contentTransition(.numericText())
-              .animation(reduceMotion ? nil : Motion.grow, value: streak.current)
-            Text("dias seguidos").font(.subheadline).foregroundStyle(Color.studyInk60)
+              .fixedSize(horizontal: false, vertical: true)
           }
-          Text(done ? "hoje já conta" : streak.current > 0 ? "faltam \(max(missing, 1)) min para manter" : "\(FocoLedger.dayCountsMinutes) min contam o dia")
-            .font(.caption)
-            .foregroundStyle(Color.studyInk40)
-            .monospacedDigit()
         }
-        Spacer(minLength: 0)
+        if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
         Text("recorde \(streak.best)")
           .font(.caption.weight(.medium))
           .monospacedDigit()
@@ -267,8 +289,24 @@ public struct FocoScreen: View {
             isRunning: ledger.running?.track.id == track.id,
             seconds: ledger.seconds(on: today, track: track.id, now: now, calendar: calendar)
           ) { toggle(track) }
+          .transition(.opacity)
+        }
+        switch estudos.subjects {
+        case .idle, .loading:
+          ForEach(0..<2, id: \.self) { _ in
+            FocoTrackRow(track: .alemao, isRunning: false, seconds: 0) {}
+              .redacted(reason: .placeholder)
+              .disabled(true)
+              .accessibilityHidden(true)
+          }
+        case .failed(let message):
+          StudyFailedState(message: message) { Task { await estudos.loadSubjects(force: true) } }
+            .padding(.vertical, 8)
+        case .ready:
+          EmptyView()
         }
       }
+      .animation(Motion.resolve(Motion.entrance, reduceMotion), value: tracks.map(\.id))
     }
   }
 
@@ -415,7 +453,8 @@ struct FocoTrackRow: View {
           .font(.subheadline)
           .monospacedDigit()
           .contentTransition(.numericText())
-          .foregroundStyle(isRunning ? Color.studyInk : Color.studyInk40)
+          .animation(reduceMotion ? nil : Motion.roll, value: Int(seconds))
+          .foregroundStyle(isRunning ? Color.studyInk : Color.studyInk60)
       }
       .frame(minHeight: 52)
       .padding(.vertical, 6)
@@ -554,10 +593,11 @@ struct FocoTodayCard: View {
               HStack(spacing: 4) {
                 Image(systemName: "flame.fill")
                   .foregroundStyle(streak.isTodayDone ? Color.studyCoral : Color.studyInk20)
-                  .symbolEffect(.bounce, value: streak.current)
+                  .animation(reduceMotion ? nil : Motion.crossfade, value: streak.isTodayDone)
                 Text("\(streak.current)")
                   .monospacedDigit()
                   .contentTransition(.numericText())
+                  .animation(reduceMotion ? nil : Motion.grow, value: streak.current)
               }
               .font(.headline)
               .accessibilityElement(children: .combine)
@@ -589,12 +629,12 @@ struct FocoUndoToast: View {
 
   var body: some View {
     HStack(spacing: 12) {
-      Text("sessão de \(entry.track.name) apagada")
+      Label("sessão de \(entry.track.name) apagada", systemImage: "trash")
         .font(.subheadline)
         .lineLimit(2)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
-      Button("desfazer", action: undo)
+      Button("desfazer", systemImage: "arrow.uturn.backward", action: undo)
         .font(.subheadline.weight(.semibold))
         .accessibilityIdentifier("foco.desfazer")
     }
