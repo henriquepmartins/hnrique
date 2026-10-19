@@ -80,12 +80,14 @@ struct WorkoutHero: View {
           .accessibilityValue(session.workout.focus)
         HStack(spacing: 12) {
           Text(session.meta)
-            .font(.system(size: 14)).monospacedDigit().foregroundStyle(HeroInk.meta)
+            .font(.subheadline).monospacedDigit().foregroundStyle(HeroInk.meta)
             .contentTransition(.numericText())
           Spacer(minLength: 0)
           PaperButton(label: session.actionLabel, action: onStart)
             .matchedTransitionSource(id: "sessao", in: sessionSource)
         }
+        // Acima disso o botão empurraria a meta para fora do cartão.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -377,9 +379,15 @@ struct FilmTitle: View {
   /// nomes de várias palavras continuam quebrando nos espaços.
   var lettering: some View {
     ViewThatFits(in: .horizontal) {
-      ForEach([1, 0.85, 0.72, 0.6], id: \.self) { scale in
+      ForEach([1, 0.85, 0.72, 0.6, 0.5, 0.4], id: \.self) { scale in
         fitted(size: size * scale)
       }
+      // Em texto de acessibilidade nem 0,4 cabe. Aqui cada palavra ganha uma
+      // linha e encolhe até caber, em vez de o cartão cortar a palavra.
+      styled(text, size: size * 0.4)
+        .lineLimit(text.split(separator: " ").count)
+        .minimumScaleFactor(0.3)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
   }
 
@@ -435,9 +443,9 @@ private struct PaperButton: View {
   private func paper(tick: Int) -> some View {
     let cut = Self.cuts[(tick / 2) % 3]
     return Text(label)
-      .font(.system(size: 15, weight: .semibold)).tracking(0.15)
+      .font(.callout.weight(.semibold)).tracking(0.15)
       .foregroundStyle(HeroInk.cream)
-      .padding(.horizontal, 24).frame(height: 48)
+      .padding(.horizontal, 24).frame(minHeight: 48)
       .background {
         Capsule().stroke(HeroInk.cream, lineWidth: 1)
           .padding(-1.5).opacity(0.32)
