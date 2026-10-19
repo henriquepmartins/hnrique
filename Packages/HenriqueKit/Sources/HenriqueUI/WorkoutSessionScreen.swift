@@ -334,10 +334,15 @@ struct WorkoutSessionScreen: View {
           }
         }
         Spacer(minLength: Space.s)
-        Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
-          .font(.system(.caption, design: .monospaced)).foregroundStyle(Color.mutedInk)
-          .padding(.horizontal, 10).padding(.vertical, 5)
-          .background(Color.surfaceMuted, in: .capsule)
+        if exercise.isComplete {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.title3).foregroundStyle(accent.base)
+        } else {
+          Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
+            .font(.system(.caption, design: .monospaced)).foregroundStyle(Color.mutedInk)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Color.surfaceMuted, in: .capsule)
+        }
       }
       .padding(.horizontal, 18).padding(.vertical, 16)
       .frame(maxWidth: .infinity, alignment: .leading)
