@@ -341,6 +341,7 @@ struct PlanExerciseRow: View {
             .accessibilityLabel(name.lowercased())
             .accessibilityValue(spokenSummary)
             .accessibilityHint(isExpanded ? "fechar ajustes" : "abrir ajustes")
+            .accessibilityAction(named: "remover do treino") { onRemove?() }
         } else if isOrganizing {
           header
             .accessibilityElement(children: .ignore)
@@ -349,7 +350,10 @@ struct PlanExerciseRow: View {
         } else {
           header
         }
-        if showsControls, let onRemove {
+        // Com o cabeçalho abrindo e fechando, o canto direito é o chevron. Um
+        // lixo ali apagava o exercício de quem tocava para fechar; na lista o
+        // remover é o deslize.
+        if showsControls, onToggle == nil, let onRemove {
           IconButton(title: "Remover \(name) do treino", systemImage: "trash", size: 17, action: onRemove)
             .tint(.red)
         }
@@ -377,6 +381,13 @@ struct PlanExerciseRow: View {
       }
     }
     .padding(.vertical, showsControls ? 10 : 4)
+    // Um stepper empurra o outro, e a faixa nunca fica invertida.
+    .onChange(of: exercise.repsMin) { _, new in
+      if new > exercise.repsMax { exercise.repsMax = new }
+    }
+    .onChange(of: exercise.repsMax) { _, new in
+      if new < exercise.repsMin { exercise.repsMin = new }
+    }
   }
 
   private var header: some View {
@@ -400,10 +411,11 @@ struct PlanExerciseRow: View {
         }
       }
       Spacer(minLength: 0)
-      if onToggle != nil, !isOrganizing, !isExpanded {
+      if onToggle != nil, !isOrganizing {
         Image(systemName: "chevron.down")
           .font(.footnote.weight(.semibold))
           .foregroundStyle(Color.mutedInk)
+          .rotationEffect(.degrees(isExpanded ? 180 : 0))
           .frame(width: 44, height: 44)
       }
     }
@@ -416,18 +428,21 @@ struct PlanExerciseRow: View {
       ? "\(exercise.repsMin) repetições" : "de \(exercise.repsMin) a \(exercise.repsMax) repetições"
     parts.append("\(exercise.workSets) valendo, \(reps)")
     parts.append("descanso \(restClock(TimeInterval(exercise.restSeconds ?? defaultRestSeconds)))")
+    if exercise.startingWeightKg > 0 { parts.append("carga \(formatPrepWeight(exercise.startingWeightKg)) quilos") }
     if exercise.workToFailure { parts.append("até a falha") }
     return parts.joined(separator: ", ")
   }
 }
 
 extension PlanExercise {
-  /// "2 + 2 × 6–10 · 1:30": aquecimento + valendo, a faixa de repetições e o
-  /// descanso. Sem aquecimento, "2 × 6–10 · 1:30".
+  /// "2 + 2 × 6–10 · 1:30 · 40 kg": aquecimento + valendo, a faixa de
+  /// repetições, o descanso e a carga inicial quando tem. Sem aquecimento,
+  /// "2 × 6–10 · 1:30".
   var summary: String {
     let sets = prepSets > 0 ? "\(prepSets) + \(workSets)" : "\(workSets)"
     let reps = repsMin == repsMax ? "\(repsMin)" : "\(repsMin)–\(repsMax)"
-    return "\(sets) × \(reps) · \(restClock(TimeInterval(restSeconds ?? defaultRestSeconds)))"
+    let base = "\(sets) × \(reps) · \(restClock(TimeInterval(restSeconds ?? defaultRestSeconds)))"
+    return startingWeightKg > 0 ? "\(base) · \(formatPrepWeight(startingWeightKg)) kg" : base
   }
 }
 
@@ -515,9 +530,11 @@ struct ExerciseStepperRow: View {
       Spacer(minLength: 8)
       Text("\(value)").font(.body.weight(.semibold)).monospacedDigit()
         .frame(minWidth: 32, alignment: .trailing)
+        .accessibilityHidden(true)
       Stepper("", value: $value, in: range)
         .labelsHidden()
         .accessibilityLabel(label)
+        .accessibilityValue("\(value)")
     }
     .frame(minHeight: 48)
   }
