@@ -299,7 +299,7 @@ struct WorkoutSessionScreen: View {
       .paperCard(radius: Radius.tile)
       .contentShape(.rect)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(PressScaleStyle())
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(exercise.name.lowercased())
     .accessibilityValue(spokenSummary(exercise))
@@ -564,8 +564,10 @@ private struct SessionClock: View {
 
   var body: some View {
     if let timing, timing.finishedAt == nil {
-      TimelineView(.periodic(from: .now, by: 1)) { context in
-        readout(at: context.date, timing: timing, live: true)
+      // Ancorado no começo, o tick cai quando o segundo vira. A leitura vem 10 ms
+      // depois para o arredondamento para baixo não cair em cima da virada.
+      TimelineView(.periodic(from: timing.startedAt, by: 1)) { context in
+        readout(at: context.date + 0.01, timing: timing, live: true)
       }
     } else if let timing {
       readout(at: .now, timing: timing, live: false)
@@ -585,7 +587,7 @@ private struct SessionClock: View {
         if live {
           Circle().fill(accent.signal).frame(width: 8, height: 8)
             .offset(y: 1)
-            .modifier(Pulse(active: !reduceMotion))
+            .modifier(Pulse(active: live))
         }
         Text(time)
           .font(.system(size: clockSize, weight: .semibold)).monospacedDigit()
@@ -604,16 +606,18 @@ private struct SessionClock: View {
 }
 
 /// O batimento do ponto verde. Dois segundos por ciclo, que é devagar o bastante
-/// para ler como "está rodando" e não como um alerta.
+/// para ler como "está rodando" e não como um alerta. Com movimento reduzido o
+/// ponto só esmaece, sem encolher.
 private struct Pulse: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let active: Bool
   @State private var on = false
 
   func body(content: Content) -> some View {
     content
-      .opacity(active && on ? 0.35 : 1)
-      .scaleEffect(active && on ? 0.8 : 1)
-      .animation(active ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : nil, value: on)
-      .onAppear { on = active }
+      .opacity(on ? 0.35 : 1)
+      .scaleEffect(on && !reduceMotion ? 0.8 : 1)
+      .animation(on ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : nil, value: on)
+      .onChange(of: active, initial: true) { _, active in on = active }
   }
 }
