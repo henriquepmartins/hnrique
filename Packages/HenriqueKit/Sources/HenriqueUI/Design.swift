@@ -462,10 +462,17 @@ extension View {
   }
 }
 
+/// No iOS 26 a barra do teclado flutua acima dele, mas a área segura só desconta
+/// o teclado. Sem a folga, rolar até o campo focado deixava ele atrás da barra.
+private let keyboardBarHeight: CGFloat = 48
+
 private struct KeyboardDone: ViewModifier {
+  @State private var keyboardUp = false
+
   func body(content: Content) -> some View {
     #if os(iOS)
     content
+      .safeAreaPadding(.bottom, keyboardUp ? keyboardBarHeight : 0)
       .toolbar {
         ToolbarItemGroup(placement: .keyboard) {
           Spacer()
@@ -473,6 +480,12 @@ private struct KeyboardDone: ViewModifier {
         }
       }
       .onSubmit { dismissKeyboard() }
+      .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+        keyboardUp = true
+      }
+      .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+        keyboardUp = false
+      }
     #else
     content
     #endif
