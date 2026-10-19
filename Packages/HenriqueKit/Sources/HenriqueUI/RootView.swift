@@ -90,7 +90,7 @@ public struct RootView: View {
             .transition(.opacity)
         case .estudos:
           EstudosTabs(
-            tab: $estudosTab, accent: $accent, showingApps: $showingApps,
+            tab: $estudosTab, showingApps: $showingApps,
             openSession: openSession, openWrite: openWrite)
             .transition(.opacity)
         case .idiomas:
@@ -232,7 +232,6 @@ struct AcademiaTabs: View {
   @Environment(AcademiaStore.self) private var store
   @State private var showingSetup = false
   @State private var showingStreak = false
-  @State private var confirmingSignOut = false
   @State private var stage = InsigniaStage()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var accent: Accent
@@ -304,11 +303,6 @@ struct AcademiaTabs: View {
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
   }
 
-  private var unsentTitle: String {
-    let count = store.unsentCount
-    return count == 1 ? "1 série ainda não subiu" : "\(count) séries ainda não subiram"
-  }
-
   private func closeInsignia() {
     guard var show = stage.show, show.closed == nil else { return }
     show.closed = .now
@@ -349,24 +343,37 @@ struct AcademiaTabs: View {
               .pickerStyle(.palette)
             } label: { Label("configurar", systemImage: "gearshape") }
           }
-          ToolbarItem(placement: .primaryAction) {
-            Menu {
-              Button("sair", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                Task { confirmingSignOut = !(await store.signOut()) }
-              }
-            } label: { Image(systemName: "person.crop.circle") }
-            .accessibilityLabel("sua conta")
-            .confirmationDialog(
-              unsentTitle, isPresented: $confirmingSignOut, titleVisibility: .visible
-            ) {
-              Button("sair e perder", role: .destructive) {
-                Task { await store.signOut(discardingUnsent: true) }
-              }
-              Button("cancelar", role: .cancel) {}
-            }
-          }
+          ToolbarItem(placement: .primaryAction) { AccountMenu() }
         }
     }
+  }
+}
+
+/// O menu da conta das três casas. Sair esbarra na fila de séries que não
+/// subiram, e a pergunta precisa aparecer em qualquer app em que se toque
+/// "sair", senão o menu fecha e nada acontece.
+struct AccountMenu: View {
+  @Environment(AcademiaStore.self) private var store
+  @State private var confirmingSignOut = false
+
+  var body: some View {
+    Menu {
+      Button("sair", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+        Task { confirmingSignOut = !(await store.signOut()) }
+      }
+    } label: { Image(systemName: "person.crop.circle") }
+    .accessibilityLabel("sua conta")
+    .confirmationDialog(unsentTitle, isPresented: $confirmingSignOut, titleVisibility: .visible) {
+      Button("sair e perder", role: .destructive) {
+        Task { await store.signOut(discardingUnsent: true) }
+      }
+      Button("cancelar", role: .cancel) {}
+    }
+  }
+
+  private var unsentTitle: String {
+    let count = store.unsentCount
+    return count == 1 ? "1 série ainda não subiu" : "\(count) séries ainda não subiram"
   }
 }
 
