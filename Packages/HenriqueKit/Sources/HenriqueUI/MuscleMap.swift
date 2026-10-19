@@ -36,7 +36,7 @@ struct MuscleMap: View {
       // deve se mexer junto com o que ele mandou mudar.
       VStack(alignment: .leading, spacing: 0) {
         VStack(alignment: .leading, spacing: 0) {
-          HStack(spacing: 10) {
+          HStack(alignment: .top, spacing: 10) {
             figure(BodyChart.anterior, side: "frente")
             figure(BodyChart.posterior, side: "costas")
           }
@@ -62,11 +62,12 @@ struct MuscleMap: View {
     load.map { $0.sets(in: period) }.max() ?? 0
   }
 
-  private func figure(_ polygons: [BodyPolygon], side: String) -> some View {
-    ZStack {
-      BodyShape(polygons.filter { $0.group == nil }).fill(Color.ink.opacity(0.14))
+  private func figure(_ figure: BodyFigure, side: String) -> some View {
+    let polygons = figure.polygons
+    return ZStack {
+      BodyShape(polygons.filter { $0.group == nil }, frame: figure.frame).fill(Color.ink.opacity(0.14))
       ForEach(MuscleSlug.allCases, id: \.self) { group in
-        let shape = BodyShape(polygons.filter { $0.group == group })
+        let shape = BodyShape(polygons.filter { $0.group == group }, frame: figure.frame)
         shape
           .fill(heat(for: group))
           .opacity(picked == nil || picked == group ? 1 : 0.5)
@@ -85,7 +86,7 @@ struct MuscleMap: View {
           .accessibilityAction { pick(group) }
       }
     }
-    .aspectRatio(BodyChart.frame.width / BodyChart.frame.height, contentMode: .fit)
+    .aspectRatio(figure.frame.width / figure.frame.height, contentMode: .fit)
     .frame(maxWidth: 136)
     .frame(maxWidth: .infinity)
     .accessibilityElement(children: .contain)
@@ -211,19 +212,21 @@ struct GapNote: View {
   }
 }
 
-/// Um grupo muscular como uma forma só. O desenho vem num quadro de 100 por 200 e
-/// é reescalado para o retângulo que a tela deu.
+/// Um grupo muscular como uma forma só. O desenho vem no quadro da figura e é
+/// reescalado para o retângulo que a tela deu.
 struct BodyShape: Shape {
   let polygons: [BodyPolygon]
+  let frame: CGSize
 
-  init(_ polygons: [BodyPolygon]) {
+  init(_ polygons: [BodyPolygon], frame: CGSize) {
     self.polygons = polygons
+    self.frame = frame
   }
 
   func path(in rect: CGRect) -> Path {
-    let scale = min(rect.width / BodyChart.frame.width, rect.height / BodyChart.frame.height)
-    let originX = rect.midX - BodyChart.frame.width * scale / 2
-    let originY = rect.midY - BodyChart.frame.height * scale / 2
+    let scale = min(rect.width / frame.width, rect.height / frame.height)
+    let originX = rect.midX - frame.width * scale / 2
+    let originY = rect.midY - frame.height * scale / 2
     var path = Path()
     for polygon in polygons where polygon.points.count > 2 {
       let points = polygon.points.map {
