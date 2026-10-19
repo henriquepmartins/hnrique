@@ -215,9 +215,9 @@ struct TodaySkeleton: View {
           RoundedRectangle(cornerRadius: Radius.tile).frame(height: 76)
         }
       }
-      RoundedRectangle(cornerRadius: 32).frame(height: 408)
+      RoundedRectangle(cornerRadius: Radius.card).frame(height: 408)
       ForEach(0..<3) { _ in
-        RoundedRectangle(cornerRadius: 30).frame(height: 92)
+        RoundedRectangle(cornerRadius: Radius.concentric(Radius.tile, padding: 6)).frame(height: 92)
       }
     }
     .foregroundStyle(Color.surfaceMuted)

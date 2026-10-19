@@ -189,7 +189,7 @@ public struct NotebookPageScreen: View {
         } else if let failed {
           StudyFailedState(message: failed) { Task { await load(force: true) } }
         } else {
-          StudyLoadingState()
+          StudyLoadingState(shape: .page)
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)

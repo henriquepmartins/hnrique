@@ -131,7 +131,7 @@ public struct WriteScreen: View {
             page
             recent
           case .loading:
-            StudyLoadingState()
+            StudyLoadingState(shape: .page)
           case .failed(let path):
             StudyFailedState(message: "a nota não abriu") { Task { await open(path) } }
           }
