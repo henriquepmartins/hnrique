@@ -765,6 +765,14 @@ public final class AcademiaStore {
   }
 
   /// Troca o treino do dia aberto. Nulo volta o dia para o plano.
+  /// Hoje já tem série marcada, com qualquer dia aberto. Fora de hoje vale o
+  /// painel de hoje guardado ou a frequência, que só vê série valendo.
+  public var todayHasMarkedSets: Bool {
+    let today = CalendarDate.today
+    if dashboard?.date == today { return dashboard?.hasMarkedSets == true }
+    return dayCache[today]?.dashboard.hasMarkedSets == true || (attendance[today]?.workSets ?? 0) > 0
+  }
+
   @discardableResult
   public func swapDay(workoutTemplateId: String?) async -> Bool {
     await swapDay(on: selectedDate, workoutTemplateId: workoutTemplateId)
@@ -776,8 +784,13 @@ public final class AcademiaStore {
   @discardableResult
   public func swapDay(on date: CalendarDate, workoutTemplateId: String?) async -> Bool {
     // Trocar com série marcada deixaria as séries num treino que não é mais o
-    // do dia. O menu já some nesse caso; aqui é a mesma regra na borda.
-    if date == selectedDate, dashboard?.hasMarkedSets == true { return false }
+    // do dia. O menu já some nesse caso; aqui é a mesma regra na borda, com o
+    // mesmo aviso do servidor para quem chegou aqui por outro caminho.
+    let marked = date == selectedDate ? dashboard?.hasMarkedSets == true : date == .today && todayHasMarkedSets
+    if marked {
+      banner = "esse dia já tem séries marcadas em outro treino"
+      return false
+    }
     let input = SwapDayInput(date: date, workoutTemplateId: workoutTemplateId)
     guard await apply({ try await self.client.swapDay(input) }) else { return false }
     if date != selectedDate { await load() }

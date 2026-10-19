@@ -264,7 +264,8 @@ private struct StreakRing: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
       "\(streak.attendance.count) treinos, \(streak.complete.count) completos")
-    .accessibilityValue("\(streak.weeklyCompleted) de \(streak.weeklyPlanned) na semana")
+    .accessibilityValue(
+      streak.attendance.target.map { "\(streak.attendance.count) de \($0) da meta" } ?? "sem meta")
   }
 
   /// O anel mede o número do meio: a meta de presença quando existe, e sem

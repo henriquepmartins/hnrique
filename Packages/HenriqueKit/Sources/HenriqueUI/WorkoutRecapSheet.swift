@@ -16,6 +16,11 @@ struct WorkoutRecapSheet: View {
   /// O "fechar" do resumo que veio do "encerrar". Fecha a sessão inteira de uma
   /// vez, com a folha junto; sem ele o botão só fecha a folha.
   var onClose: (() -> Void)? = nil
+  /// A sessão que este resumo encerrou, quando veio do "encerrar". Só aí o
+  /// recorde vibra, e uma vez por sessão: o resumo reaberto, na sessão ou no
+  /// cartão do dia, já não vibra pelo mesmo recorde.
+  var celebrating: String? = nil
+  @AppStorage("academia.resumo.recordeComemorado") private var celebrated = ""
 
   /// Em tamanho de acessibilidade os três números não cabem lado a lado.
   private var statsLayout: AnyLayout {
@@ -78,7 +83,10 @@ struct WorkoutRecapSheet: View {
     .background(Color.canvas.ignoresSafeArea())
     // Na altura média, com texto grande, o "fechar" ficava em cima dos números.
     .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
-    .sensoryFeedback(.success, trigger: shown && !recap.records.isEmpty) { _, new in new }
+    .sensoryFeedback(.success, trigger: celebrates) { _, new in new }
+    .onChange(of: celebrates) { _, new in
+      if new, let celebrating { celebrated = celebrating }
+    }
     .exerciseHistorySheet(item: $history)
     // Os números entram depois de a folha parar de subir; junto com a subida,
     // a cascata corria por baixo do movimento e ninguém via.
@@ -86,6 +94,11 @@ struct WorkoutRecapSheet: View {
       if !reduceMotion { try? await Task.sleep(for: .milliseconds(250)) }
       shown = true
     }
+  }
+
+  private var celebrates: Bool {
+    guard let celebrating, celebrating != celebrated else { return false }
+    return shown && !recap.records.isEmpty
   }
 
   private var duration: String {

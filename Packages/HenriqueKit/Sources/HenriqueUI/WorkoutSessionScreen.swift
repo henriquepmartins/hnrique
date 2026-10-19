@@ -116,16 +116,20 @@ struct WorkoutSessionScreen: View {
       if let data = store.dashboard, let workout = data.workout {
         let progress = SessionProgress(workout)
         let openId = openExercise(in: workout)
+        // Cada leitura de `tint` refaz o contraste; o corpo inteiro usa esta.
+        let tint = self.tint
         ScrollViewReader { proxy in
           ScrollView {
             LazyVStack(spacing: Space.m) {
               ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
                 Group {
                   if openId == exercise.id {
-                    card(exercise: exercise, date: data.date, templateId: workout.id)
+                    card(
+                      exercise: exercise, date: data.date, templateId: workout.id,
+                      lastOpenSet: progress.total - progress.done == 1)
                       .transition(.opacity)
                   } else {
-                    collapsed(exercise: exercise)
+                    collapsed(exercise: exercise, tint: tint)
                       .transition(.opacity)
                   }
                 }
@@ -142,7 +146,7 @@ struct WorkoutSessionScreen: View {
           // teclado; sem a folga, a série em edição ficava atrás da barra.
           .safeAreaPadding(.bottom, keyboardUp ? 48 : 0)
           .safeAreaInset(edge: .top, spacing: 0) {
-            top(workout: workout, progress: progress, date: data.date)
+            top(workout: workout, progress: progress, date: data.date, tint: tint)
               .revealEntrance(index: 0, shown: entered)
           }
           // Inset, e não overlay: a lista encolhe junto com a barra e a última
@@ -176,14 +180,14 @@ struct WorkoutSessionScreen: View {
               }
             }
           }
-          .onChange(of: focusedRow) { _, id in
-            guard let id else { return }
-            Task {
-              // Espera o teclado subir, senão o centro é o da tela inteira.
-              try? await Task.sleep(for: .milliseconds(320))
-              withAnimation(glide) { proxy.scrollTo(id, anchor: .center) }
-              focusedRow = nil
-            }
+          // Trocar de linha antes da espera cancela a rolagem até a anterior.
+          .task(id: focusedRow) {
+            guard let id = focusedRow else { return }
+            // Espera o teclado subir, senão o centro é o da tela inteira.
+            try? await Task.sleep(for: .milliseconds(320))
+            guard !Task.isCancelled else { return }
+            withAnimation(glide) { proxy.scrollTo(id, anchor: .center) }
+            focusedRow = nil
           }
           // O exercício derivado vira escolha fixa assim que aparece. Sem isso, a
           // última série dele levava o derivado direto ao próximo no mesmo desenho,
@@ -232,7 +236,7 @@ struct WorkoutSessionScreen: View {
         .sheet(item: $recap, onDismiss: { if closesAfterRecap { onClose() } }) { presentation in
           LiveWorkoutRecap(
             date: presentation.date, opened: presentation.recap,
-            onClose: closesAfterRecap ? onClose : nil)
+            onClose: closesAfterRecap ? onClose : nil, celebrating: presentation.celebrating)
         }
         .sheet(isPresented: $adding) {
           SessionExercisePicker(
@@ -265,7 +269,9 @@ struct WorkoutSessionScreen: View {
     .exerciseHistorySheet(item: $history)
   }
 
-  private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
+  private func top(
+    workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate, tint: SessionTint
+  ) -> some View {
     let closedAt = store.finishedAt(workout.id, on: date)
     let complete = progress.total > 0 && progress.done >= progress.total
     return VStack(spacing: 14) {
@@ -359,7 +365,7 @@ struct WorkoutSessionScreen: View {
 
   /// O exercício fechado. Diz o que falta nele sem abrir, que é o que decide se o
   /// próximo aparelho vale a caminhada.
-  private func collapsed(exercise: DashboardExercise) -> some View {
+  private func collapsed(exercise: DashboardExercise, tint: SessionTint) -> some View {
     Button {
       holding = nil
       open = exercise.id
@@ -427,9 +433,11 @@ struct WorkoutSessionScreen: View {
     return "\(count), \(Formatting.trim(top.weightKg)) quilos por \(top.reps) da última vez"
   }
 
-  private func card(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
+  private func card(
+    exercise: DashboardExercise, date: CalendarDate, templateId: String, lastOpenSet: Bool
+  ) -> some View {
     let next = NextSet.next(in: exercise)
-    let records = exercise.recordSets(records: store.dashboard?.records ?? [], on: date)
+    let records = exercise.recordSets()
     return VStack(alignment: .leading, spacing: 0) {
       if exercise.isFromSession {
         onlyTodayChip(exercise: exercise, date: date, templateId: templateId)
@@ -461,7 +469,8 @@ struct WorkoutSessionScreen: View {
         ForEach(exercise.sets.work) { set in
           row(exercise: exercise, date: date, templateId: templateId, kind: .work,
             index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone,
-            failure: set.toFailure, next: next, isRecord: records.contains(set.index))
+            failure: set.toFailure, next: next, isRecord: records.contains(set.index),
+            closesWorkout: lastOpenSet && !set.isDone)
         }
       }
       .animation(Motion.resolve(Motion.expand, reduceMotion), value: exercise.sets.work.count)
@@ -519,7 +528,8 @@ struct WorkoutSessionScreen: View {
 
   private func row(
     exercise: DashboardExercise, date: CalendarDate, templateId: String, kind: SetKind,
-    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool, next: NextSet?, isRecord: Bool
+    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool, next: NextSet?, isRecord: Bool,
+    closesWorkout: Bool = false
   ) -> some View {
     let isNext = next?.kind == kind && next?.index == index
     return TrainingSetRow(
@@ -531,6 +541,7 @@ struct WorkoutSessionScreen: View {
         : previousLabel(exercise.previous, index: index),
       reference: setReference(exercise, kind: kind, index: index),
       isRecord: isRecord,
+      closesWorkout: closesWorkout,
       onFocus: { focusedRow = $0 })
   }
 
@@ -713,7 +724,8 @@ struct WorkoutSessionScreen: View {
     if !wasClosed { store.finishWorkout() }
     closesAfterRecap = !wasClosed
     guard let opened = sessionRecap(store, on: data.date) else { return }
-    recap = RecapPresentation(date: data.date, recap: opened)
+    recap = RecapPresentation(
+      date: data.date, recap: opened, celebrating: wasClosed ? nil : "\(data.date.iso).\(workout.id)")
   }
 }
 
@@ -741,6 +753,7 @@ private struct RecapPresentation: Identifiable {
   let id = UUID()
   let date: CalendarDate
   let recap: WorkoutRecap
+  let celebrating: String?
 }
 
 @MainActor
@@ -759,9 +772,11 @@ private struct LiveWorkoutRecap: View {
   let date: CalendarDate
   let opened: WorkoutRecap
   let onClose: (() -> Void)?
+  let celebrating: String?
 
   var body: some View {
-    WorkoutRecapSheet(recap: sessionRecap(store, on: date) ?? opened, onClose: onClose)
+    WorkoutRecapSheet(
+      recap: sessionRecap(store, on: date) ?? opened, onClose: onClose, celebrating: celebrating)
   }
 }
 

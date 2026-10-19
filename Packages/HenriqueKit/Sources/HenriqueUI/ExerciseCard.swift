@@ -147,6 +147,10 @@ struct TrainingSetRow: View {
   @State private var tapCount = 0
   @State private var recordBeats = 0
   @State private var recordSettles = 0
+  /// O toque desta linha que acabou de marcar a série. Só ele comemora
+  /// recorde: o que aparece por conta de outra linha desmarcada, ou de uma
+  /// marcação reenviada, fica calado.
+  @State private var markTap: MarkTap?
   private enum Field: Hashable { case weight, reps }
   let key: SetKey
   private var kind: SetKind { key.kind }
@@ -166,6 +170,8 @@ struct TrainingSetRow: View {
   var reference: WeightReference? = nil
   /// A série passou a melhor marca do exercício. Só a sessão sabe disso.
   var isRecord: Bool = false
+  /// Marcar esta série fecha o treino, e o "encerrar" já vibra com `.success`.
+  var closesWorkout: Bool = false
   /// Chamado com o id da linha quando um campo dela ganha foco.
   var onFocus: ((String) -> Void)? = nil
 
@@ -239,6 +245,7 @@ struct TrainingSetRow: View {
             Button("próximo", systemImage: "chevron.right") { focused = .reps }
           } else if !currentDone {
             Button("feito", systemImage: "checkmark") {
+              markTap = MarkTap(closesWorkout: closesWorkout)
               commit(completed: true)
               focused = nil
               tapCount += 1
@@ -272,7 +279,7 @@ struct TrainingSetRow: View {
         if showsPrevious {
           Text(previous ?? "–")
             .font(.system(size: indexSize)).monospacedDigit()
-            .foregroundStyle(done ? tint.text.opacity(0.6) : Color.mutedInk)
+            .foregroundStyle(Color.mutedInk)
             .lineLimit(1).minimumScaleFactor(0.8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel(spokenPrevious)
@@ -314,6 +321,7 @@ struct TrainingSetRow: View {
 
   private var checkButton: some View {
     Button {
+      markTap = currentDone ? nil : MarkTap(closesWorkout: closesWorkout)
       commit(completed: !currentDone)
       focused = nil
       tapCount += 1
@@ -377,10 +385,17 @@ struct TrainingSetRow: View {
       .sensoryFeedback(trigger: tapCount) { _, _ in tapFeedback }
       .sensoryFeedback(.impact(weight: .heavy, intensity: 1), trigger: recordBeats)
       .sensoryFeedback(.success, trigger: recordSettles)
-      .onChange(of: isRecord) { old, new in
-        guard new, !old, done else { return }
+      // A marcação otimista muda `done` e `isRecord` no mesmo desenho, então
+      // aqui `isRecord` já é o da série recém-marcada.
+      .onChange(of: done) { _, marked in
+        guard let tap = markTap else { return }
+        markTap = nil
+        guard marked, isRecord else { return }
         recordBeats += 1
         AccessibilityNotification.Announcement("recorde").post()
+        // Na última série o `.success` do "encerrar" fecha o toque; o do
+        // recorde empilhava uma terceira vibração.
+        guard !tap.closesWorkout else { return }
         Task {
           try? await Task.sleep(for: .milliseconds(140))
           recordSettles += 1
@@ -543,4 +558,8 @@ extension Color {
 
 func weightLabel(_ kilograms: Double) -> String {
   kilograms.formatted(.number.precision(.fractionLength(0...1))) + " kg"
+}
+
+private struct MarkTap {
+  let closesWorkout: Bool
 }
