@@ -122,7 +122,9 @@ struct WorkoutSessionScreen: View {
               ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { index, exercise in
                 Group {
                   if openId == exercise.id {
-                    card(exercise: exercise, date: data.date, templateId: workout.id)
+                    card(
+                      exercise: exercise, date: data.date, templateId: workout.id,
+                      lastOpenSet: progress.total - progress.done == 1)
                       .transition(.opacity)
                   } else {
                     collapsed(exercise: exercise)
@@ -427,7 +429,9 @@ struct WorkoutSessionScreen: View {
     return "\(count), \(Formatting.trim(top.weightKg)) quilos por \(top.reps) da última vez"
   }
 
-  private func card(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
+  private func card(
+    exercise: DashboardExercise, date: CalendarDate, templateId: String, lastOpenSet: Bool
+  ) -> some View {
     let next = NextSet.next(in: exercise)
     let records = exercise.recordSets()
     return VStack(alignment: .leading, spacing: 0) {
@@ -461,7 +465,8 @@ struct WorkoutSessionScreen: View {
         ForEach(exercise.sets.work) { set in
           row(exercise: exercise, date: date, templateId: templateId, kind: .work,
             index: set.index, weight: set.weightKg, reps: set.reps, done: set.isDone,
-            failure: set.toFailure, next: next, isRecord: records.contains(set.index))
+            failure: set.toFailure, next: next, isRecord: records.contains(set.index),
+            closesWorkout: lastOpenSet && !set.isDone)
         }
       }
       .animation(Motion.resolve(Motion.expand, reduceMotion), value: exercise.sets.work.count)
@@ -519,7 +524,8 @@ struct WorkoutSessionScreen: View {
 
   private func row(
     exercise: DashboardExercise, date: CalendarDate, templateId: String, kind: SetKind,
-    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool, next: NextSet?, isRecord: Bool
+    index: Int, weight: Double, reps: Int, done: Bool, failure: Bool, next: NextSet?, isRecord: Bool,
+    closesWorkout: Bool = false
   ) -> some View {
     let isNext = next?.kind == kind && next?.index == index
     return TrainingSetRow(
@@ -531,6 +537,7 @@ struct WorkoutSessionScreen: View {
         : previousLabel(exercise.previous, index: index),
       reference: setReference(exercise, kind: kind, index: index),
       isRecord: isRecord,
+      closesWorkout: closesWorkout,
       onFocus: { focusedRow = $0 })
   }
 
