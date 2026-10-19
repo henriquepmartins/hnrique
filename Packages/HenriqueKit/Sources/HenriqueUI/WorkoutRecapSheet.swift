@@ -17,6 +17,7 @@ struct WorkoutRecapSheet: View {
       ScrollView {
         VStack(alignment: .leading, spacing: Space.l) {
           Text("treino encerrado").font(.title2.weight(.medium)).tracking(-0.8)
+          SyncStatusLine()
           HStack(alignment: .top, spacing: Space.m) {
             stat(duration, caption: "de treino")
             stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume", delta: delta)

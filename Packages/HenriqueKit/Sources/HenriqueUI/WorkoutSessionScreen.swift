@@ -182,7 +182,7 @@ struct WorkoutSessionScreen: View {
           Button("continuar treinando", role: .cancel) {}
         }
         .sheet(item: $recap, onDismiss: { if closesAfterRecap { onClose() } }) { presentation in
-          WorkoutRecapSheet(recap: presentation.recap)
+          LiveWorkoutRecap(date: presentation.date, opened: presentation.recap)
         }
         .sheet(isPresented: $adding) {
           SessionExercisePicker(
@@ -571,11 +571,8 @@ struct WorkoutSessionScreen: View {
     let wasClosed = store.finishedAt(workout.id, on: data.date) != nil
     if !wasClosed { store.finishWorkout() }
     closesAfterRecap = !wasClosed
-    let timing = WorkoutSessionTiming(
-      workout, anchor: store.startedAt(workout.id, on: data.date),
-      finishedAt: store.finishedAt(workout.id, on: data.date))
-    recap = RecapPresentation(
-      recap: WorkoutRecap(workout, timing: timing, records: data.records ?? [], on: data.date))
+    guard let opened = sessionRecap(store, on: data.date) else { return }
+    recap = RecapPresentation(date: data.date, recap: opened)
   }
 }
 
@@ -608,8 +605,30 @@ private struct SessionClock: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .largeTitle) private var clockSize = 30.0
+  let date: CalendarDate
   let timing: WorkoutSessionTiming?
   let name: String
+
+@MainActor
+private func sessionRecap(_ store: AcademiaStore, on date: CalendarDate) -> WorkoutRecap? {
+  guard let data = store.dashboard, data.date == date, let workout = data.workout else { return nil }
+  let timing = WorkoutSessionTiming(
+    workout, anchor: store.startedAt(workout.id, on: date),
+    finishedAt: store.finishedAt(workout.id, on: date))
+  return WorkoutRecap(workout, timing: timing, records: data.records ?? [], on: date)
+}
+
+/// O resumo refeito do painel a cada pintura. O recorde da última série chega
+/// com a resposta do servidor, que pode vir depois de a folha abrir.
+private struct LiveWorkoutRecap: View {
+  @Environment(AcademiaStore.self) private var store
+  let date: CalendarDate
+  let opened: WorkoutRecap
+
+  var body: some View {
+    WorkoutRecapSheet(recap: sessionRecap(store, on: date) ?? opened)
+  }
+}
 
   var body: some View {
     if let timing, timing.finishedAt == nil {
