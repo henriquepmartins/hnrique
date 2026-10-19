@@ -20,6 +20,7 @@ struct SetupScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var step = SetupStep.welcome
   @State private var weight: Double?
   @State private var fat: Double?
@@ -41,7 +42,10 @@ struct SetupScreen: View {
   @State private var savedBody: AddMeasurementInput?
   @State private var savedWorkout: SaveWorkoutInput?
   @State private var savedGoal: SetStrengthGoalInput?
-  private let days = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]
+  private var orderedWeekdays: [Int] {
+    let first = Calendar.trainingWeek.firstWeekday - 1
+    return (0..<7).map { (first + $0) % 7 }
+  }
 
   private func catalogItem(_ id: String) -> ExerciseCatalogItem? {
     store.dashboard?.exerciseCatalog.first { $0.id == id }
@@ -53,15 +57,29 @@ struct SetupScreen: View {
         VStack(alignment: .leading, spacing: Space.xxl) {
           PageHeading(title: step.title)
           fields
-          if let error { Text(error).font(.subheadline).foregroundStyle(.red).accessibilityAddTraits(.updatesFrequently) }
+            .id(step)
+            .transition(.opacity)
+          if let error {
+            Label(error, systemImage: "exclamationmark.triangle.fill").font(.subheadline).foregroundStyle(.red)
+          }
           HStack {
             if step != .welcome {
-              Button("voltar") { step = SetupStep(rawValue: step.rawValue - 1) ?? .welcome; error = nil }
-                .buttonStyle(.glass).controlSize(.large)
+              Button("voltar", systemImage: "arrow.left") {
+                step = SetupStep(rawValue: step.rawValue - 1) ?? .welcome; error = nil
+              }
+              .buttonStyle(.glass).controlSize(.large)
             }
             Spacer()
-            Button(saving ? "salvando" : step == .done ? "abrir treino" : "continuar") {
+            Button {
               Task { await advance() }
+            } label: {
+              if saving {
+                ProgressView().accessibilityLabel("salvando")
+              } else if step == .done {
+                Text("abrir treino")
+              } else {
+                Label("continuar", systemImage: "arrow.right")
+              }
             }.buttonStyle(.glassProminent).controlSize(.large)
           }
           if step != .welcome && step != .done {
@@ -76,6 +94,7 @@ struct SetupScreen: View {
           ProgressView(value: Double(step.rawValue + 1), total: 6).tint(accent.base)
             .accessibilityLabel("Etapa \(step.rawValue + 1) de 6")
         }.padding(Space.l).disabled(saving)
+        .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: step)
       }
       .background(Color.canvas.ignoresSafeArea())
       .navigationTitle("h&")
@@ -85,6 +104,10 @@ struct SetupScreen: View {
       }
       .keyboardDone()
       .interactiveDismissDisabled(saving)
+      .sensoryFeedback(.error, trigger: error) { _, new in new != nil }
+      .onChange(of: error) { _, new in
+        if let new { AccessibilityNotification.Announcement(new).post() }
+      }
       .sheet(isPresented: $picking) {
         ExercisePicker(catalog: store.dashboard?.exerciseCatalog ?? [], chosen: Set(exercises.map(\.exerciseId))) { item in
           let known = (store.dashboard?.exerciseCatalog ?? []).contains(where: { $0.id == item.id })
@@ -124,7 +147,7 @@ struct SetupScreen: View {
     case .workout:
       VStack(alignment: .leading, spacing: Space.l) {
         Picker("dia", selection: $weekday) {
-          ForEach(0..<7, id: \.self) { Text(days[$0]).tag($0) }
+          ForEach(orderedWeekdays, id: \.self) { Text(planWeekdays[$0]).tag($0) }
         }.onChange(of: weekday) { oldDay, _ in
           workoutDrafts[oldDay] = SetupWorkoutDraft(name: name, focus: focus, exercises: exercises)
           loadWorkout()
@@ -137,14 +160,24 @@ struct SetupScreen: View {
     case .exercises:
       VStack(spacing: Space.l) {
         ForEach($exercises) { $exercise in
+          // Da biblioteca, da wger ou criado na hora, o exercício ainda não
+          // está no catálogo do servidor e traz nome, grupo e foto consigo.
+          let item = catalogItem(exercise.exerciseId)
+          let group = item?.muscleGroup ?? exercise.muscleGroup
+          let equipment = item?.equipment ?? exercise.equipment
           PlanExerciseRow(exercise: $exercise,
-            name: catalogItem(exercise.exerciseId)?.name ?? exercise.exerciseId,
-            subtitle: catalogItem(exercise.exerciseId).map {
-              "\($0.muscleGroup.lowercased()) · \($0.equipment.lowercased())"
+            name: item?.name ?? exercise.name ?? exercise.exerciseId,
+            subtitle: group.flatMap { group in
+              equipment.map { "\(group.lowercased()) · \($0.lowercased())" }
             },
-            imageUrl: catalogItem(exercise.exerciseId)?.imageUrl,
-            onRemove: { exercises.removeAll { $0.exerciseId == exercise.exerciseId } })
+            imageUrl: item?.imageUrl ?? exercise.imageUrl,
+            onRemove: {
+              withAnimation(Motion.resolve(Motion.confirm, reduceMotion)) {
+                exercises.removeAll { $0.exerciseId == exercise.exerciseId }
+              }
+            })
             .padding(Space.xl).paperCard()
+            .transition(.opacity)
         }
         Button("adicionar", systemImage: "plus") { picking = true }
           .buttonStyle(.glass).controlSize(.large)
@@ -184,18 +217,13 @@ struct SetupScreen: View {
     store.dashboard?.weekPlan.first { $0.weekdays.contains(weekday) }
   }
 
-  /// O foco digitado, ou os grupos musculares dos exercícios escolhidos. Um
-  /// exercício vindo da wger não está no catálogo, então o grupo sai do próprio
-  /// item. Sem grupo nenhum, vai o nome do treino, porque o servidor pede pelo
-  /// menos dois caracteres.
+  /// Um exercício vindo da wger não está no catálogo, então o grupo sai do
+  /// próprio item.
   private var resolvedFocus: String {
-    let typed = focus.trimmingCharacters(in: .whitespaces)
-    if !typed.isEmpty { return typed }
-    let groups = exercises.compactMap { exercise in
-      catalogItem(exercise.exerciseId)?.muscleGroup ?? exercise.muscleGroup
-    }
-    let joined = Array(Set(groups)).sorted().joined(separator: ", ")
-    return Limits.workoutFocusLength.contains(joined.count) ? joined : name.trimmingCharacters(in: .whitespaces)
+    SaveWorkoutInput.focus(
+      typed: focus,
+      muscleGroups: exercises.compactMap { catalogItem($0.exerciseId)?.muscleGroup ?? $0.muscleGroup },
+      name: name)
   }
 
   private func loadWorkout() {
@@ -243,7 +271,11 @@ struct SetupScreen: View {
       let planned = plannedWorkout
       let input = SaveWorkoutInput(date: store.selectedDate, workoutTemplateId: planned?.id,
         weekdays: planned?.weekdays ?? [weekday], name: name,
-        focus: resolvedFocus, estimatedMinutes: WorkoutEstimate.minutes(plan: exercises), exercises: exercises)
+        focus: resolvedFocus, estimatedMinutes: WorkoutEstimate.minutes(plan: exercises),
+        // Treino novo nasce com uma cor que nenhum outro usa, como no editor.
+        // O que já existe manda nulo e o servidor mantém a dele.
+        color: planned == nil ? WorkoutTone.unused(among: store.weekPlan.map(\.tone.hex)).hex : nil,
+        exercises: exercises)
       if input != savedWorkout {
         guard await store.saveWorkout(input) else { error = store.banner; return }
         savedWorkout = input
