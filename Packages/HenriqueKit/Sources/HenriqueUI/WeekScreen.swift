@@ -427,6 +427,7 @@ private struct WorkoutWave: Shape {
 /// toque abre os controles. Sem `onToggle` fica sempre aberto.
 struct PlanExerciseRow: View {
   @Environment(\.accent) private var accent
+  @Environment(\.dynamicTypeSize) private var textSize
   @Binding var exercise: PlanExercise
   let name: String
   let subtitle: String?
@@ -435,12 +436,16 @@ struct PlanExerciseRow: View {
   let isExpanded: Bool
   let onToggle: (() -> Void)?
   let onRemove: (() -> Void)?
+  /// Um campo de carga ganhou o foco. Quem mostra a linha rola para ela ficar
+  /// acima do teclado.
+  let onFieldFocus: () -> Void
   @State private var history: ExerciseHistoryTarget?
 
   init(
     exercise: Binding<PlanExercise>, name: String, subtitle: String? = nil,
     imageUrl: String? = nil, isOrganizing: Bool = false, isExpanded: Bool = true,
-    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil
+    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil,
+    onFieldFocus: @escaping () -> Void = {}
   ) {
     _exercise = exercise
     self.name = name
@@ -450,6 +455,7 @@ struct PlanExerciseRow: View {
     self.isExpanded = isExpanded
     self.onToggle = onToggle
     self.onRemove = onRemove
+    self.onFieldFocus = onFieldFocus
   }
 
   private var showsControls: Bool { !isOrganizing && (isExpanded || onToggle == nil) }
@@ -492,9 +498,9 @@ struct PlanExerciseRow: View {
         Divider()
         ExerciseStepperRow(label: "reps máx.", value: $exercise.repsMax, range: Limits.planReps)
         Divider()
-        WeightStepper(weightKg: $exercise.startingWeightKg)
+        WeightStepper(weightKg: $exercise.startingWeightKg, onFocus: onFieldFocus)
         Divider()
-        PrepWeightRow(weightKg: $exercise.prepWeightKg)
+        PrepWeightRow(weightKg: $exercise.prepWeightKg, onFocus: onFieldFocus)
         Divider()
         RestStepperRow(seconds: $exercise.restSeconds)
         Divider()
@@ -527,35 +533,61 @@ struct PlanExerciseRow: View {
     .exerciseHistorySheet(item: $history)
   }
 
-  private var header: some View {
-    HStack(spacing: Space.m) {
-      // Organizando, a linha encolhe para caberem muitas na tela: foto menor,
-      // nome numa linha e sem o resumo.
-      ExerciseThumb(imageUrl: imageUrl, size: isOrganizing ? 36 : 48)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(name.lowercased()).font(.headline.weight(.semibold)).foregroundStyle(Color.ink)
-          .lineLimit(isOrganizing ? 1 : nil)
-        if onToggle != nil, !isOrganizing {
-          HStack(spacing: Space.xs) {
-            Text(exercise.summary).monospacedDigit()
-            if exercise.workToFailure {
-              Image(systemName: "bolt.fill").imageScale(.small).foregroundStyle(accent.base)
-            }
-          }
-          .font(.caption).foregroundStyle(Color.mutedInk)
-        } else if !isOrganizing, let subtitle {
-          Text(subtitle).font(.caption).foregroundStyle(Color.mutedInk)
+  /// Nos tamanhos de acessibilidade a foto sobe para cima do nome, e o nome e
+  /// o resumo ficam com a largura toda em vez de quebrar sílaba ao lado dela.
+  @ViewBuilder private var header: some View {
+    if textSize.isAccessibilitySize, !isOrganizing {
+      VStack(alignment: .leading, spacing: Space.s) {
+        HStack {
+          ExerciseThumb(imageUrl: imageUrl, size: 48)
+          Spacer(minLength: 0)
+          chevron
         }
+        titles
       }
-      Spacer(minLength: 0)
-      if onToggle != nil, !isOrganizing {
-        Image(systemName: "chevron.down")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(Color.mutedInk)
-          .rotationEffect(.degrees(isExpanded ? 180 : 0))
-          .frame(width: 44, height: 44)
+    } else {
+      HStack(spacing: Space.m) {
+        // Organizando, a linha encolhe para caberem muitas na tela: foto menor,
+        // nome numa linha e sem o resumo.
+        ExerciseThumb(imageUrl: imageUrl, size: isOrganizing ? 36 : 48)
+        titles
+        Spacer(minLength: 0)
+        chevron
       }
     }
+  }
+
+  private var titles: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(name.lowercased()).font(.headline.weight(.semibold)).foregroundStyle(Color.ink)
+        .lineLimit(isOrganizing ? 1 : nil)
+      if onToggle != nil, !isOrganizing {
+        summaryText.font(.caption).foregroundStyle(Color.mutedInk)
+      } else if !isOrganizing, let subtitle {
+        Text(subtitle).font(.caption).foregroundStyle(Color.mutedInk)
+      }
+    }
+  }
+
+  @ViewBuilder private var chevron: some View {
+    if onToggle != nil, !isOrganizing {
+      Image(systemName: "chevron.down")
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(Color.mutedInk)
+        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+        .frame(width: 44, height: 44)
+    }
+  }
+
+  /// O raio vem logo depois das repetições, no mesmo lugar do resumo da
+  /// sessão: "2 + 2 × 6–8 ⚡ · 1:30 · 37,5 kg". Um `Text` só, para quebrar
+  /// entre palavras quando o texto cresce.
+  private var summaryText: Text {
+    let parts = exercise.summaryParts
+    let bolt = exercise.workToFailure
+      ? Text(" \(Image(systemName: "bolt.fill"))").font(.caption2).foregroundStyle(accent.base) : Text("")
+    let tail = parts.tail.map { " · \($0)" }.joined()
+    return Text("\(parts.setsAndReps)\(bolt)\(tail)").monospacedDigit()
   }
 
   private var spokenSummary: String {
@@ -576,10 +608,17 @@ extension PlanExercise {
   /// repetições, o descanso e a carga inicial quando tem. Sem aquecimento,
   /// "2 × 6–10 · 1:30".
   var summary: String {
+    let parts = summaryParts
+    return ([parts.setsAndReps] + parts.tail).joined(separator: " · ")
+  }
+
+  /// As séries e a faixa, e depois o descanso e a carga quando tem.
+  var summaryParts: (setsAndReps: String, tail: [String]) {
     let sets = prepSets > 0 ? "\(prepSets) + \(workSets)" : "\(workSets)"
     let reps = repsMin == repsMax ? "\(repsMin)" : "\(repsMin)–\(repsMax)"
-    let base = "\(sets) × \(reps) · \(restClock(TimeInterval(restSeconds ?? defaultRestSeconds)))"
-    return startingWeightKg > 0 ? "\(base) · \(formatPrepWeight(startingWeightKg)) kg" : base
+    var tail = [restClock(TimeInterval(restSeconds ?? defaultRestSeconds))]
+    if startingWeightKg > 0 { tail.append("\(formatPrepWeight(startingWeightKg)) kg") }
+    return ("\(sets) × \(reps)", tail)
   }
 }
 
@@ -591,31 +630,58 @@ extension PlanExercise {
 /// "concluir" com o teclado aberto salvava sem ele.
 private struct PrepWeightRow: View {
   @Binding var weightKg: Double?
+  var onFocus: () -> Void = {}
   @State private var text = ""
   @FocusState private var focused: Bool
 
   var body: some View {
-    HStack(spacing: Space.s) {
-      Text("carga do aquecimento").font(.body)
-      Spacer(minLength: 8)
+    AdjustRow(label: "carga do aquecimento") {
       TextField("auto", text: $text)
         .focused($focused)
         .submitLabel(.done)
         .decimalInput()
         .multilineTextAlignment(.trailing)
         .font(.body.weight(.semibold)).monospacedDigit()
-        .frame(minWidth: 64)
+        .frame(width: 72)
         .accessibilityLabel("Carga do aquecimento em kg, vazio calcula sozinho")
         .accessibilityIdentifier("plano.carga-aquecimento")
       Text("kg").font(.callout).foregroundStyle(Color.mutedInk)
     }
-    .frame(minHeight: 48)
     .onChange(of: weightKg, initial: true) { _, new in
       if !focused { text = new.map(formatPrepWeight) ?? "" }
     }
     .onChange(of: text) { _, new in weightKg = parsePrepWeight(new) }
     .onChange(of: focused) { _, isFocused in
-      if !isFocused { text = weightKg.map(formatPrepWeight) ?? "" }
+      if isFocused { onFocus() } else { text = weightKg.map(formatPrepWeight) ?? "" }
+    }
+  }
+}
+
+/// Etiqueta de um lado e controle do outro, em 48 pt de altura. Nos tamanhos
+/// de acessibilidade a etiqueta vai para cima e o controle para baixo, para
+/// nenhuma palavra quebrar no meio.
+struct AdjustRow<Control: View>: View {
+  @Environment(\.dynamicTypeSize) private var textSize
+  let label: String
+  @ViewBuilder let control: Control
+
+  var body: some View {
+    if textSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: Space.xs) {
+        Text(label).font(.body)
+        HStack(spacing: Space.s) {
+          Spacer(minLength: 0)
+          control
+        }
+      }
+      .padding(.vertical, Space.xs)
+    } else {
+      HStack(spacing: Space.s) {
+        Text(label).font(.body).lineLimit(1)
+        Spacer(minLength: 8)
+        control
+      }
+      .frame(minHeight: 48)
     }
   }
 }
@@ -633,14 +699,15 @@ func parsePrepWeight(_ text: String) -> Double? {
 
 /// O descanso entre séries desse exercício, de 15 em 15 segundos.
 private struct RestStepperRow: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var seconds: Int?
 
   var body: some View {
     let value = seconds ?? defaultRestSeconds
-    HStack(spacing: Space.m) {
-      Text("descanso").font(.body)
-      Spacer(minLength: 8)
+    AdjustRow(label: "descanso") {
       Text(restClock(TimeInterval(value))).font(.body.weight(.semibold)).monospacedDigit()
+        .contentTransition(.numericText(value: Double(value)))
+        .animation(Motion.resolve(Motion.tap, reduceMotion), value: value)
         .frame(minWidth: 44, alignment: .trailing)
       Stepper(
         "", value: Binding(get: { value }, set: { seconds = $0 }), in: Limits.restSeconds, step: 15
@@ -649,7 +716,7 @@ private struct RestStepperRow: View {
       .accessibilityLabel("descanso")
       .accessibilityValue(restClock(TimeInterval(value)))
     }
-    .frame(minHeight: 48)
+    .sensoryFeedback(.selection, trigger: value)
   }
 }
 
@@ -657,15 +724,16 @@ private struct RestStepperRow: View {
 /// tem 48 de altura para o dedo acertar sem mirar, e o número em tabular não
 /// empurra o stepper quando vai de 9 para 10.
 struct ExerciseStepperRow: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let label: String
   @Binding var value: Int
   let range: ClosedRange<Int>
 
   var body: some View {
-    HStack(spacing: Space.m) {
-      Text(label).font(.body)
-      Spacer(minLength: 8)
+    AdjustRow(label: label) {
       Text("\(value)").font(.body.weight(.semibold)).monospacedDigit()
+        .contentTransition(.numericText(value: Double(value)))
+        .animation(Motion.resolve(Motion.tap, reduceMotion), value: value)
         .frame(minWidth: 32, alignment: .trailing)
         .accessibilityHidden(true)
       Stepper("", value: $value, in: range)
@@ -673,7 +741,7 @@ struct ExerciseStepperRow: View {
         .accessibilityLabel(label)
         .accessibilityValue("\(value)")
     }
-    .frame(minHeight: 48)
+    .sensoryFeedback(.selection, trigger: value)
   }
 }
 

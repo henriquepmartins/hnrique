@@ -538,7 +538,8 @@ private struct ExercisesStep: View {
               withAnimation(editAnimation) {
                 exercises.removeAll { $0.exerciseId == exerciseId }
               }
-            })
+            },
+            onFieldFocus: { reveal(exerciseId) })
             // Sem o modo organizar, a linha aberta levantada pelo toque longo
             // tem uns 500 pt e cobre as vizinhas. Só as fechadas arrastam.
             .deleteDisabled(isSaving || isOrganizing)
@@ -595,6 +596,18 @@ private struct ExercisesStep: View {
             muscleGroup: known ? nil : item.muscleGroup,
             equipment: known ? nil : item.equipment,
             imageUrl: known ? nil : item.imageUrl))
+      }
+    }
+  }
+
+  /// O teclado sobe e a barra dele ainda tira 48 pt do fim da lista depois
+  /// que a lista já rolou até o campo. Rolar de novo, com tudo assentado, põe o
+  /// fim da linha aberta rente à barra, e o campo de carga fica acima dela.
+  private func reveal(_ exerciseId: String) {
+    Task {
+      try? await Task.sleep(for: .milliseconds(350))
+      withAnimation(Motion.resolve(Motion.expand, reduceMotion)) {
+        scroll.scrollTo(exerciseId, anchor: .bottom)
       }
     }
   }
