@@ -35,6 +35,7 @@ private struct FocoAccessory: ViewModifier {
 
 private struct FocoAccessoryLabel: View {
   @Environment(FocoStore.self) private var foco
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     if let run = foco.ledger.running {
@@ -45,12 +46,18 @@ private struct FocoAccessoryLabel: View {
           foco.isShowingRun = true
         } label: {
           HStack(spacing: 10) {
-            Circle().fill(Color(hexString: run.track.color)).frame(width: 10, height: 10)
+            if run.isPaused {
+              Image(systemName: "pause.fill").imageScale(.small).foregroundStyle(.secondary)
+            } else {
+              Circle().fill(Color(hexString: run.track.color)).frame(width: 10, height: 10)
+            }
             Text(run.track.name).lineLimit(1)
             Spacer(minLength: 0)
-            Text(run.isPaused ? "pausado" : FocoFormat.clock(run.seconds(at: now)))
+            Text(FocoFormat.clock(run.seconds(at: now)))
               .monospacedDigit()
               .contentTransition(.numericText())
+              .animation(reduceMotion ? nil : Motion.roll, value: Int(run.seconds(at: now)))
+              .foregroundStyle(run.isPaused ? .secondary : .primary)
           }
           .font(.subheadline.weight(.medium))
           .padding(.horizontal, 16)
@@ -58,7 +65,9 @@ private struct FocoAccessoryLabel: View {
         }
         .buttonStyle(PressScaleStyle(scale: 0.98))
         .accessibilityLabel("foco em \(run.track.name)")
-        .accessibilityValue(run.isPaused ? "pausado" : FocoFormat.spoken(run.seconds(at: now)))
+        .accessibilityValue(
+          run.isPaused
+            ? "pausado, \(FocoFormat.spoken(run.seconds(at: now)))" : FocoFormat.spoken(run.seconds(at: now)))
         .accessibilityHint("abre o cronômetro")
         .accessibilityIdentifier("foco.faixa")
       }

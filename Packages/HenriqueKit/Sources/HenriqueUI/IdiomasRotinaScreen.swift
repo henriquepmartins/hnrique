@@ -86,6 +86,7 @@ public struct IdiomasRotinaScreen: View {
           }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
+        .sensoryFeedback(.impact(weight: .light), trigger: selection)
         .frame(minHeight: 420)
         .onChange(of: selection) { _, next in
           speech.stop()
@@ -128,7 +129,7 @@ public struct IdiomasRotinaScreen: View {
       .id(sessionFinished)
       .transition(.opacity)
       if !sessionFinished {
-        Button("concluir sessão") { Task { await finish() } }
+        Button("concluir sessão", systemImage: "checkmark.circle") { Task { await finish() } }
           .buttonStyle(.glassProminent)
           .controlSize(.large)
           .tint(.idiomasTeal)
@@ -136,6 +137,7 @@ public struct IdiomasRotinaScreen: View {
       }
     }
     .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: sessionFinished)
+    .sensoryFeedback(.success, trigger: sessionFinished) { _, finished in finished }
   }
 
   private func finish() async {
@@ -162,11 +164,20 @@ public struct IdiomasRotinaScreen: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         Button {
-          speech.speak(drill.promptDE)
-          reduce(.play, drill: drill, drills: drills)
+          if speech.isSpeaking {
+            speech.stop()
+          } else {
+            speech.speak(drill.promptDE)
+            reduce(.play, drill: drill, drills: drills)
+          }
         } label: {
-          Label("ouvir", systemImage: "play.fill").padding(.leading, -1.5)
+          if speech.isSpeaking {
+            Label("parar", systemImage: "stop.fill")
+          } else {
+            Label("ouvir", systemImage: "speaker.wave.2")
+          }
         }
+        .contentTransition(.symbolEffect(.replace))
         .buttonStyle(.glass)
         .controlSize(.large)
         .tint(.idiomasTeal)
@@ -176,7 +187,7 @@ public struct IdiomasRotinaScreen: View {
         if drill.kind.needsAI {
           produceRow(drill: drill, drills: drills)
         } else {
-          Button("marcar feito") {
+          Button("marcar feito", systemImage: "checkmark") {
             Task { await completeAndAdvance(drill: drill, drills: drills, text: "", micUsed: micArmed) }
           }
           .buttonStyle(.glassProminent)
@@ -188,7 +199,7 @@ public struct IdiomasRotinaScreen: View {
           StudyCallout(
             icon: "arrow.triangle.2.circlepath", tone: .yellow,
             title: "resposta não salva", detail: "o treino mudou em outro aparelho")
-          Button("atualizar") {
+          Button("atualizar", systemImage: "arrow.clockwise") {
             session = .empty
             selection = 0
             Task { await store.loadRoutine(force: true) }
@@ -225,7 +236,7 @@ public struct IdiomasRotinaScreen: View {
           title: "sem microfone",
           detail: "a repetição vira só escuta.")
         #if os(iOS)
-          Button("abrir ajustes") {
+          Button("abrir ajustes", systemImage: "gear") {
             if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
           }
           .buttonStyle(.glass)
@@ -233,7 +244,9 @@ public struct IdiomasRotinaScreen: View {
           .tint(Color.studyInk)
         #endif
       } else {
-        Toggle("microfone", isOn: micBinding(drill: drill, drills: drills))
+        Toggle(isOn: micBinding(drill: drill, drills: drills)) {
+          Label("microfone", systemImage: "mic")
+        }
           .font(.subheadline)
       }
     }
@@ -260,7 +273,7 @@ public struct IdiomasRotinaScreen: View {
           icon: "checkmark.circle",
           title: correction.fixedDE,
           detail: "\(correction.correctionPT) · \(FocoFormat.count(correction.score, "ponto", "pontos"))")
-        Button("próximo") {
+        Button("próximo", systemImage: "arrow.right") {
           Task {
             await completeAndAdvance(drill: drill, drills: drills, text: texts[drill.id] ?? "", micUsed: false)
           }
@@ -276,7 +289,9 @@ public struct IdiomasRotinaScreen: View {
           detail: "valeu do mesmo jeito. avalie para seguir.")
         selfGradeRow(drill: drill, drills: drills)
       } else {
-        Button("corrigir") { Task { await correct(drill: drill, drills: drills) } }
+        Button("corrigir", systemImage: "text.badge.checkmark") {
+          Task { await correct(drill: drill, drills: drills) }
+        }
           .buttonStyle(.glassProminent)
           .controlSize(.large)
           .tint(.idiomasTeal)
@@ -312,12 +327,13 @@ public struct IdiomasRotinaScreen: View {
         Button {
           Task {
             await completeAndAdvance(
-              drill: drill, drills: drills, text: texts[drill.id] ?? "", micUsed: false)
+              drill: drill, drills: drills, text: texts[drill.id] ?? "", micUsed: false,
+              rating: rating)
           }
         } label: {
           VStack(spacing: 2) {
-            Text(rating.label).font(.system(size: 14, weight: .semibold))
-            Text(rating.localHint).font(.system(size: 11)).foregroundStyle(Color.studyInk40)
+            Text(rating.label).font(.subheadline.weight(.semibold))
+            Text(rating.localHint).font(.caption2).foregroundStyle(Color.studyInk60)
           }
           .multilineTextAlignment(.center)
           .foregroundStyle(rating == .facil ? .white : Color.studyInk)
@@ -339,12 +355,13 @@ public struct IdiomasRotinaScreen: View {
     session = session.reduce(action, kind: drill.kind, total: drills.count)
   }
 
-  private func completeAndAdvance(drill: LanguageDrill, drills: [LanguageDrill], text: String, micUsed: Bool)
-    async
-  {
+  private func completeAndAdvance(
+    drill: LanguageDrill, drills: [LanguageDrill], text: String, micUsed: Bool,
+    rating: FlashcardRating? = nil
+  ) async {
     completingIds.insert(drill.id)
     defer { completingIds.remove(drill.id) }
-    let saved = await store.complete(drill: drill, text: text, micUsed: micUsed)
+    let saved = await store.complete(drill: drill, text: text, micUsed: micUsed, rating: rating)
     if saved {
       advance(drills: drills, drill: drill)
     } else if !store.conflictDrillIds.contains(drill.id) {

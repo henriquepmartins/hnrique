@@ -74,12 +74,15 @@ public struct FocoRun: Codable, Hashable, Sendable {
   public var lastSeenAt: Date?
   /// Quando alguém respondeu que ainda está ali.
   public var confirmedAt: Date?
+  /// O bloco de 15, 25 ou 50 min. Com alvo, a corrida não conta além dele.
+  public var target: TimeInterval?
 
   public init(
     track: FocoTrack, startedAt: Date, serverSessionId: String? = nil,
     stretches: [FocoStretch] = [], runningSince: Date? = nil, lastSeenAt: Date? = nil,
-    confirmedAt: Date? = nil
+    confirmedAt: Date? = nil, target: TimeInterval? = nil
   ) {
+    self.target = target
     self.track = track
     self.startedAt = startedAt
     self.serverSessionId = serverSessionId
@@ -98,6 +101,7 @@ public struct FocoRun: Codable, Hashable, Sendable {
     serverSessionId = try container.decodeIfPresent(String.self, forKey: .serverSessionId)
     lastSeenAt = try container.decodeIfPresent(Date.self, forKey: .lastSeenAt)
     confirmedAt = try container.decodeIfPresent(Date.self, forKey: .confirmedAt)
+    target = try container.decodeIfPresent(TimeInterval.self, forKey: .target)
     if let stretches = try container.decodeIfPresent([FocoStretch].self, forKey: .stretches) {
       self.stretches = stretches
       runningSince = try container.decodeIfPresent(Date.self, forKey: .runningSince)
@@ -109,13 +113,34 @@ public struct FocoRun: Codable, Hashable, Sendable {
 
   public var isPaused: Bool { runningSince == nil }
 
-  public func seconds(at now: Date) -> TimeInterval {
-    stretches.reduce(0) { $0 + $1.seconds } + (runningSince.map { max(0, now.timeIntervalSince($0)) } ?? 0)
+  public func remaining(at now: Date) -> TimeInterval? {
+    target.map { max(0, $0 - seconds(at: now)) }
   }
+
+  public func seconds(at now: Date) -> TimeInterval {
+    let now = countedUntil(now)
+    return closedSeconds + (runningSince.map { max(0, now.timeIntervalSince($0)) } ?? 0)
+  }
+
+  /// O instante em que o bloco completa o alvo, se está rodando. Pausado, o
+  /// alvo não chega.
+  public var targetReachedAt: Date? {
+    guard let target, let runningSince else { return nil }
+    return runningSince.addingTimeInterval(max(0, target - closedSeconds))
+  }
+
+  /// Até onde a corrida conta: `now`, ou o fim do bloco se ele já passou.
+  public func countedUntil(_ now: Date) -> Date {
+    guard let targetReachedAt else { return now }
+    return min(now, targetReachedAt)
+  }
+
+  private var closedSeconds: TimeInterval { stretches.reduce(0) { $0 + $1.seconds } }
 
   /// Os trechos até `now`, com o aberto fechado ali, cortados em cada
   /// meia-noite. Cada pedaço pertence a um dia só.
   public func pieces(until now: Date, calendar: Calendar) -> [FocoStretch] {
+    let now = countedUntil(now)
     var all = stretches
     if let runningSince, now > runningSince {
       all.append(FocoStretch(start: runningSince, end: now))
@@ -225,13 +250,16 @@ public struct FocoLedger: Codable, Hashable, Sendable {
     goalDirty = try container.decodeIfPresent(Bool.self, forKey: .goalDirty) ?? false
   }
 
-  public mutating func start(_ track: FocoTrack, at now: Date, calendar: Calendar) {
+  public mutating func start(
+    _ track: FocoTrack, target: TimeInterval? = nil, at now: Date, calendar: Calendar
+  ) {
     if running != nil { stop(at: now, calendar: calendar) }
-    running = FocoRun(track: track, startedAt: now, runningSince: now, lastSeenAt: now)
+    running = FocoRun(
+      track: track, startedAt: now, runningSince: now, lastSeenAt: now, target: target)
   }
 
   public mutating func pause(at now: Date) {
-    guard let since = running?.runningSince else { return }
+    guard let since = running?.runningSince, let now = running?.countedUntil(now) else { return }
     if now > since { running?.stretches.append(FocoStretch(start: since, end: now)) }
     running?.runningSince = nil
   }
@@ -395,25 +423,35 @@ public struct FocoLedger: Codable, Hashable, Sendable {
     return FocoStreak(current: current, best: best, isTodayDone: isTodayDone)
   }
 
-  public func days(endingOn today: CalendarDate, count: Int, now: Date, calendar: Calendar)
-    -> [FocoDay]
+  /// A grade de `count` semanas terminando na de hoje, uma coluna por semana
+  /// começando no primeiro dia da semana do calendário. Os dias depois de hoje
+  /// ficam nulos, para cada linha ser sempre o mesmo dia da semana.
+  public func weeks(endingOn today: CalendarDate, count: Int, now: Date, calendar: Calendar)
+    -> [[FocoDay?]]
   {
     let totals = secondsByDay(now: now, calendar: calendar)
-    let goal = Double(max(dailyGoalMinutes, 1)) * 60
-    return (0..<count).reversed().map { back in
-      let date = today.adding(days: -back, in: calendar)
-      let seconds = totals[date] ?? 0
-      return FocoDay(date: date, seconds: seconds, level: Self.level(seconds: seconds, goal: goal))
+    let offset = (today.weekday(in: calendar) + 1 - calendar.firstWeekday + 7) % 7
+    let first = today.adding(days: -offset - 7 * (count - 1), in: calendar)
+    return (0..<count).map { week in
+      (0..<7).map { column -> FocoDay? in
+        let date = first.adding(days: week * 7 + column, in: calendar)
+        guard date <= today else { return nil }
+        let seconds = totals[date] ?? 0
+        return FocoDay(date: date, seconds: seconds, level: Self.level(seconds: seconds))
+      }
     }
   }
 
-  static func level(seconds: TimeInterval, goal: TimeInterval) -> Int {
-    guard seconds > 0 else { return 0 }
-    let fraction = seconds / goal
-    if fraction < 0.25 { return 1 }
-    if fraction < 0.5 { return 2 }
-    if fraction < 1 { return 3 }
-    return 4
+  /// Faixas fixas de minutos. Contra a meta, trocar 2 h por 4 h clareava o
+  /// histórico inteiro.
+  static func level(seconds: TimeInterval) -> Int {
+    switch seconds / 60 {
+    case ...0: 0
+    case ..<Double(dayCountsMinutes): 1
+    case ..<60: 2
+    case ..<120: 3
+    default: 4
+    }
   }
 
   private func seconds(on day: CalendarDate, track id: String?, now: Date, calendar: Calendar)

@@ -1,125 +1,18 @@
 import HenriqueCore
 import SwiftUI
-import UserNotifications
 
 #if canImport(UIKit)
   import UIKit
 #endif
 
-// MARK: - Estado
-
-/// Os quatro momentos do bloco. O tempo corrido sai sempre da diferença entre
-/// dois instantes, nunca de uma contagem de ticks, então o app pode ficar
-/// minutos no segundo plano sem o cronômetro atrasar, e o bloco gravado no
-/// disco volta certo depois de o sistema matar o app.
-private enum FocusSessionState: Codable, Hashable {
-  case idle(subjectId: String?, minutes: Int)
-  case running(
-    session: StudySession, subjectId: String?, minutes: Int, since: Date, before: TimeInterval)
-  case paused(session: StudySession, subjectId: String?, minutes: Int, elapsed: TimeInterval)
-  case done(subjectId: String?, minutes: Int, completed: Int)
-
-  enum Phase: Hashable {
-    case idle, timing, done
-  }
-
-  var phase: Phase {
-    switch self {
-    case .idle: .idle
-    case .running, .paused: .timing
-    case .done: .done
-    }
-  }
-
-  var subjectId: String? {
-    switch self {
-    case .idle(let subjectId, _): subjectId
-    case .running(_, let subjectId, _, _, _): subjectId
-    case .paused(_, let subjectId, _, _): subjectId
-    case .done(let subjectId, _, _): subjectId
-    }
-  }
-
-  var minutes: Int {
-    switch self {
-    case .idle(_, let minutes): minutes
-    case .running(_, _, let minutes, _, _): minutes
-    case .paused(_, _, let minutes, _): minutes
-    case .done(_, let minutes, _): minutes
-    }
-  }
-
-  var session: StudySession? {
-    switch self {
-    case .running(let session, _, _, _, _), .paused(let session, _, _, _): session
-    case .idle, .done: nil
-    }
-  }
-
-  var isRunning: Bool {
-    if case .running = self { return true }
-    return false
-  }
-
-  var total: TimeInterval { Double(minutes) * 60 }
-
-  func elapsed(at now: Date) -> TimeInterval {
-    switch self {
-    case .running(_, _, _, let since, let before): max(0, before + now.timeIntervalSince(since))
-    case .paused(_, _, _, let elapsed): elapsed
-    case .idle, .done: 0
-    }
-  }
-
-  func remaining(at now: Date) -> TimeInterval { max(0, total - elapsed(at: now)) }
-
-  func progress(at now: Date) -> Double {
-    total == 0 ? 0 : min(1, elapsed(at: now) / total)
-  }
-
-  mutating func pick(subjectId: String?) {
-    guard case .idle(_, let minutes) = self else { return }
-    self = .idle(subjectId: subjectId, minutes: minutes)
-  }
-
-  mutating func block(minutes: Int) {
-    guard case .idle(let subjectId, _) = self else { return }
-    self = .idle(subjectId: subjectId, minutes: minutes)
-  }
-
-  mutating func started(_ session: StudySession, at now: Date) {
-    guard case .idle(let subjectId, let minutes) = self else { return }
-    self = .running(
-      session: session, subjectId: subjectId, minutes: minutes, since: now, before: 0)
-  }
-
-  mutating func pause(at now: Date) {
-    guard case .running(let session, let subjectId, let minutes, _, _) = self else { return }
-    self = .paused(
-      session: session, subjectId: subjectId, minutes: minutes, elapsed: elapsed(at: now))
-  }
-
-  mutating func resume(at now: Date) {
-    guard case .paused(let session, let subjectId, let minutes, let elapsed) = self else { return }
-    self = .running(
-      session: session, subjectId: subjectId, minutes: minutes, since: now, before: elapsed)
-  }
-
-  mutating func finish(completed: Int) {
-    switch self {
-    case .running(_, let subjectId, let minutes, _, _),
-      .paused(_, let subjectId, let minutes, _):
-      self = .done(subjectId: subjectId, minutes: minutes, completed: completed)
-    case .idle, .done:
-      break
-    }
-  }
-}
-
 // MARK: - Tela
 
+/// O bloco de 15, 25 ou 50 min. Não tem relógio próprio: começa uma corrida do
+/// foco com alvo, então o tempo entra no dia, na chama, na meta e na grade, e a
+/// corrida aberta em qualquer lugar do app aparece aqui.
 public struct FocusSessionScreen: View {
   @Environment(EstudosStore.self) private var store
+  @Environment(FocoStore.self) private var foco
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -129,22 +22,28 @@ public struct FocusSessionScreen: View {
   @ScaledMetric(relativeTo: .body) private var rowSize = 16.0
   @ScaledMetric(relativeTo: .subheadline) private var metaSize = 14.0
 
-  @State private var state = FocusBlockFile.load() ?? .idle(subjectId: nil, minutes: 25)
+  @State private var pickedSubjectId: String?
+  @State private var minutes = 25
   @State private var quickNote = ""
-  @State private var noteSession: StudySession?
-  @State private var busy = false
   @State private var savingNote = false
   @State private var noteSaved = false
-  @State private var startFailed = false
-  @State private var finishFailed = false
   @State private var noteFailed = false
+  @State private var noteResult: FocoResult?
   @State private var askLeave = false
-  @State private var pendingSessionID: String?
 
   private let onReview: () -> Void
 
   public init(onReview: @escaping () -> Void) {
     self.onReview = onReview
+  }
+
+  private enum Phase: Hashable {
+    case idle, timing, done
+  }
+
+  private var phase: Phase {
+    if foco.result != nil { return .done }
+    return foco.isRunning ? .timing : .idle
   }
 
   public var body: some View {
@@ -175,24 +74,25 @@ public struct FocusSessionScreen: View {
     .foregroundStyle(Color.studyCream)
     .tint(Color.studyCream)
     .preferredColorScheme(.dark)
-    .task {
-      // O bloco que venceu com o app fechado termina ao abrir, sem esperar o
-      // relógio da tela mudar de valor.
-      if state.isRunning, state.remaining(at: .now) == 0 { await finish() }
-      await store.loadSubjects()
+    .task { await store.loadSubjects() }
+    .onAppear { foco.isBlockOpen = true }
+    .onDisappear {
+      foco.isBlockOpen = false
+      keepScreenAwake(false)
+      if foco.result != nil { foco.closeResult() }
     }
-    .onChange(of: state.isRunning, initial: true) { _, running in
-      keepScreenAwake(running)
+    .onChange(of: foco.ledger.running.map { !$0.isPaused } ?? false, initial: true) { _, counting in
+      keepScreenAwake(counting)
     }
-    .onChange(of: state) {
-      FocusBlockFile.save(state)
-      FocusBlockAlarm.update(for: state)
+    .onChange(of: foco.result) { _, result in
+      guard let result else { return }
+      noteResult = result
+      Task { await saveQuickNote(result) }
     }
-    .onDisappear { keepScreenAwake(false) }
     .confirmationDialog(
-      "descartar sessão?", isPresented: $askLeave, titleVisibility: .visible
+      "descartar nota?", isPresented: $askLeave, titleVisibility: .visible
     ) {
-      Button("descartar", role: .destructive) { discard() }
+      Button("descartar", role: .destructive) { close() }
       Button("continuar", role: .cancel) {}
     }
   }
@@ -201,7 +101,7 @@ public struct FocusSessionScreen: View {
 
   private var topBar: some View {
     HStack(spacing: 0) {
-      IconButton(title: "sair do foco", systemImage: "xmark", size: 20, action: requestClose)
+      IconButton(title: "fechar", systemImage: "xmark", size: 20, action: requestClose)
         .tint(Color.studyCream)
       Spacer(minLength: 0)
     }
@@ -212,14 +112,14 @@ public struct FocusSessionScreen: View {
 
   @ViewBuilder private var stateSection: some View {
     Group {
-      switch state.phase {
+      switch phase {
       case .idle: idleSection
       case .timing: timingSection
       case .done: doneSection
       }
     }
-    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: state.phase)
-    .sensoryFeedback(.success, trigger: state.phase) { _, phase in phase == .done }
+    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: phase)
+    .sensoryFeedback(.success, trigger: phase) { _, phase in phase == .done }
   }
 
   private var idleSection: some View {
@@ -228,26 +128,21 @@ public struct FocusSessionScreen: View {
       subjectPicker
         .padding(.top, Space.xxl)
       StudyWrap(spacing: 8, lineSpacing: 8) {
-        ForEach([15, 25, 50], id: \.self) { minutes in
-          FocusSessionCapsule(active: minutes == state.minutes) {
-            state.block(minutes: minutes)
+        ForEach([15, 25, 50], id: \.self) { option in
+          FocusSessionCapsule(active: option == minutes) {
+            minutes = option
           } label: {
-            Text("\(minutes) min")
+            Text("\(option) min")
           }
-          .disabled(busy || startFailed)
         }
       }
       .padding(.top, Space.xxl)
-      FocusSessionGradientButton(
-        title: "começar", systemImage: "play.fill",
-        action: { Task { await start() } })
-        .disabled(busy)
+      FocusSessionGradientButton(title: "começar", systemImage: "play.fill", action: start)
+        .disabled(pickedSubject == nil)
         .padding(.top, Space.xxl)
-      if startFailed {
-        metaLine("não abriu, tente de novo")
-          .padding(.top, 10)
-      }
     }
+    .sensoryFeedback(.selection, trigger: minutes)
+    .sensoryFeedback(.selection, trigger: pickedSubjectId)
     .transition(.opacity)
   }
 
@@ -257,52 +152,69 @@ public struct FocusSessionScreen: View {
       ProgressView()
         .frame(maxWidth: .infinity, alignment: .leading)
     case .failed(let message):
-      metaLine(message)
+      StudyEmptyState(
+        icon: "exclamationmark.triangle", title: "não carregou", detail: message, cream: true,
+        action: (label: "tentar de novo", perform: { Task { await store.loadSubjects(force: true) } }))
     case .ready(let list) where list.isEmpty:
       StudyEmptyState(icon: "book", title: "sem matérias", cream: true)
     case .ready(let list):
       StudyWrap(spacing: 8, lineSpacing: 8) {
         ForEach(list) { item in
-          FocusSessionCapsule(active: item.id == state.subjectId, leadingGlyph: true) {
-            state.pick(subjectId: item.id == state.subjectId ? nil : item.id)
+          FocusSessionCapsule(active: item.id == pickedSubject?.id, leadingGlyph: true) {
+            pickedSubjectId = item.id
           } label: {
             HStack(spacing: 8) {
               StudyDot(color: item.color)
               Text(item.name)
             }
           }
-          .disabled(busy || startFailed)
         }
       }
     }
   }
 
-  private var timingSection: some View {
-    FocusSessionTicker(since: tickAnchor) { now in
-      timingReadout(now: now)
+  @ViewBuilder private var timingSection: some View {
+    if let run = foco.ledger.running {
+      FocoTicker(since: foco.ledger.tickAnchor { run.seconds(at: $0) }) { now in
+        timingReadout(run: run, now: now)
+      }
+      .sensoryFeedback(.impact(weight: .light), trigger: run.isPaused)
+      .transition(.opacity)
     }
-    .transition(.opacity)
   }
 
-  private func timingReadout(now: Date) -> some View {
-    let remaining = state.remaining(at: now)
+  /// Com alvo o relógio conta para baixo, como o bloco sempre contou. A corrida
+  /// livre aberta pelo foco conta para cima.
+  private func timingReadout(run: FocoRun, now: Date) -> some View {
+    let elapsed = run.seconds(at: now)
+    let remaining = run.remaining(at: now)
+    let shown = remaining ?? elapsed
     return VStack(alignment: .leading, spacing: 0) {
-      if let subjectName { label(subjectName, color: .studyMarigold) }
-      title(isPaused ? "pausado" : "\(state.minutes) min")
-      Text.clock(StudyFormat.clock(remaining))
+      label(run.track.name, color: .studyMarigold)
+      title(run.isPaused ? "pausado" : run.target.map { "\(Int($0 / 60)) min" } ?? "foco")
+      Text.clock(StudyFormat.clock(shown))
         .font(.system(size: timerSize, weight: .semibold).leading(.tight))
         .tracking(-timerSize * 0.011)
         .lineLimit(1)
         .minimumScaleFactor(0.4)
         .offset(x: -3)
+        .contentTransition(.numericText())
+        .animation(reduceMotion ? nil : Motion.roll, value: Int(shown.rounded()))
         .padding(.top, Space.xxl)
-        .accessibilityLabel("faltam \(StudyFormat.minutes(Int(remaining / 60)))")
-      progressBar(fraction: state.progress(at: now))
-        .padding(.top, 24)
+        .accessibilityLabel(
+          remaining.map { "faltam \(StudyFormat.minutes(Int($0 / 60)))" }
+            ?? FocoFormat.spoken(elapsed))
+        .accessibilityValue(run.isPaused ? "pausado" : "")
+      if let target = run.target {
+        progressBar(fraction: min(1, elapsed / target))
+          .padding(.top, 24)
+      }
       HStack(spacing: 12) {
-        Text("\(StudyFormat.minutes(Int(state.elapsed(at: now) / 60))) feitos")
+        Text("\(StudyFormat.minutes(Int(elapsed / 60))) feitos")
         Spacer(minLength: 0)
-        Text("até \(StudyFormat.hour(now.addingTimeInterval(remaining)))")
+        if let remaining, !run.isPaused {
+          Text("até \(StudyFormat.hour(now.addingTimeInterval(remaining)))")
+        }
       }
       .font(.system(size: metaSize))
       .monospacedDigit()
@@ -310,57 +222,44 @@ public struct FocusSessionScreen: View {
       .padding(.top, 10)
       StudyWrap(spacing: 8, lineSpacing: 8) {
         FocusSessionCapsule(leadingGlyph: true) {
-          if isPaused {
-            state.resume(at: .now)
-          } else {
-            state.pause(at: .now)
-          }
+          if run.isPaused { foco.resume() } else { foco.pause() }
         } label: {
           HStack(spacing: 6) {
-            Image(systemName: isPaused ? "play.fill" : "pause.fill").font(.system(size: 16))
-            Text(isPaused ? "retomar" : "pausar")
+            Image(systemName: run.isPaused ? "play.fill" : "pause.fill").font(.system(size: 16))
+            Text(run.isPaused ? "retomar" : "pausar")
           }
         }
-        .disabled(busy)
-        FocusSessionGradientButton(
-          title: finishTitle, systemImage: "checkmark", action: { Task { await finish() } })
-          .disabled(busy)
+        FocusSessionGradientButton(title: "concluir", systemImage: "checkmark") { foco.stop() }
       }
       .padding(.top, Space.xxl)
-      if finishFailed {
-        metaLine("não salvou, tempo pausado")
-          .padding(.top, 10)
-      }
-    }
-    .onChange(of: remaining == 0) { _, expired in
-      guard expired, state.isRunning else { return }
-      Task { await finish() }
     }
   }
 
-  private var doneSection: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      if let subjectName { label(subjectName, color: .studyMarigold) }
-      title("concluído")
-      Text.clock(StudyFormat.minutes(completedMinutes))
-        .font(.system(size: timerSize, weight: .semibold).leading(.tight))
-        .tracking(-timerSize * 0.011)
-        .lineLimit(1)
-        .minimumScaleFactor(0.4)
-        .offset(x: -3)
+  @ViewBuilder private var doneSection: some View {
+    if let result = foco.result {
+      VStack(alignment: .leading, spacing: 0) {
+        label(result.track.name, color: .studyMarigold)
+        title(result.entries.isEmpty ? "curta demais" : "concluído")
+        Text.clock(StudyFormat.minutes(Int(result.seconds / 60)))
+          .font(.system(size: timerSize, weight: .semibold).leading(.tight))
+          .tracking(-timerSize * 0.011)
+          .lineLimit(1)
+          .minimumScaleFactor(0.4)
+          .offset(x: -3)
+          .padding(.top, Space.xxl)
+        if let noteStatus {
+          Text(noteStatus)
+            .font(.system(size: metaSize))
+            .foregroundStyle(Color.studyCream50)
+            .padding(.top, 10)
+        }
+        FocusSessionCapsule(leadingGlyph: true, action: close) {
+          Label("voltar", systemImage: "chevron.left")
+        }
         .padding(.top, Space.xxl)
-      if let noteStatus {
-        Text(noteStatus)
-          .font(.system(size: metaSize))
-          .foregroundStyle(Color.studyCream50)
-          .padding(.top, 10)
       }
-      FocusSessionCapsule(action: { dismiss() }) {
-        Text("voltar")
-      }
-      .padding(.top, Space.xxl)
+      .transition(.opacity)
     }
-    .transition(.opacity)
   }
 
   // MARK: Peças de baixo
@@ -374,7 +273,7 @@ public struct FocusSessionScreen: View {
       HStack(spacing: 12) {
         StudyEyebrow("nota", cream: true)
         Spacer(minLength: 0)
-        if let subjectName { StudyPill(tone: .cream, text: subjectName) }
+        if let noteTrack { StudyPill(tone: .cream, text: noteTrack) }
       }
       TextEditor(text: $quickNote)
         .font(.system(size: rowSize))
@@ -391,7 +290,7 @@ public struct FocusSessionScreen: View {
               .allowsHitTesting(false)
           }
         }
-        .disabled(busy || savingNote || (state.phase == .done && noteSaved))
+        .disabled(savingNote || (phase == .done && noteSaved))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(16)
@@ -401,16 +300,16 @@ public struct FocusSessionScreen: View {
   private var noteRetry: some View {
     VStack(alignment: .leading, spacing: 12) {
       metaLine("nota não salva")
-      FocusSessionCapsule(action: { Task { await retryNote() } }) {
-        Text("tentar de novo")
+      FocusSessionCapsule(leadingGlyph: true, action: { Task { await retryNote() } }) {
+        Label("tentar de novo", systemImage: "arrow.clockwise")
       }
-      .disabled(savingNote || noteSession == nil)
+      .disabled(savingNote || noteResult == nil)
     }
   }
 
   private var reviewLink: some View {
     Button {
-      dismiss()
+      close()
       onReview()
     } label: {
       HStack(spacing: 12) {
@@ -472,28 +371,14 @@ public struct FocusSessionScreen: View {
 
   // MARK: Valores derivados
 
-  private var isPaused: Bool { state.phase == .timing && !state.isRunning }
-
-  /// Um instante já passado em que o corrido tinha meio segundo quebrado. O
-  /// relógio arredonda o que falta, então é nesse meio que o dígito troca.
-  private var tickAnchor: Date? {
-    guard case .running(_, _, _, let since, let before) = state else { return nil }
-    return since.addingTimeInterval((0.5 - before).truncatingRemainder(dividingBy: 1) - 1)
+  /// A escolhida, ou a primeira da lista: o bloco sempre conta para uma matéria.
+  private var pickedSubject: StudySubject? {
+    guard let list = store.subjects.value else { return nil }
+    return list.first { $0.id == pickedSubjectId } ?? list.first
   }
 
-  private var subjectName: String? {
-    guard let id = state.subjectId else { return nil }
-    return store.subjects.value?.first { $0.id == id }?.name
-  }
-
-  private var completedMinutes: Int {
-    guard case .done(_, _, let completed) = state else { return 0 }
-    return completed
-  }
-
-  private var finishTitle: String {
-    if busy { return "salvando…" }
-    return finishFailed ? "tentar de novo" : "concluir"
+  private var noteTrack: String? {
+    foco.result?.track.name ?? foco.ledger.running?.track.name ?? pickedSubject?.name
   }
 
   private var noteStatus: String? {
@@ -510,83 +395,50 @@ public struct FocusSessionScreen: View {
 
   // MARK: Ações
 
+  /// A corrida segue ao fechar: ela mora no foco e aparece na faixa e na tela
+  /// de foco. Só a nota escrita se perderia.
   private func requestClose() {
-    if state.phase == .timing || hasUnsavedNote {
+    if hasUnsavedNote, phase != .done {
       askLeave = true
     } else {
-      dismiss()
+      close()
     }
   }
 
-  /// O servidor não tem rota de descarte. Fechar a sessão com zero minuto é o
-  /// que tira o bloco de aberto lá sem contar tempo que não valeu.
-  private func discard() {
-    let session = state.session
-    FocusBlockFile.save(nil)
-    FocusBlockAlarm.update(for: nil)
-    state = .idle(subjectId: state.subjectId, minutes: state.minutes)
+  private func close() {
+    if foco.result != nil { foco.closeResult() }
     dismiss()
-    guard let session else { return }
-    Task { _ = try? await store.finishSession(id: session.id, minutes: 0) }
   }
 
-  private func start() async {
-    guard case .idle = state, !busy else { return }
-    busy = true
-    startFailed = false
-    // O servidor deduplica a sessão pelo id, então uma retentativa com o mesmo
-    // id não deixa um bloco órfão aberto.
-    let id = pendingSessionID ?? UUID().uuidString.lowercased()
-    pendingSessionID = id
-    do {
-      let session = try await store.startSession(id: id, subjectId: state.subjectId)
-      state.started(session, at: .now)
-      pendingSessionID = nil
-      await FocusBlockAlarm.requestPermission()
-    } catch {
-      startFailed = true
-    }
-    busy = false
-  }
-
-  private func finish() async {
-    guard state.phase == .timing, !busy else { return }
-    busy = true
-    finishFailed = false
-    state.pause(at: .now)
-    guard let session = state.session else {
-      busy = false
-      return
-    }
-    let completed = min(state.minutes, Int((state.elapsed(at: .now) / 60).rounded()))
-    do {
-      let saved = try await store.finishSession(id: session.id, minutes: completed)
-      noteSession = saved
-      state.finish(completed: saved.completedMinutes)
-      busy = false
-      await saveQuickNote(saved)
-    } catch {
-      finishFailed = true
-      busy = false
-    }
+  private func start() {
+    guard let subject = pickedSubject else { return }
+    noteSaved = false
+    noteFailed = false
+    foco.start(
+      .subject(id: subject.id, name: subject.name, color: subject.color),
+      target: Double(minutes) * 60)
   }
 
   private func retryNote() async {
-    guard let session = noteSession else { return }
-    await saveQuickNote(session)
+    guard let noteResult else { return }
+    await saveQuickNote(noteResult)
   }
 
-  private func saveQuickNote(_ session: StudySession) async {
+  /// Sem sessão no servidor (começou sem rede) a nota leva o id da primeira
+  /// sessão do foco, para o caminho continuar único.
+  private func saveQuickNote(_ result: FocoResult) async {
     let text = trimmedNote
-    guard !text.isEmpty, !savingNote else { return }
+    guard !text.isEmpty, !savingNote, !noteSaved else { return }
+    let id = result.serverSessionId ?? result.entries.first?.id.uuidString.lowercased()
+    guard let id else { return }
     savingNote = true
     noteFailed = false
     do {
       try await store.saveNote(
         SaveNoteInput(
-          path: "notas/sessoes/\(session.startedAt.formatted(Self.noteDay))-\(session.id).md",
-          title: "sessão de \(StudyFormat.weekdayLong(session.startedAt))",
-          subjectId: session.subjectId,
+          path: "notas/sessoes/\(result.startedAt.formatted(Self.noteDay))-\(id).md",
+          title: "sessão de \(StudyFormat.weekdayLong(result.startedAt))",
+          subjectId: result.track.subjectId,
           tags: ["sessão"],
           body: text))
       noteSaved = true
@@ -608,98 +460,15 @@ public struct FocusSessionScreen: View {
     .dateSeparator(.dash)
 }
 
-// MARK: - Bloco no disco
-
-/// O bloco em andamento, gravado como o foco grava a corrida. Só existe arquivo
-/// enquanto o bloco corre ou está pausado; parado ou concluído, some. A cópia
-/// em memória existe porque a casca pergunta a cada vez que se redesenha.
-@MainActor
-private enum FocusBlockFile {
-  static var url: URL { URL.applicationSupportDirectory.appending(path: "estudos-bloco.json") }
-  private static var loaded: FocusSessionState??
-
-  static func load() -> FocusSessionState? {
-    if let loaded { return loaded }
-    let state = (try? Data(contentsOf: url))
-      .flatMap { try? JSONDecoder.henrique().decode(FocusSessionState.self, from: $0) }
-      .flatMap { $0.phase == .timing ? $0 : nil }
-    loaded = .some(state)
-    return state
-  }
-
-  static func save(_ state: FocusSessionState?) {
-    let active = state.flatMap { $0.phase == .timing ? $0 : nil }
-    loaded = .some(active)
-    guard let active, let data = try? JSONEncoder.henrique().encode(active) else {
-      try? FileManager.default.removeItem(at: url)
-      return
-    }
-    try? FileManager.default.createDirectory(
-      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try? data.write(to: url, options: .atomic)
-  }
-}
-
 extension FocusSessionScreen {
   /// Para a casca reabrir o bloco que estava rodando quando o app fechou.
-  static var hasActiveBlock: Bool { FocusBlockFile.load() != nil }
-}
-
-/// O aviso de fim do bloco com o app fechado. O prefixo "estudos." separa estes
-/// avisos dos da academia, que usam a mesma central.
-private enum FocusBlockAlarm {
-  static let identifier = "estudos.bloco"
-
-  static func requestPermission() async {
-    _ = try? await UNUserNotificationCenter.current()
-      .requestAuthorization(options: [.alert, .sound])
-  }
-
-  /// Rodando, agenda para o fim; pausado, parado ou concluído, cancela. O mesmo
-  /// identificador substitui o aviso anterior, então chamar de novo não duplica.
-  static func update(for state: FocusSessionState?) {
-    let center = UNUserNotificationCenter.current()
-    guard let state, state.isRunning else {
-      center.removePendingNotificationRequests(withIdentifiers: [identifier])
-      return
-    }
-    let remaining = state.remaining(at: .now)
-    guard remaining > 0 else {
-      center.removePendingNotificationRequests(withIdentifiers: [identifier])
-      return
-    }
-    let content = UNMutableNotificationContent()
-    content.title = "bloco de \(state.minutes) min concluído"
-    content.body = "abra o app para salvar a sessão."
-    content.sound = .default
-    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: remaining, repeats: false)
-    center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
-  }
+  static var hasActiveBlock: Bool { FocoStore.blockIsRunning }
 }
 
 // MARK: - Peças
 
 private let focusSessionGreen = LinearGradient(
   colors: [.studyGreen, .studyLightGreen], startPoint: .topLeading, endPoint: .bottomTrailing)
-
-/// O tick só existe enquanto o bloco corre. Parado, o tempo já está guardado no
-/// estado e redesenhar a cada segundo não mudaria nada na tela. Um tick por
-/// segundo, ancorado em `since`, onde o dígito troca. A leitura vem 10 ms
-/// depois do tick para o arredondamento não cair em cima do meio exato.
-private struct FocusSessionTicker<Content: View>: View {
-  let since: Date?
-  @ViewBuilder let content: (Date) -> Content
-
-  var body: some View {
-    if let since {
-      TimelineView(.periodic(from: since, by: 1)) { context in
-        content(context.date.addingTimeInterval(0.01))
-      }
-    } else {
-      content(.now)
-    }
-  }
-}
 
 private struct FocusSessionCapsule<Label: View>: View {
   var active = false
