@@ -78,6 +78,9 @@ struct WorkoutSessionScreen: View {
   @State private var holding: String?
   @State private var entered = false
   @State private var adding = false
+  /// O exercício cuja contagem de séries espera o servidor.
+  @State private var changingCount: String?
+  @State private var addingExercise = false
   /// Com o teclado aberto o cartão do descanso subia junto e comia a lista.
   @State private var keyboardUp = false
   @State private var confirmingFinish = false
@@ -199,9 +202,11 @@ struct WorkoutSessionScreen: View {
           SessionExercisePicker(
             catalog: data.exerciseCatalog, chosen: Set(workout.exercises.map(\.id))
           ) { item in
+            addingExercise = true
             Task {
               await store.addExercise(
                 .init(date: data.date, workoutTemplateId: workout.id, exerciseId: item.id))
+              addingExercise = false
               open = item.id
             }
           }
@@ -377,6 +382,7 @@ struct WorkoutSessionScreen: View {
             failure: set.toFailure, next: next)
         }
       }
+      .animation(Motion.resolve(Motion.expand, reduceMotion), value: exercise.sets.work.count)
       setCountRow(exercise: exercise, date: date, templateId: templateId).padding(.top, 10)
       noteField(exercise: exercise, date: date, templateId: templateId).padding(.top, 12)
     }
@@ -448,34 +454,53 @@ struct WorkoutSessionScreen: View {
   private func setCountRow(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
     let count = exercise.sets.work.count
     let canRemove = count > Limits.workSets.lowerBound && exercise.sets.work.last?.isDone == false
+    let changing = changingCount == exercise.id
     return HStack(spacing: Space.s) {
       Button {
-        Task { await store.setCount(.init(date: date, workoutTemplateId: templateId,
-          exerciseId: exercise.id, kind: .work, count: count + 1)) }
+        changeCount(.init(date: date, workoutTemplateId: templateId,
+          exerciseId: exercise.id, kind: .work, count: count + 1))
       } label: {
-        Text("+ série")
+        Group {
+          if changing {
+            ProgressView().controlSize(.small)
+          } else {
+            Label("série", systemImage: "plus").labelStyle(.titleAndIcon)
+          }
+        }
           .font(.system(size: addSetSize, weight: .medium)).foregroundStyle(accent.base)
-          .frame(maxWidth: .infinity)
+          .frame(maxWidth: .infinity, minHeight: 22)
           .padding(11)
           .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(hairline))
       }
       .buttonStyle(PressScaleStyle())
-      .disabled(count >= Limits.workSets.upperBound)
+      .disabled(count >= Limits.workSets.upperBound || changing)
       .accessibilityLabel("adicionar série")
       .accessibilityIdentifier("sessao.adicionar-serie.\(exercise.id)")
       if canRemove {
         Button {
-          Task { await store.setCount(.init(date: date, workoutTemplateId: templateId,
-            exerciseId: exercise.id, kind: .work, count: count - 1)) }
+          changeCount(.init(date: date, workoutTemplateId: templateId,
+            exerciseId: exercise.id, kind: .work, count: count - 1))
         } label: {
           Image(systemName: "minus")
             .font(.system(size: 15, weight: .medium)).foregroundStyle(Color.mutedInk)
             .frame(width: 44, height: 44)
         }
         .buttonStyle(PressScaleStyle())
+        .disabled(changing)
         .accessibilityLabel("tirar uma série")
         .accessibilityIdentifier("sessao.remover-serie.\(exercise.id)")
       }
+    }
+    .sensoryFeedback(.impact(weight: .light), trigger: count)
+  }
+
+  /// A contagem só muda quando o servidor responde, que no wi-fi da academia
+  /// leva segundos; o botão fica girando até lá.
+  private func changeCount(_ input: SetCountInput) {
+    changingCount = input.exerciseId
+    Task {
+      await store.setCount(input)
+      if changingCount == input.exerciseId { changingCount = nil }
     }
   }
 
@@ -541,13 +566,20 @@ struct WorkoutSessionScreen: View {
     Button {
       adding = true
     } label: {
-      Text("+ adicionar exercício")
+      Group {
+        if addingExercise {
+          ProgressView().controlSize(.small)
+        } else {
+          Label("adicionar exercício", systemImage: "plus.circle").labelStyle(.titleAndIcon)
+        }
+      }
         .font(.system(size: addExerciseSize)).foregroundStyle(Color.mutedInk)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 22)
         .padding(16)
         .overlay(RoundedRectangle(cornerRadius: Radius.row).strokeBorder(hairline))
     }
     .buttonStyle(PressScaleStyle())
+    .disabled(addingExercise)
     .accessibilityIdentifier("sessao.adicionar-exercicio")
   }
 
