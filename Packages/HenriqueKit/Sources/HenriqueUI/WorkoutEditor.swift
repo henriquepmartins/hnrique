@@ -502,6 +502,7 @@ private struct IdentityStep: View {
         // Cabem 140 letras; numa linha só o começo rolava para fora da vista.
         TextField("foco", text: $draft.focus, axis: .vertical)
           .lineLimit(1...3)
+          .accessibilityIdentifier("editor.foco")
           .focused($focused, equals: .focus)
           .submitLabel(.done)
       }
@@ -523,10 +524,10 @@ private struct IdentityStep: View {
   }
 }
 
-/// O campo branco de canto redondo que o resto do app usa fora do `Form`.
+/// O campo branco de canto redondo que o editor e o setup usam fora do `Form`.
 /// Preenchido, o placeholder some, e o rótulo pequeno em cima diz qual é o
 /// campo.
-private struct EditorField<Content: View>: View {
+struct EditorField<Content: View>: View {
   let label: String
   let isFilled: Bool
   @ViewBuilder let content: Content

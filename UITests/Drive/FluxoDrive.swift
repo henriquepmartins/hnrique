@@ -232,7 +232,7 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(name.waitForExistence(timeout: 5), "editor de treino abriu")
     name.tap()
     name.typeText("Treino futuro de teste")
-    let focus = app.textFields["foco"]
+    let focus = app.descendants(matching: .any).matching(identifier: "editor.foco").firstMatch
     focus.tap()
     focus.typeText("Adaptação")
     dismissKeyboard()

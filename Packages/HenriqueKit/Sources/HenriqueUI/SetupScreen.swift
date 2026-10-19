@@ -155,10 +155,12 @@ struct SetupScreen: View {
           workoutDrafts[oldDay] = SetupWorkoutDraft(name: name, focus: focus, exercises: exercises)
           loadWorkout()
         }
-        TextField("nome", text: $name).textFieldStyle(.roundedBorder)
-          .submitLabel(.done)
-        TextField("foco", text: $focus).textFieldStyle(.roundedBorder)
-          .submitLabel(.done)
+        EditorField(label: "nome", isFilled: !name.isEmpty) {
+          TextField("nome", text: $name).submitLabel(.done)
+        }
+        EditorField(label: "foco", isFilled: !focus.isEmpty) {
+          TextField("foco", text: $focus).submitLabel(.done)
+        }
       }.padding(Space.xl).paperCard()
     case .exercises:
       VStack(spacing: Space.l) {
@@ -189,7 +191,7 @@ struct SetupScreen: View {
     case .goal:
       VStack(alignment: .leading, spacing: Space.l) {
         Picker("exercício", selection: $goalExercise) {
-          ForEach(store.dashboard?.exerciseCatalog ?? []) { Text($0.name).tag($0.id) }
+          ForEach(store.dashboard?.exerciseCatalog ?? []) { Text($0.name.lowercased()).tag($0.id) }
         }
         measurement("meta", unit: "kg", value: $target)
       }.padding(Space.xl).paperCard()

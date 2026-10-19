@@ -212,7 +212,7 @@ extension FluxoDrive {
     XCTAssert(name.waitForExistence(timeout: 5), "editor de treino abriu")
     name.tap()
     name.typeText(Self.longWorkout)
-    let focus = app.textFields["foco"]
+    let focus = app.descendants(matching: .any).matching(identifier: "editor.foco").firstMatch
     focus.tap()
     focus.typeText(Self.longFocus)
     shot("pior-00-editor-nome-longo")
