@@ -21,8 +21,8 @@ struct SessionPreviousTests {
     #expect(previousLabel(last, index: 2) == "90 × 8")
     #expect(previousLabel(last, index: 3) == "80 × 10")
     #expect(previousLabel(last, index: 4) == nil)
-    #expect(previousTop(last)?.weightKg == 100)
-    #expect(previousTop(last)?.reps == 6)
+    #expect(last.top?.weightKg == 100)
+    #expect(last.top?.reps == 6)
   }
 
   @Test("servidor antigo sem sets: maior carga e repetições pela posição")
@@ -33,9 +33,8 @@ struct SessionPreviousTests {
     #expect(previousLabel(last, index: 1) == "48 × 8")
     #expect(previousLabel(last, index: 2) == "48 × 7")
     #expect(previousLabel(last, index: 3) == nil)
-    #expect(previousTop(last)?.weightKg == 48)
-    #expect(previousTop(last)?.reps == 8)
+    #expect(last.top?.weightKg == 48)
+    #expect(last.top?.reps == 8)
     #expect(previousLabel(PreviousWorkSets?.none, index: 1) == nil)
-    #expect(previousTop(nil) == nil)
   }
 }
