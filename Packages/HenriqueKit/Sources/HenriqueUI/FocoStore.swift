@@ -58,9 +58,12 @@ public final class FocoStore {
     self.estudos = estudos
     let loaded = Self.load(from: fileURL)
     ledger = loaded
-    resumePending = loaded.running != nil
+    resumePending = false
     Self.blockIsRunning = loaded.running?.target != nil
     followTarget()
+    // Depois de fechar o bloco vencido, para a tela de foco não reabrir a
+    // tela escura de uma corrida que já virou resumo.
+    resumePending = ledger.running != nil
   }
 
   /// A casca de estudos pergunta ao montar se reabre a tela do bloco, antes de
