@@ -87,7 +87,7 @@ struct SetupScreen: View {
               step = step == .body ? .workout : step == .workout || step == .exercises ? .goal : .done
               error = nil
             } label: {
-              Text("pular").font(.subheadline).foregroundStyle(.tint)
+              Label("pular", systemImage: "forward.end").font(.subheadline).foregroundStyle(.tint)
                 .frame(maxWidth: .infinity, minHeight: 44).contentShape(.rect)
             }.buttonStyle(StudyPressStyle())
           }
