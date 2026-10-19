@@ -3,6 +3,7 @@ import SwiftUI
 
 public struct StudyAssignmentsScreen: View {
   @Environment(EstudosStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var filter: AssignmentFilter = .todas
   @State private var switched = false
   @State private var selectedDay: CalendarDate?
@@ -14,15 +15,15 @@ public struct StudyAssignmentsScreen: View {
       VStack(alignment: .leading, spacing: 20) {
         switch store.assignments {
         case .idle, .loading:
-          StudyLoadingState().transition(.blurReplace)
+          StudyLoadingState().transition(.opacity)
         case .failed(let message):
           StudyFailedState(message: message) { Task { await store.loadAssignments(force: true) } }
-            .transition(.blurReplace)
+            .transition(.opacity)
         case .ready(let groups):
-          content(groups).transition(.blurReplace)
+          content(groups).transition(.opacity)
         }
       }
-      .animation(Motion.crossfade, value: store.assignments.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.assignments.phase)
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }

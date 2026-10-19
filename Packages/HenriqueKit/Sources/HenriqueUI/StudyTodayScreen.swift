@@ -3,6 +3,7 @@ import SwiftUI
 
 public struct StudyTodayScreen: View {
   @Environment(EstudosStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let onSession: () -> Void
   let onAssignments: () -> Void
   let onReview: () -> Void
@@ -27,10 +28,10 @@ public struct StudyTodayScreen: View {
           .staggeredEntrance(index: 1, isReady: true)
         switch store.overview {
         case .idle, .loading:
-          StudyLoadingState().transition(.blurReplace)
+          StudyLoadingState().transition(.opacity)
         case .failed(let message):
           StudyFailedState(message: message) { Task { await store.loadOverview(force: true) } }
-            .transition(.blurReplace)
+            .transition(.opacity)
         case .ready(let overview):
           // Numerar os blocos faz a abertura descer de cima para baixo, na
           // ordem em que o olho lê, e o índice de cada um é o que os cards de
@@ -44,10 +45,10 @@ public struct StudyTodayScreen: View {
                 .staggeredEntrance(index: 5, isReady: true)
             }
           }
-          .transition(.blurReplace)
+          .transition(.opacity)
         }
       }
-      .animation(Motion.crossfade, value: store.overview.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.overview.phase)
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }

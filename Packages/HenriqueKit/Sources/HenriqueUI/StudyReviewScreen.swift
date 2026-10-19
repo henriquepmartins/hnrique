@@ -86,15 +86,15 @@ public struct StudyReviewScreen: View {
         StudyHeading(title: "revisar")
         switch store.queue {
         case .idle, .loading:
-          StudyLoadingState().transition(.blurReplace)
+          StudyLoadingState().transition(.opacity)
         case .failed(let message):
           StudyFailedState(message: message) { Task { await store.loadQueue(force: true) } }
-            .transition(.blurReplace)
+            .transition(.opacity)
         case .ready:
-          ready.transition(.blurReplace)
+          ready.transition(.opacity)
         }
       }
-      .animation(Motion.crossfade, value: store.queue.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.queue.phase)
       .padding(.horizontal, 16)
     }
     .studyPage()
