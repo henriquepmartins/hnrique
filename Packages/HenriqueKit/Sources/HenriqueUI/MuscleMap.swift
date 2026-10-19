@@ -16,11 +16,13 @@ struct MuscleMap: View {
   @AppStorage("academia.musculos.tocou") private var touched = false
   let load: [MuscleLoad]
   let today: CalendarDate
+  /// Abre o plano a partir do aviso de grupo parado. Sem ela, o aviso só avisa.
+  var onPlan: (() -> Void)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
-        Text("músculos").font(.title3.weight(.medium)).tracking(-0.6)
+        SectionHeading(title: "músculos", systemImage: "figure.strengthtraining.traditional")
         Spacer()
         Picker("período do mapa", selection: $period) {
           ForEach(MusclePeriod.allCases, id: \.self) { option in
@@ -40,13 +42,18 @@ struct MuscleMap: View {
             figure(BodyChart.anterior, side: "frente")
             figure(BodyChart.posterior, side: "costas")
           }
+          // O toque fora de qualquer músculo limpa a escolha. O de cada músculo
+          // é mais interno e ganha deste.
+          .contentShape(.rect)
+          .onTapGesture { picked = nil }
           if picked != nil || !touched { readout }
           legend
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
         .paperCard(radius: Radius.tile)
-        if let gap { GapNote(text: gap).padding(.top, 10) }
+        .sensoryFeedback(.selection, trigger: picked)
+        if let gap { GapNote(text: gap, onPlan: onPlan).padding(.top, 10) }
       }
       .animation(reduceMotion ? Motion.plain : Motion.crossfade, value: period)
       .animation(reduceMotion ? Motion.plain : Motion.tap, value: picked)
@@ -197,12 +204,21 @@ struct MuscleMap: View {
 /// do mapa que pede uma mudança no plano.
 struct GapNote: View {
   let text: String
+  var onPlan: (() -> Void)?
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Space.s) {
       Image(systemName: "exclamationmark.circle")
         .font(.footnote.weight(.medium))
       Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)
+      if let onPlan {
+        Spacer(minLength: Space.s)
+        Button("plano", systemImage: "calendar", action: onPlan)
+          .font(.footnote.weight(.semibold))
+          .labelStyle(.titleAndIcon)
+          .buttonStyle(.plain)
+          .frame(minHeight: 44).contentShape(.rect)
+      }
     }
     .foregroundStyle(Color(red: 0.54, green: 0.18, blue: 0.18))
     .frame(maxWidth: .infinity, alignment: .leading)
