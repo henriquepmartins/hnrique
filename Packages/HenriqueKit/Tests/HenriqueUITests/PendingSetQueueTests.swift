@@ -297,7 +297,7 @@ struct PendingSetQueueTests {
     #expect(!store.isWaiting(poisoned))
     #expect(store.waitingCount == 0)
     #expect(FakeNetwork.answered["supino-reto"] == 5)
-    #expect(store.notice == "série não salva: recusada no teste")
+    #expect(store.notice == "série não salva: o servidor falhou, tente de novo daqui a pouco")
   }
 
   @Test("uma série que o servidor recusou uma vez volta do disco com a conta")

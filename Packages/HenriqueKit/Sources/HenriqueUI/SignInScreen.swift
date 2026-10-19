@@ -20,56 +20,64 @@ struct SignInScreen: View {
     ZStack {
       Color.canvas.ignoresSafeArea()
 
-      VStack(spacing: 24) {
-        VStack(spacing: 6) {
-          Text("h&").font(.system(size: 64, weight: .medium)).tracking(-4).foregroundStyle(accent.deep)
-        }
+      VStack(spacing: Space.xxl) {
+        Text("\(Text("h&").foregroundStyle(Color.ink))\(Text(".").foregroundStyle(accent.base))")
+          .font(.system(size: 64, weight: .medium)).tracking(-4)
+          .accessibilityLabel("henrique")
+          .accessibilityAddTraits(.isHeader)
 
-        GlassEffectContainer(spacing: 10) {
-          VStack(spacing: 10) {
-            GlassField(placeholder: "usuário") {
-              TextField("usuário", text: $username)
-                .textContentType(.username)
-                #if os(iOS)
-                  .textInputAutocapitalization(.never)
-                #endif
-                .autocorrectionDisabled()
-                .focused($focus, equals: .username)
-                .submitLabel(.done)
-                .onSubmit { focus = nil }
-            }
-            GlassField(placeholder: "senha") {
-              SecureField("senha", text: $password)
-                .textContentType(.password)
-                .focused($focus, equals: .password)
-                .submitLabel(.done)
-                .onSubmit { focus = nil }
-            }
+        VStack(spacing: Space.m) {
+          LoginField(placeholder: "usuário") {
+            TextField("usuário", text: $username)
+              .textContentType(.username)
+              #if os(iOS)
+                .textInputAutocapitalization(.never)
+              #endif
+              .autocorrectionDisabled()
+              .focused($focus, equals: .username)
+              .submitLabel(.next)
+              .onSubmit { focus = .password }
+          }
+          LoginField(placeholder: "senha") {
+            SecureField("senha", text: $password)
+              .textContentType(.password)
+              .focused($focus, equals: .password)
+              .submitLabel(.go)
+              .onSubmit(submit)
           }
         }
 
         if case .failed(let message) = phase {
           Text(message)
             .font(.footnote)
-            .foregroundStyle(.red)
+            .foregroundStyle(Color.danger)
             .multilineTextAlignment(.center)
             .transition(.opacity)
         }
 
         Button(action: submit) {
-          Text(phase == .loading ? "entrando" : "entrar")
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
+          HStack(spacing: Space.s) {
+            if phase == .loading {
+              ProgressView().tint(.white)
+              Text("entrando")
+            } else {
+              Text("entrar")
+            }
+          }
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, Space.xs)
         }
         .buttonStyle(.glassProminent)
         .controlSize(.large)
         .disabled(!canSubmit)
       }
-      .padding(.horizontal, 28)
+      .padding(.horizontal, Space.page)
       .frame(maxWidth: 420)
     }
-    .keyboardDone()
-
+    .sensoryFeedback(.error, trigger: phase) { _, new in
+      if case .failed = new { true } else { false }
+    }
+    .onAppear { focus = .username }
   }
 
   private func submit() {
@@ -79,17 +87,16 @@ struct SignInScreen: View {
   }
 }
 
-struct GlassField<Content: View>: View {
+private struct LoginField<Content: View>: View {
   let placeholder: String
   @ViewBuilder let content: Content
 
   var body: some View {
     content
       .textFieldStyle(.plain)
-      .padding(.horizontal, 16)
+      .padding(.horizontal, Space.l)
       .padding(.vertical, 14)
-      .background(.white, in: .rect(cornerRadius: 16))
-      .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.ink.opacity(0.08)))
+      .fieldSurface()
       .accessibilityLabel(placeholder)
   }
 }

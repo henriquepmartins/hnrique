@@ -60,7 +60,7 @@ struct SetupScreen: View {
             .id(step)
             .transition(.opacity)
           if let error {
-            Label(error, systemImage: "exclamationmark.triangle.fill").font(.subheadline).foregroundStyle(.red)
+            Label(error, systemImage: "exclamationmark.triangle.fill").font(.subheadline).foregroundStyle(Color.danger)
           }
           HStack {
             if step != .welcome {
@@ -100,7 +100,9 @@ struct SetupScreen: View {
       .navigationTitle("h&")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.accessibilityLabel("fechar").disabled(saving) }
+        ToolbarItem(placement: .cancellationAction) {
+          Button("fechar", systemImage: "xmark", role: .close) { dismiss() }.disabled(saving)
+        }
       }
       .keyboardDone()
       .interactiveDismissDisabled(saving)

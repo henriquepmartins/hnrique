@@ -725,8 +725,7 @@ struct ExercisePicker: View {
                 }
               }
               .padding(.horizontal, 12).padding(.vertical, 6)
-              .background(.white, in: .rect(cornerRadius: 18))
-              .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+              .fieldSurface()
               .padding(.horizontal, Space.l)
               ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -753,7 +752,7 @@ struct ExercisePicker: View {
             if pickedHere > 0 {
               Button(role: .confirm) { dismiss() }
             } else {
-              Button(role: .close) { dismiss() }.accessibilityLabel("fechar")
+              Button("fechar", systemImage: "xmark", role: .close) { dismiss() }
             }
           }
           .accessibilityIdentifier("seletor.fechar")

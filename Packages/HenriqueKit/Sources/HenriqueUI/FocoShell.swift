@@ -63,7 +63,7 @@ private struct FocoAccessoryLabel: View {
           .padding(.horizontal, 16)
           .contentShape(.rect)
         }
-        .buttonStyle(PressScaleStyle(scale: 0.98))
+        .buttonStyle(StudyPressStyle(scale: 0.98))
         .accessibilityLabel("foco em \(run.track.name)")
         .accessibilityValue(
           run.isPaused

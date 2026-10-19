@@ -10,7 +10,6 @@ public enum IdiomasTab: String, Hashable, Sendable, CaseIterable {
 
 struct IdiomasTabs: View {
   @Environment(IdiomasStore.self) private var store
-  @Environment(AcademiaStore.self) private var academia
   @Binding var tab: IdiomasTab
   @Binding var showingApps: Bool
   @State private var speech = IdiomasSpeech()
@@ -55,15 +54,7 @@ struct IdiomasTabs: View {
         .navigationTitle("")
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .primaryAction) {
-            Menu {
-              Button("sair", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive)
-              {
-                Task { await academia.signOut() }
-              }
-            } label: { Image(systemName: "person.crop.circle") }
-            .accessibilityLabel("sua conta")
-          }
+          ToolbarItem(placement: .primaryAction) { AccountMenu() }
         }
         .keyboardDone()
     }

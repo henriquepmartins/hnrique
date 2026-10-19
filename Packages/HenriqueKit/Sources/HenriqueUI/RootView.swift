@@ -50,6 +50,7 @@ public struct RootView: View {
   @State private var appliedInitialSection = false
   @State private var showingApps = false
   @State private var sessionRequested = false
+  @State private var sawSignIn = false
   @State private var foco: FocoStore
   private let store: AcademiaStore
   private let estudos: EstudosStore
@@ -90,7 +91,7 @@ public struct RootView: View {
             .transition(.opacity)
         case .estudos:
           EstudosTabs(
-            tab: $estudosTab, accent: $accent, showingApps: $showingApps,
+            tab: $estudosTab, showingApps: $showingApps,
             openSession: openSession, openWrite: openWrite)
             .transition(.opacity)
         case .idiomas:
@@ -98,13 +99,13 @@ public struct RootView: View {
             .transition(.opacity)
         }
       } else {
-        SignInScreen(phase: store.phase).transition(.opacity)
+        SignInScreen(phase: store.phase).transition(.opacity).onAppear { sawSignIn = true }
       }
     }
     // Escalar a tela inteira na troca afastava o vidro das bordas do aparelho e
     // abria uma fresta branca da janela, com a barra de abas subindo junto. Um
     // fundo atrás do crossfade fecha o que sobra de branco entre os dois apps.
-    .background((section == .academia ? Color.canvas : Color.studyPaper).ignoresSafeArea())
+    .background(background.ignoresSafeArea())
     .animation(reduceMotion ? nil : Motion.crossfade, value: section)
     // As transições acima são ignoradas sem alguém animando o valor que troca a
     // tela. Sem estas duas linhas a abertura era um corte seco da cortina para
@@ -172,25 +173,21 @@ public struct RootView: View {
       guard wasOffline, !offline else { return }
       Task { await reloadAfterReconnect() }
     }
-    .alert(visible(store.banner) ?? "", isPresented: .init(get: { visible(store.banner) != nil }, set: { if !$0 { store.banner = nil } })) {
-      Button("ok") { store.banner = nil }
-    }
-    .alert(visible(estudos.banner) ?? "", isPresented: .init(get: { visible(estudos.banner) != nil }, set: { if !$0 { estudos.banner = nil } })) {
-      Button("ok") { estudos.banner = nil }
-    }
-    .alert(visible(idiomas.banner) ?? "", isPresented: .init(get: { visible(idiomas.banner) != nil }, set: { if !$0 { idiomas.banner = nil } })) {
-      Button("ok") { idiomas.banner = nil }
-    }
+    .failureAlert(Bindable(store).banner) { await store.load() }
+    .failureAlert(Bindable(estudos).banner) { await estudos.refresh() }
+    .failureAlert(Bindable(idiomas).banner) { await idiomas.refresh() }
+    .sensoryFeedback(.success, trigger: store.isSignedIn) { _, signedIn in signedIn && sawSignIn }
+    .sensoryFeedback(.error, trigger: store.notice) { _, notice in notice != nil }
+  }
+
+  /// O primeiro quadro é o da tela de lançamento, que tem o `canvas`. O papel
+  /// de estudos só entra depois, no crossfade da cortina para o app.
+  private var background: Color {
+    store.sessionChecked && section != .academia ? .studyPaper : .canvas
   }
 
   private var isOffline: Bool {
     store.isSignedIn && estudos.client.connectivity.isOffline
-  }
-
-  /// A falta de rede já está na faixa do topo. Como alerta ela voltava a cada
-  /// abertura do app e a cada tela que tentava carregar.
-  private func visible(_ banner: String?) -> String? {
-    banner == APIError.offlineMessage ? nil : banner
   }
 
   private func reloadAfterReconnect() async {
@@ -206,8 +203,8 @@ public struct RootView: View {
 /// O que fica na tela entre a tela de lançamento e a primeira tela do app,
 /// enquanto a sessão é lida do chaveiro. A leitura leva milissegundos, e um
 /// spinner que pisca por dois quadros é pior do que nenhum, então ele só entra
-/// se a espera passar de meio segundo. O fundo é o da raiz, que já veste a cor
-/// do app escolhido, e é o mesmo da tela de lançamento.
+/// se a espera passar de meio segundo. O fundo é o da raiz, que enquanto a
+/// cortina está de pé é o mesmo da tela de lançamento.
 private struct LaunchCurtain: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var slow = false
@@ -232,7 +229,6 @@ struct AcademiaTabs: View {
   @Environment(AcademiaStore.self) private var store
   @State private var showingSetup = false
   @State private var showingStreak = false
-  @State private var confirmingSignOut = false
   @State private var stage = InsigniaStage()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var accent: Accent
@@ -304,11 +300,6 @@ struct AcademiaTabs: View {
     .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
   }
 
-  private var unsentTitle: String {
-    let count = store.unsentCount
-    return count == 1 ? "1 série ainda não subiu" : "\(count) séries ainda não subiram"
-  }
-
   private func closeInsignia() {
     guard var show = stage.show, show.closed == nil else { return }
     show.closed = .now
@@ -348,25 +339,39 @@ struct AcademiaTabs: View {
               }
               .pickerStyle(.palette)
             } label: { Label("configurar", systemImage: "gearshape") }
+            .sensoryFeedback(.selection, trigger: accent)
           }
-          ToolbarItem(placement: .primaryAction) {
-            Menu {
-              Button("sair", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                Task { confirmingSignOut = !(await store.signOut()) }
-              }
-            } label: { Image(systemName: "person.crop.circle") }
-            .accessibilityLabel("sua conta")
-            .confirmationDialog(
-              unsentTitle, isPresented: $confirmingSignOut, titleVisibility: .visible
-            ) {
-              Button("sair e perder", role: .destructive) {
-                Task { await store.signOut(discardingUnsent: true) }
-              }
-              Button("cancelar", role: .cancel) {}
-            }
-          }
+          ToolbarItem(placement: .primaryAction) { AccountMenu() }
         }
     }
+  }
+}
+
+/// O menu da conta das três casas. Sair esbarra na fila de séries que não
+/// subiram, e a pergunta precisa aparecer em qualquer app em que se toque
+/// "sair", senão o menu fecha e nada acontece.
+struct AccountMenu: View {
+  @Environment(AcademiaStore.self) private var store
+  @State private var confirmingSignOut = false
+
+  var body: some View {
+    Menu {
+      Button("sair", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+        Task { confirmingSignOut = !(await store.signOut()) }
+      }
+    } label: { Image(systemName: "person.crop.circle") }
+    .accessibilityLabel("sua conta")
+    .confirmationDialog(unsentTitle, isPresented: $confirmingSignOut, titleVisibility: .visible) {
+      Button("sair e perder", role: .destructive) {
+        Task { await store.signOut(discardingUnsent: true) }
+      }
+      Button("cancelar", role: .cancel) {}
+    }
+  }
+
+  private var unsentTitle: String {
+    let count = store.unsentCount
+    return count == 1 ? "1 série ainda não subiu" : "\(count) séries ainda não subiram"
   }
 }
 
@@ -416,6 +421,7 @@ extension View {
 
 private struct AppSwitcher: ViewModifier {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(FocoStore.self) private var foco
   let current: AppSection
   @Binding var isPresented: Bool
   let onSelect: @MainActor (AppSection) -> Void
@@ -439,15 +445,25 @@ private struct AppSwitcher: ViewModifier {
             isPresented = false
             if app != current { onSelect(app) }
           }
+          .accessibilityAddTraits(.isModal)
+          .accessibilityAction(.escape) { isPresented = false }
           .padding(.trailing, 14)
-          .padding(.bottom, 72)
+          .padding(.bottom, 72 + accessoryLift)
           .transition(
             reduceMotion
               ? .opacity
-              : .scale(scale: 0.88, anchor: .bottomTrailing).combined(with: .opacity))
+              : .scale(scale: Motion.panelScale, anchor: .bottomTrailing).combined(with: .opacity))
         }
       }
       .animation(Motion.resolve(Motion.expand, reduceMotion), value: isPresented)
+      .sensoryFeedback(.selection, trigger: current)
+  }
+
+  /// A faixa do foco sobe a barra de abas, e a bolha junto com ela.
+  private var accessoryLift: CGFloat {
+    guard foco.isRunning else { return 0 }
+    if #available(iOS 26.1, macOS 26.1, *) { return 56 }
+    return 0
   }
 }
 
@@ -458,7 +474,7 @@ private struct AppSwitcherPanel: View {
   var body: some View {
     VStack(spacing: 0) {
       ForEach(Array(AppSection.allCases.enumerated()), id: \.element) { index, app in
-        if index > 0 { Divider().padding(.leading, 52) }
+        if index > 0 { Divider().padding(.leading, AppSwitcherRow.textInset) }
         AppSwitcherRow(app: app, style: current, isCurrent: app == current) { onSelect(app) }
       }
     }
@@ -484,6 +500,10 @@ private struct AppSwitcherRow: View {
   let isCurrent: Bool
   let action: @MainActor () -> Void
 
+  static let iconWidth: CGFloat = 24
+  /// Onde o nome começa, que é onde o divisor entre linhas começa.
+  static let textInset = Space.l + iconWidth + Space.m
+
   private var tint: Color {
     switch style {
     case .estudos: .studyBlue
@@ -494,8 +514,8 @@ private struct AppSwitcherRow: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 12) {
-        Image(systemName: app.symbol).font(.system(size: 17)).frame(width: 24, height: 20)
+      HStack(spacing: Space.m) {
+        Image(systemName: app.symbol).font(.system(size: 17)).frame(width: Self.iconWidth, height: 20)
         Text(app.label).font(.body.weight(.medium))
         Spacer(minLength: 0)
         if isCurrent {
@@ -505,7 +525,7 @@ private struct AppSwitcherRow: View {
         }
       }
       .foregroundStyle(isCurrent ? tint : Color.ink)
-      .padding(.horizontal, 16)
+      .padding(.horizontal, Space.l)
       .padding(.vertical, 14)
       .contentShape(.rect)
     }
@@ -547,11 +567,111 @@ struct OverviewScreen: View {
             MuscleMap(load: load, today: data.date)
               .staggeredEntrance(index: 4, isReady: true)
           }
+        } else if store.phase.awaitsDashboard {
+          OverviewSkeleton().transition(.opacity)
         }
       }.padding(Space.l).padding(.bottom, Space.page)
     }
     .refreshable { await store.load() }
-    .overlay { TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil) }
+    .overlay {
+      TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil) { EmptyView() }
+    }
+  }
+}
+
+/// A forma da home sem dados, embaixo da data, que já é a de verdade: cartão do
+/// dia, faixa dos próximos dias e um cartão de diagnóstico.
+private struct OverviewSkeleton: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.xxl) {
+      RoundedRectangle(cornerRadius: Radius.card).fill(Color.surfaceMuted).frame(height: 220)
+      HStack(spacing: Space.s) {
+        ForEach(0..<3, id: \.self) { _ in
+          RoundedRectangle(cornerRadius: Radius.tile).fill(Color.surfaceMuted)
+            .frame(width: 104, height: 96)
+        }
+      }
+      RoundedRectangle(cornerRadius: Radius.card).fill(Color.surfaceMuted).frame(height: 160)
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+extension AcademiaStore.Phase {
+  /// Ainda vem painel: carregando, ou sem rede com a faixa do topo prometendo
+  /// tentar de novo. Nos dois casos a tela fica no esqueleto.
+  var awaitsDashboard: Bool {
+    switch self {
+    case .loading: true
+    case .failed(let message): message == APIError.offlineMessage
+    case .idle, .ready: false
+    }
+  }
+}
+
+/// O aviso cobre a tela enquanto não há painel. A troca para o conteúdo é só
+/// opacidade, então ele mesmo guarda o `isEmpty` que a anima nos dois usos.
+struct TodayPlaceholder<Skeleton: View>: View {
+  @Environment(AcademiaStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let phase: AcademiaStore.Phase
+  let isEmpty: Bool
+  @ViewBuilder let skeleton: Skeleton
+
+  var body: some View {
+    ZStack {
+      if isEmpty {
+        if phase.awaitsDashboard {
+          skeleton.transition(.opacity)
+        } else if case .failed(let message) = phase {
+          LoadFailure(message: message) { await store.load() }
+            .transition(.opacity)
+        }
+      }
+    }
+    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: isEmpty)
+  }
+}
+
+extension TodayPlaceholder where Skeleton == TodaySkeleton {
+  init(phase: AcademiaStore.Phase, isEmpty: Bool) {
+    self.init(phase: phase, isEmpty: isEmpty) { TodaySkeleton() }
+  }
+}
+
+extension View {
+  /// O alerta de uma falha que não é falta de rede, que já mora na faixa do
+  /// topo e voltaria a cada tela que tentasse carregar. O título é fixo e a
+  /// frase do erro vai no corpo, com uma saída para recarregar.
+  func failureAlert(
+    _ banner: Binding<String?>, reload: @escaping @MainActor () async -> Void
+  ) -> some View {
+    modifier(FailureAlert(banner: banner, reload: reload))
+  }
+}
+
+private struct FailureAlert: ViewModifier {
+  @Binding var banner: String?
+  let reload: @MainActor () async -> Void
+
+  private var message: String? {
+    banner == APIError.offlineMessage ? nil : banner
+  }
+
+  func body(content: Content) -> some View {
+    content.alert(
+      "não deu certo",
+      isPresented: Binding(get: { message != nil }, set: { if !$0 { banner = nil } }),
+      presenting: message
+    ) { message in
+      // Com a sessão vencida o app já voltou para o login e não há o que recarregar.
+      if message != APIError.unauthorized.message {
+        Button("recarregar") { Task { await reload() } }
+      }
+      Button("ok", role: .cancel) {}
+    } message: { message in
+      Text(message)
+    }
   }
 }
 

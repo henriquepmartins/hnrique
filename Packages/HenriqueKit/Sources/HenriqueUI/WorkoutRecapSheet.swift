@@ -184,7 +184,7 @@ struct RestChip: View {
         .sensoryFeedback(.success, trigger: remaining <= 0) { _, over in over }
       }
     }
-    .buttonStyle(PressScaleStyle())
+    .buttonStyle(StudyPressStyle())
     .accessibilityIdentifier("descanso.chip")
   }
 }
@@ -199,16 +199,9 @@ struct SyncStatusLine: View {
     if let notice = store.notice {
       HStack(spacing: 6) {
         Label(notice, systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(Color.orange).lineLimit(2)
+          .foregroundStyle(Color.warning).lineLimit(2)
         Spacer(minLength: 4)
-        Button {
-          store.notice = nil
-        } label: {
-          Image(systemName: "xmark").font(.caption.weight(.semibold)).foregroundStyle(Color.mutedInk)
-            .frame(width: 44, height: 44).contentShape(.rect)
-            .padding(.vertical, -14)
-        }
-        .accessibilityLabel("dispensar aviso")
+        IconButton(title: "dispensar aviso", systemImage: "xmark", size: 12) { store.notice = nil }
       }
       .font(.caption)
       .accessibilityIdentifier("fila.aviso")

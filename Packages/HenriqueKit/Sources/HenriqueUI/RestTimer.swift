@@ -107,7 +107,7 @@ struct RestTimerBar: View {
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(accent.acid, in: .capsule)
         }
-        .buttonStyle(PressScaleStyle())
+        .buttonStyle(StudyPressStyle())
       }
       .sensoryFeedback(.selection, trigger: adjustments)
     }
@@ -172,7 +172,7 @@ struct RestTimerBar: View {
         .frame(maxWidth: .infinity, minHeight: 44)
         .background(Color.white.opacity(0.12), in: .capsule)
     }
-    .buttonStyle(PressScaleStyle())
+    .buttonStyle(StudyPressStyle())
     .accessibilityLabel(spoken)
   }
 }
@@ -221,20 +221,5 @@ struct WeightedRow: Layout {
         proposal: ProposedViewSize(width: width, height: bounds.height))
       x += width + spacing
     }
-  }
-}
-
-/// Encolhe sob o dedo, como os botões do board, sem o vidro do sistema. A
-/// escala é um parâmetro porque o check da série encolhe mais que o resto.
-struct PressScaleStyle: ButtonStyle {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  var scale: CGFloat = Motion.press
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .contentShape(.rect)
-      .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
-      .opacity(configuration.isPressed && reduceMotion ? 0.7 : 1)
-      .animation(configuration.isPressed ? nil : Motion.tap, value: configuration.isPressed)
   }
 }

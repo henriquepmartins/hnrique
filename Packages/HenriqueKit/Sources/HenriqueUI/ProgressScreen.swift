@@ -488,10 +488,11 @@ struct GoalEditor: View {
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("cancelar") { dismiss() }
+          Button("cancelar", systemImage: "xmark", role: .cancel) { dismiss() }
         }
         ToolbarItem(placement: .confirmationAction) {
-          Button("salvar") { save() }.disabled(isSaving || !canSave)
+          Button("salvar", systemImage: "checkmark", role: .confirm) { save() }
+            .disabled(isSaving || !canSave)
         }
       }
     }
@@ -580,7 +581,7 @@ struct MetricDetailScreen: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
-        Picker("Métrica em foco", selection: $bodyTrack) {
+        Picker("métrica em foco", selection: $bodyTrack) {
           Text("força").tag(false)
           Text("corpo").tag(true)
         }.pickerStyle(.segmented)

@@ -17,7 +17,7 @@ public enum APIError: Error, Equatable, Sendable {
     case .invalidCredentials: "usuário ou senha incorretos"
     case .http(_, let message): message
     case .transport: Self.offlineMessage
-    case .decoding: "resposta inválida"
+    case .decoding: "o app não entendeu a resposta, atualize o app"
     }
   }
 }
@@ -123,7 +123,7 @@ public actor APIClient {
     }
     let (_, response) = try await send(.signIn, body: Body(username: username, password: password))
     guard let cookie = Self.sessionCookie(from: response, url: baseURL) else {
-      throw APIError.http(status: response.statusCode, message: "login falhou")
+      throw APIError.http(status: response.statusCode, message: "não deu para entrar agora, tente de novo")
     }
     tokenStore.write(cookie)
   }
@@ -365,7 +365,7 @@ public actor APIClient {
       throw APIError.unauthorized
     }
     guard (200..<300).contains(http.statusCode) else {
-      throw APIError.http(status: http.statusCode, message: Self.serverMessage(from: data))
+      throw APIError.http(status: http.statusCode, message: Self.serverMessage(status: http.statusCode, from: data))
     }
     return (data, http)
   }
@@ -373,18 +373,26 @@ public actor APIClient {
   /// O corpo do 400 traz `data.issues`, a lista do zod com o campo e o motivo.
   /// A frase nomeia o primeiro campo pelo nome que a tela usa, porque
   /// "input validation failed" não diz o que corrigir.
-  static func serverMessage(from data: Data) -> String {
+  ///
+  /// As recusas que o servidor escreve vêm em português e em minúsculas. As do
+  /// better-auth, do tRPC e do zod vêm em inglês com maiúscula, e essas nunca
+  /// chegam à tela. Num 5xx o corpo não diz nada que a pessoa possa corrigir.
+  static func serverMessage(status: Int, from data: Data) -> String {
     struct Failure: Decodable {
       let message: String?
       let error: String?
       let data: Payload?
       struct Payload: Decodable { let issues: [ValidationIssue]? }
     }
-    guard let failure = try? JSONDecoder().decode(Failure.self, from: data) else {
-      return "servidor recusou"
-    }
+    if status == 429 { return "muitas tentativas, espere um minuto" }
+    if status >= 500 { return "o servidor falhou, tente de novo daqui a pouco" }
+    let refused = "o servidor não aceitou"
+    guard let failure = try? JSONDecoder().decode(Failure.self, from: data) else { return refused }
     if let issue = failure.data?.issues?.first { return issue.sentence }
-    return failure.message ?? failure.error ?? "servidor recusou"
+    guard let message = failure.message ?? failure.error, message.first?.isLowercase == true else {
+      return refused
+    }
+    return message
   }
 
   static func sessionCookie(from response: HTTPURLResponse, url: URL) -> String? {
@@ -457,7 +465,7 @@ struct ValidationIssue: Decodable {
 
   var field: String? {
     for element in path.reversed() {
-      if case .key(let key) = element { return Self.fieldLabels[key] ?? key }
+      if case .key(let key) = element { return Self.fieldLabels[key] }
     }
     return nil
   }
@@ -467,7 +475,9 @@ struct ValidationIssue: Decodable {
     switch (code, minimum, maximum) {
     case ("too_small", let bound?, _): return "no mínimo \(Self.number(bound))\(unit)"
     case ("too_big", _, let bound?): return "no máximo \(Self.number(bound))\(unit)"
-    default: return message.lowercased()
+    // Só o `custom` traz frase escrita pelo servidor. As outras são do zod.
+    case ("custom", _, _): return message.lowercased()
+    default: return "valor inválido"
     }
   }
 

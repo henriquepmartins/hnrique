@@ -182,7 +182,7 @@ struct TrainingSetRow: View {
     VStack(spacing: 4) {
       if let warning = weightWarning(weightDraft, reference: reference) {
         Label(warning, systemImage: "exclamationmark.triangle.fill")
-          .font(.caption).foregroundStyle(Color.orange)
+          .font(.caption).foregroundStyle(Color.warning)
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, 6)
           .accessibilityIdentifier(fieldID + ".aviso")
@@ -315,7 +315,7 @@ struct TrainingSetRow: View {
           }
       }
       // O check encolhe mais que os outros botões, como no board.
-      .buttonStyle(PressScaleStyle(scale: 0.92))
+      .buttonStyle(StudyPressStyle(scale: 0.92))
       .disabled(!canCommit)
         .accessibilityIdentifier(fieldID + ".completion")
         .animation(Motion.resolve(Motion.confirm, reduceMotion), value: done)

@@ -135,6 +135,7 @@ public struct FocoScreen: View {
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }
+    .refreshable { await foco.sync() }
     .studyPage()
     .overlay(alignment: .bottom) {
       if let entry = foco.undoable {
@@ -471,6 +472,7 @@ struct FocoTrackRow: View {
 /// ciclo. É escala e opacidade num quadro fixo, então o tick de cada segundo
 /// redesenha a linha sem reiniciar o ciclo nem medir o anel de novo.
 struct FocoPulseRing: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var expanded = false
   let color: Color
 
@@ -481,7 +483,7 @@ struct FocoPulseRing: View {
       .scaleEffect(expanded ? 1 : 40.0 / 56)
       .opacity(expanded ? 0 : 0.6)
       .animation(.linear(duration: 1.6).repeatForever(autoreverses: false), value: expanded)
-      .onAppear { expanded = true }
+      .onAppear { expanded = !reduceMotion }
   }
 }
 

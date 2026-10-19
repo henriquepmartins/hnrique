@@ -146,7 +146,7 @@ public struct WriteScreen: View {
       #endif
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("fechar") { Task { await close() } }
+          Button("fechar", systemImage: "xmark", role: .close) { Task { await close() } }
         }
       }
       .modifier(WriteKeybar(insert: insert))

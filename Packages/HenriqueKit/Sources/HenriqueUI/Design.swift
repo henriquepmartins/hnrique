@@ -6,6 +6,10 @@ extension Color {
   static let ink = Color(hex: 0x1a1a19)
   static let mutedInk = Color(hex: 0x6b6b6a)
   static let surfaceMuted = Color(hex: 0xf0efed)
+  /// Erro em texto pequeno. O `.red` do sistema dá 3,4:1 no `canvas`, este 6,3.
+  static let danger = Color(hex: 0xb4_2318)
+  /// Aviso em texto pequeno. O `.orange` do sistema dá 2,1:1 no `canvas`, este 5,2.
+  static let warning = Color(hex: 0x9a_5b00)
 }
 
 /// A paleta dos cards de treino. Um treino sem cor escolhida herda o tom do seu
@@ -166,6 +170,8 @@ enum Radius {
   static let card: CGFloat = 32
   static let tile: CGFloat = 24
   static let field: CGFloat = 10
+  /// O campo de texto solto na tela: login, busca, nome do treino.
+  static let input: CGFloat = 18
   /// O raio da linha de lista, menor que o do cartão porque ela é uma fatia
   /// e não uma superfície.
   static let row: CGFloat = 20
@@ -177,6 +183,12 @@ enum Radius {
 }
 
 extension View {
+  /// O fundo branco com traço fino de todo campo de texto solto na tela.
+  func fieldSurface() -> some View {
+    background(.white, in: .rect(cornerRadius: Radius.input))
+      .overlay(RoundedRectangle(cornerRadius: Radius.input).strokeBorder(Color.ink.opacity(0.08)))
+  }
+
   /// Cartão sobre o papel. Anel de 1pt a 6% e duas sombras curtas no lugar da
   /// borda cinza: a sombra é transparente e funciona sobre qualquer fundo, a
   /// borda sólida só sobre o fundo para o qual foi pintada.
@@ -300,6 +312,11 @@ enum Motion {
   /// De que tamanho e de quanto desfoque um ícone entra.
   static let iconScale: CGFloat = 0.25
   static let iconBlur: CGFloat = 4
+  /// De que tamanho o painel de apps cresce a partir do canto da bolha.
+  static let panelScale: CGFloat = 0.88
+  /// O pulso que respira sem parar: ponto de gravação, anel de foco, onda do
+  /// mapa. Quem usa checa Reduzir Movimento e não anima.
+  static let breathe = Animation.easeInOut(duration: 1).repeatForever(autoreverses: true)
 
   /// O passo entre um item e o seguinte. O atraso para de crescer no sétimo
   /// para a última linha de uma lista longa não esperar a lista inteira.
@@ -329,13 +346,14 @@ extension Transition where Self == IconAppear {
 }
 
 struct StudyPressStyle: ButtonStyle {
+  var scale: CGFloat = Motion.press
   /// Quanto o alvo de toque cresce para cada lado sem mexer no layout. É o
   /// truque do quadrado de `StudyTaskCard`: o padding estende a área que o dedo
   /// acerta e o padding negativo devolve o espaço à linha.
   var slop: CGFloat = 0
 
   func makeBody(configuration: Configuration) -> some View {
-    Press(configuration: configuration)
+    Press(configuration: configuration, scale: scale)
       .padding(slop)
       .contentShape(.rect)
       .padding(-slop)
@@ -344,10 +362,11 @@ struct StudyPressStyle: ButtonStyle {
   private struct Press: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let configuration: ButtonStyleConfiguration
+    let scale: CGFloat
 
     var body: some View {
       configuration.label
-        .scaleEffect(configuration.isPressed && !reduceMotion ? Motion.press : 1)
+        .scaleEffect(configuration.isPressed && !reduceMotion ? scale : 1)
         .opacity(configuration.isPressed && reduceMotion ? 0.7 : 1)
         // O encolher acontece no mesmo quadro do toque. Só a volta tem curva,
         // senão o botão parece responder atrasado ao dedo.

@@ -17,19 +17,16 @@ public enum EstudosTab: String, Hashable, Sendable, CaseIterable {
 
 struct EstudosTabs: View {
   @Environment(EstudosStore.self) private var store
-  @Environment(AcademiaStore.self) private var academia
   @Binding var tab: EstudosTab
-  @Binding var accent: Accent
   @State private var showingSession: Bool
   @State private var showingWrite: Bool
   @Binding var showingApps: Bool
 
   init(
-    tab: Binding<EstudosTab>, accent: Binding<Accent>, showingApps: Binding<Bool>,
+    tab: Binding<EstudosTab>, showingApps: Binding<Bool>,
     openSession: Bool = false, openWrite: Bool = false
   ) {
     _tab = tab
-    _accent = accent
     _showingApps = showingApps
     showingSession = openSession || FocusSessionScreen.hasActiveBlock
     showingWrite = openWrite
@@ -99,27 +96,9 @@ struct EstudosTabs: View {
             Button("escrever", systemImage: "square.and.pencil") { showingWrite = true }
           }
           ToolbarItem(placement: .primaryAction) {
-            Menu {
-              Picker(selection: $accent) {
-                ForEach(Accent.allCases) { color in
-                  Label(color.label, systemImage: "circle.fill").tint(color.base).tag(color)
-                }
-              } label: {
-                Label("cor", systemImage: "paintpalette")
-              }
-              .pickerStyle(.menu)
-              Button("sessão", systemImage: "timer") { showingSession = true }
-            } label: { Label("configurar", systemImage: "gearshape") }
+            Button("sessão", systemImage: "timer") { showingSession = true }
           }
-          ToolbarItem(placement: .primaryAction) {
-            Menu {
-              Button("sair", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive)
-              {
-                Task { await academia.signOut() }
-              }
-            } label: { Image(systemName: "person.crop.circle") }
-            .accessibilityLabel("sua conta")
-          }
+          ToolbarItem(placement: .primaryAction) { AccountMenu() }
         }
         .keyboardDone()
     }

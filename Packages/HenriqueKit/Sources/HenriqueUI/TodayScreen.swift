@@ -104,7 +104,11 @@ public struct TodayScreen: View {
     }
     .scrollBounceBehavior(.basedOnSize)
     .refreshable { await store.load() }
-    .overlay { TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil, showsDayStrip: true) }
+    .overlay {
+      TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil) {
+        TodaySkeleton(showsDayStrip: true)
+      }
+    }
     .onChange(of: store.dashboard?.workout?.id, initial: true) {
       openIds = defaultOpenIds()
     }
@@ -163,33 +167,6 @@ public struct TodayScreen: View {
   }
 }
 
-/// O aviso cobre a tela enquanto não há painel. A troca para o conteúdo é só
-/// opacidade, então ele mesmo guarda o `isEmpty` que a anima nos dois usos.
-struct TodayPlaceholder: View {
-  @Environment(AcademiaStore.self) private var store
-  let phase: AcademiaStore.Phase
-  let isEmpty: Bool
-  /// A aba treino abre pela fita de dias; a home, não.
-  var showsDayStrip = false
-
-  var body: some View {
-    ZStack {
-      if isEmpty {
-        switch phase {
-        case .loading:
-          TodaySkeleton(showsDayStrip: showsDayStrip).transition(.opacity)
-        case .failed(let message):
-          LoadFailure(message: message) { await store.load() }
-            .transition(.opacity)
-        case .idle, .ready:
-          EmptyView()
-        }
-      }
-    }
-    .animation(Motion.crossfade, value: isEmpty)
-  }
-}
-
 /// O painel que não chegou, com a nova tentativa ali mesmo. Puxar para
 /// atualizar continua valendo, mas ninguém adivinha o gesto numa tela vazia.
 struct LoadFailure: View {
@@ -199,7 +176,7 @@ struct LoadFailure: View {
 
   var body: some View {
     ContentUnavailableView {
-      Label("não carregou", systemImage: "wifi.exclamationmark")
+      Label("não carregou", systemImage: "exclamationmark.triangle")
     } description: {
       Text(message)
     } actions: {
