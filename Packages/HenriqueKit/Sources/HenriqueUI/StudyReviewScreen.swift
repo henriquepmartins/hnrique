@@ -73,6 +73,9 @@ public struct StudyReviewScreen: View {
   @State private var cardY: CGFloat = 0
   @State private var cardOpacity: Double = 1
   @State private var flipAngle: Double = 0
+  /// O verso já está na tela, isto é, o giro passou da metade. A fase troca no
+  /// toque, antes disso.
+  @State private var showsBack = false
   private let onWrite: (() -> Void)?
 
   public init(onWrite: (() -> Void)? = nil) {
@@ -186,7 +189,7 @@ public struct StudyReviewScreen: View {
   }
 
   private func face(card: Flashcard, index: Int, total: Int, phase: StudyReviewPhase) -> some View {
-    StudyReviewFlip(angle: flipAngle) { turned in
+    StudyReviewFlip(angle: flipAngle, onTurn: { showsBack = $0 }) { turned in
       side(card: card, index: index, total: total, back: reduceMotion ? phase == .back : turned)
     }
     .rotationEffect(.degrees(tilt))
@@ -263,7 +266,8 @@ public struct StudyReviewScreen: View {
 
   private var swipeEnabled: Bool {
     guard case .card(_, let phase, _, let failed) = state else { return false }
-    return phase == .back && !grading && !conflict && !failed
+    // Arrastar ainda de frente daria nota a um cartão que ninguém leu.
+    return phase == .back && (reduceMotion || showsBack) && !grading && !conflict && !failed
   }
 
   private var swipe: some Gesture {
@@ -430,6 +434,7 @@ public struct StudyReviewScreen: View {
 @Animatable
 private struct StudyReviewFlip<Content: View>: View {
   var angle: Double
+  @AnimatableIgnored var onTurn: (Bool) -> Void
   @AnimatableIgnored var content: (Bool) -> Content
 
   var body: some View {
@@ -438,6 +443,7 @@ private struct StudyReviewFlip<Content: View>: View {
     content(back)
       .scaleEffect(x: back ? -1 : 1)
       .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.3)
+      .onChange(of: back) { onTurn(back) }
   }
 }
 
