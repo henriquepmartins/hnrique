@@ -423,25 +423,35 @@ public struct FocoLedger: Codable, Hashable, Sendable {
     return FocoStreak(current: current, best: best, isTodayDone: isTodayDone)
   }
 
-  public func days(endingOn today: CalendarDate, count: Int, now: Date, calendar: Calendar)
-    -> [FocoDay]
+  /// A grade de `count` semanas terminando na de hoje, uma coluna por semana
+  /// começando no primeiro dia da semana do calendário. Os dias depois de hoje
+  /// ficam nulos, para cada linha ser sempre o mesmo dia da semana.
+  public func weeks(endingOn today: CalendarDate, count: Int, now: Date, calendar: Calendar)
+    -> [[FocoDay?]]
   {
     let totals = secondsByDay(now: now, calendar: calendar)
-    let goal = Double(max(dailyGoalMinutes, 1)) * 60
-    return (0..<count).reversed().map { back in
-      let date = today.adding(days: -back, in: calendar)
-      let seconds = totals[date] ?? 0
-      return FocoDay(date: date, seconds: seconds, level: Self.level(seconds: seconds, goal: goal))
+    let offset = (today.weekday(in: calendar) + 1 - calendar.firstWeekday + 7) % 7
+    let first = today.adding(days: -offset - 7 * (count - 1), in: calendar)
+    return (0..<count).map { week in
+      (0..<7).map { column -> FocoDay? in
+        let date = first.adding(days: week * 7 + column, in: calendar)
+        guard date <= today else { return nil }
+        let seconds = totals[date] ?? 0
+        return FocoDay(date: date, seconds: seconds, level: Self.level(seconds: seconds))
+      }
     }
   }
 
-  static func level(seconds: TimeInterval, goal: TimeInterval) -> Int {
-    guard seconds > 0 else { return 0 }
-    let fraction = seconds / goal
-    if fraction < 0.25 { return 1 }
-    if fraction < 0.5 { return 2 }
-    if fraction < 1 { return 3 }
-    return 4
+  /// Faixas fixas de minutos. Contra a meta, trocar 2 h por 4 h clareava o
+  /// histórico inteiro.
+  static func level(seconds: TimeInterval) -> Int {
+    switch seconds / 60 {
+    case ...0: 0
+    case ..<Double(dayCountsMinutes): 1
+    case ..<60: 2
+    case ..<120: 3
+    default: 4
+    }
   }
 
   private func seconds(on day: CalendarDate, track id: String?, now: Date, calendar: Calendar)

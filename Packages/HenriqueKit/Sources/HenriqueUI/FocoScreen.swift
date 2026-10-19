@@ -73,7 +73,9 @@ public struct FocoScreen: View {
   @Environment(EstudosStore.self) private var estudos
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
   @ScaledMetric(relativeTo: .largeTitle) private var clockSize = 64.0
+  @State private var selectedDay: CalendarDate?
 
   private let leading: FocoTrack.Source
 
@@ -121,10 +123,12 @@ public struct FocoScreen: View {
         .staggeredEntrance(index: 3, isReady: true)
         FocoTicker(since: todayAnchor, every: 60) { now in
           let today = CalendarDate(now, in: calendar)
-          FocoGrid(days: foco.ledger.days(endingOn: today, count: 84, now: now, calendar: calendar), today: today)
+          FocoGrid(
+            weeks: foco.ledger.weeks(endingOn: today, count: 12, now: now, calendar: calendar),
+            today: today, selected: $selectedDay)
         }
         .staggeredEntrance(index: 4, isReady: true)
-        todaySection(foco.ledger.entries(on: CalendarDate(.now, in: calendar), calendar: calendar))
+        daySection(selectedDay ?? CalendarDate(.now, in: calendar))
           .staggeredEntrance(index: 5, isReady: true)
       }
       .padding(.horizontal, 16)
@@ -277,30 +281,45 @@ public struct FocoScreen: View {
     }
   }
 
-  // MARK: Hoje
+  // MARK: Dia escolhido
 
-  private func todaySection(_ entries: [FocoEntry]) -> some View {
-    VStack(alignment: .leading, spacing: 0) {
-      StudySectionHeading(title: "hoje")
+  private func daySection(_ day: CalendarDate) -> some View {
+    let entries = foco.ledger.entries(on: day, calendar: calendar)
+    return VStack(alignment: .leading, spacing: 0) {
+      StudySectionHeading(title: dayTitle(day))
       if entries.isEmpty {
-        StudyEmptyState(icon: "timer", title: "nenhuma sessão hoje")
+        StudyEmptyState(icon: "timer", title: "nenhuma sessão")
       } else {
         StudyDbList {
           ForEach(entries) { entry in
-            StudyDbRow(dot: entry.track.color, title: entryTitle(entry), end: { EmptyView() })
-              .contextMenu {
-                Button("apagar", systemImage: "trash", role: .destructive) { foco.remove(entry) }
+            StudyDbRow(
+              dot: entry.track.color, title: entry.track.name,
+              detail: "\(StudyFormat.hour(entry.startedAt)) a \(StudyFormat.hour(entry.endedAt))",
+              end: { Text(entryDuration(entry)).monospacedDigit() }
+            )
+            .accessibilityElement(children: .combine)
+            .contextMenu {
+              Button("apagar", systemImage: "trash", role: .destructive) {
+                foco.remove(entry, holdFor: .seconds(voiceOver ? 10 : 4))
               }
+            }
           }
         }
       }
     }
+    .animation(reduceMotion ? nil : Motion.crossfade, value: day)
   }
 
-  private func entryTitle(_ entry: FocoEntry) -> String {
-    let minutes = entry.seconds < 60
+  private func dayTitle(_ day: CalendarDate) -> String {
+    let today = CalendarDate(.now, in: calendar)
+    if day == today { return "hoje" }
+    if day == today.adding(days: -1, in: calendar) { return "ontem" }
+    return StudyFormat.shortDay(day.date(in: calendar))
+  }
+
+  private func entryDuration(_ entry: FocoEntry) -> String {
+    entry.seconds < 60
       ? "\(Int(entry.seconds)) s" : FocoFormat.short(minutes: Int(entry.seconds / 60))
-    return "\(StudyFormat.hour(entry.startedAt)) a \(StudyFormat.hour(entry.endedAt)) · \(entry.track.name) · \(minutes)"
   }
 }
 
@@ -427,31 +446,35 @@ struct FocoPulseRing: View {
   }
 }
 
-/// Grade de 7 linhas por 12 colunas terminando hoje. Cada coluna é uma semana
-/// e a cascata entra por coluna.
+/// Grade de 7 linhas por 12 colunas terminando na semana de hoje. Cada coluna
+/// é uma semana do calendário e a cascata entra por coluna. Tocar num dia
+/// mostra as sessões dele embaixo; tocar de novo volta para hoje.
 struct FocoGrid: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  let days: [FocoDay]
+  let weeks: [[FocoDay?]]
   let today: CalendarDate
+  @Binding var selected: CalendarDate?
   @State private var shown = false
-
-  private let columns = 12
-  private let rows = 7
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       StudySectionHeading(title: "últimas 12 semanas")
       StudyCard {
         HStack(spacing: 4) {
-          ForEach(0..<columns, id: \.self) { column in
+          ForEach(weeks.indices, id: \.self) { column in
             VStack(spacing: 4) {
-              ForEach(0..<rows, id: \.self) { row in
-                cell(days[column * rows + row])
+              ForEach(0..<7, id: \.self) { row in
+                if let day = weeks[column][row] {
+                  cell(day)
+                } else {
+                  Color.clear.aspectRatio(1, contentMode: .fit)
+                }
               }
             }
             .opacity(shown || reduceMotion ? 1 : 0)
             .animation(
-              reduceMotion ? nil : Motion.entrance.delay(0.2 * Double(column) / Double(columns - 1)),
+              reduceMotion
+                ? nil : Motion.entrance.delay(0.2 * Double(column) / Double(max(weeks.count - 1, 1))),
               value: shown)
           }
         }
@@ -459,20 +482,31 @@ struct FocoGrid: View {
       }
     }
     .onAppear { shown = true }
-    .accessibilityElement(children: .ignore)
+    .sensoryFeedback(.selection, trigger: selected)
+    .accessibilityElement(children: .contain)
     .accessibilityLabel(
-      "\(FocoFormat.count(days.count { $0.seconds > 0 }, "dia", "dias")) com foco nas últimas 12 semanas")
+      "\(FocoFormat.count(weeks.joined().count { ($0?.seconds ?? 0) > 0 }, "dia", "dias")) com foco nas últimas 12 semanas")
   }
 
   private func cell(_ day: FocoDay) -> some View {
-    RoundedRectangle(cornerRadius: 3)
-      .fill(day.level == 0 ? Color.studyLine : Color.studyBlue.opacity(opacity(day.level)))
-      .aspectRatio(1, contentMode: .fit)
-      .overlay {
-        if day.date == today {
-          RoundedRectangle(cornerRadius: 3).strokeBorder(Color.studyInk, lineWidth: 1.5)
+    let isSelected = day.date == (selected ?? today)
+    return Button {
+      selected = day.date == today || day.date == selected ? nil : day.date
+    } label: {
+      RoundedRectangle(cornerRadius: 3)
+        .fill(day.level == 0 ? Color.studyLine : Color.studyBlue.opacity(opacity(day.level)))
+        .aspectRatio(1, contentMode: .fit)
+        .overlay {
+          if isSelected {
+            RoundedRectangle(cornerRadius: 3).strokeBorder(Color.studyInk, lineWidth: 1.5)
+          }
         }
-      }
+        .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(StudyFormat.weekdayLong(day.date.date(in: StudyFormat.calendar)))
+    .accessibilityValue(FocoFormat.spoken(day.seconds))
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 
   private func opacity(_ level: Int) -> Double {

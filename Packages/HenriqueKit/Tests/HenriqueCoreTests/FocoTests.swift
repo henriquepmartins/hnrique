@@ -115,22 +115,33 @@ struct FocoTests {
     #expect(ledger.seconds(on: Self.day("2026-09-08"), now: now, calendar: Self.calendar) == 0)
   }
 
-  @Test("os níveis da grade vão de 0 a 4 contra a meta de 120 min")
-  func gridLevelsAgainstTheGoal() {
+  @Test("os níveis da grade são faixas de minutos que não mudam com a meta")
+  func gridLevelsIgnoreTheGoal() {
     let ledger = FocoLedger(
       entries: [
-        Self.entry(Self.fisica, "2026-09-04", "09:00", "09:20"),
-        Self.entry(Self.fisica, "2026-09-05", "09:00", "09:40"),
-        Self.entry(Self.fisica, "2026-09-06", "09:00", "10:30"),
-        Self.entry(Self.fisica, "2026-09-07", "09:00", "11:00"),
-      ], dailyGoalMinutes: 120)
-    let days = ledger.days(
-      endingOn: Self.day("2026-09-07"), count: 5, now: Self.at("2026-09-08", "08:00"),
+        Self.entry(Self.fisica, "2026-09-03", "09:00", "09:20"),
+        Self.entry(Self.fisica, "2026-09-04", "09:00", "09:40"),
+        Self.entry(Self.fisica, "2026-09-05", "09:00", "10:30"),
+        Self.entry(Self.fisica, "2026-09-06", "09:00", "11:30"),
+      ], dailyGoalMinutes: 240)
+    let weeks = ledger.weeks(
+      endingOn: Self.day("2026-09-08"), count: 2, now: Self.at("2026-09-08", "12:00"),
       calendar: Self.calendar)
-    #expect(days.map(\.date.iso) == [
-      "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07",
+    #expect(weeks.flatMap { $0 }.map { $0?.level } == [
+      0, 0, 0, 0, 1, 2, 3, 4, 0, 0, nil, nil, nil, nil,
     ])
-    #expect(days.map(\.level) == [0, 1, 2, 3, 4])
+  }
+
+  @Test("a grade começa no domingo e cada linha é sempre o mesmo dia da semana")
+  func gridColumnsAreCalendarWeeks() {
+    let weeks = FocoLedger().weeks(
+      endingOn: Self.day("2026-09-08"), count: 12, now: Self.at("2026-09-08", "12:00"),
+      calendar: Self.calendar)
+    #expect(weeks.count == 12)
+    #expect(weeks[0][0]?.date.iso == "2026-06-21")
+    #expect(weeks[11].map { $0?.date.iso } == [
+      "2026-09-06", "2026-09-07", "2026-09-08", nil, nil, nil, nil,
+    ])
   }
 
   @Test("o bloco de 25 min para de contar no alvo, com pausa no meio")
