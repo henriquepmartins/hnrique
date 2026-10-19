@@ -26,7 +26,7 @@ struct WeekScreen: View {
           .subtleEntrance()
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
                                  count: textSize.isAccessibilitySize ? 1 : 2), spacing: 6) {
-          ForEach(store.weekPlan) { item in
+          ForEach(store.weekPlan.inTrainingWeekOrder()) { item in
             WorkoutTile(
               item: item,
               showsWave: store.dashboard?.highlightedWorkoutIDs.contains(item.id) == true,
@@ -80,6 +80,21 @@ let planWeekdaysShort = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"]
 /// também é, e senão um aparelho em inglês lia "segunda and quinta".
 func spokenWeekdays(_ weekdays: [Int]) -> String {
   weekdays.map { planWeekdays[$0] }.formatted(.list(type: .and).locale(StudyFormat.locale))
+}
+
+extension [WeekPlanItem] {
+  /// A grade segue a semana de treino pelo primeiro dia de cada treino, e os
+  /// sem dia vão para o fim. O servidor não guarda posição, e na ordem em que
+  /// ele manda a pasta de segunda podia cair depois da de sexta.
+  func inTrainingWeekOrder(firstWeekday: Int = Calendar.trainingWeek.firstWeekday) -> [WeekPlanItem] {
+    let start = firstWeekday - 1
+    func rank(_ item: WeekPlanItem) -> Int {
+      item.weekdays.map { ($0 - start + 7) % 7 }.min() ?? 7
+    }
+    return enumerated()
+      .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+      .map(\.element)
+  }
 }
 
 extension WeekPlanItem {
