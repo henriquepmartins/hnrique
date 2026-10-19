@@ -36,7 +36,7 @@ struct StudyAssignmentsCalendarCard: View {
           selectedDay: selectedDay
         ) { cell in
           guard cell.date != nil else { return }
-          withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+          withAnimation(Motion.resolve(Motion.swap, reduceMotion)) {
             selectedDay = selectedDay == cell.slot ? nil : cell.slot
           }
         }

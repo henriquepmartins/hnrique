@@ -8,6 +8,7 @@ public struct StudySubjectRoute: Hashable, Sendable {
 
 public struct StudySubjectsScreen: View {
   @Environment(EstudosStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Namespace private var cardSource
 
   public init() {}
@@ -17,15 +18,15 @@ public struct StudySubjectsScreen: View {
       VStack(alignment: .leading, spacing: 20) {
         switch store.subjects {
         case .idle, .loading:
-          StudyLoadingState().transition(.blurReplace)
+          StudyLoadingState().transition(.opacity)
         case .failed(let message):
           StudyFailedState(message: message) { Task { await store.loadSubjects(force: true) } }
-            .transition(.blurReplace)
+            .transition(.opacity)
         case .ready(let subjects):
-          content(subjects).transition(.blurReplace)
+          content(subjects).transition(.opacity)
         }
       }
-      .animation(Motion.crossfade, value: store.subjects.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.subjects.phase)
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }
@@ -119,6 +120,7 @@ struct StudySubjectCard: View {
 
 public struct StudySubjectScreen: View {
   @Environment(EstudosStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var state: DetailState = .loading
   @State private var tab: SubjectTab = .slides
   @State private var switched = false
@@ -143,15 +145,15 @@ public struct StudySubjectScreen: View {
       VStack(alignment: .leading, spacing: 20) {
         switch state {
         case .loading:
-          StudyLoadingState().transition(.blurReplace)
+          StudyLoadingState().transition(.opacity)
         case .failed(let message):
           StudyFailedState(message: message) { Task { await load(force: true) } }
-            .transition(.blurReplace)
+            .transition(.opacity)
         case .ready(let detail):
-          content(detail).transition(.blurReplace)
+          content(detail).transition(.opacity)
         }
       }
-      .animation(Motion.crossfade, value: state.isReady)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: state.isReady)
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }

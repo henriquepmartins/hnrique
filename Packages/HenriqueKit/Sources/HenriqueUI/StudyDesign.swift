@@ -523,21 +523,31 @@ private struct StudyCalloutSurface: ViewModifier {
 }
 
 struct StudyEmptyState: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let icon: String
   let title: String
   var detail: String?
   var cream = false
+  /// Fim de uma fila ou de um dia. O glifo entra depois do resto e o aparelho
+  /// confirma uma vez; um estado vazio comum só aparece.
+  var celebrate = false
   var action: (label: String, perform: () -> Void)?
+  @State private var landed = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Image(systemName: icon)
-        .font(.system(size: 24))
-        // Na lousa o ink40 do web sumiria no preto, então a versão creme usa o
-        // tom apagado do próprio creme.
-        .foregroundStyle(cream ? Color.studyCream50 : Color.studyInk40)
-        .frame(height: 28)
-        .offset(x: -2)
+      ZStack(alignment: .leading) {
+        if !celebrate || landed {
+          Image(systemName: icon)
+            .font(.system(size: 24))
+            // Na lousa o ink40 do web sumiria no preto, então a versão creme usa
+            // o tom apagado do próprio creme.
+            .foregroundStyle(cream ? Color.studyCream50 : Color.studyInk40)
+            .transition(reduceMotion ? .opacity : AnyTransition(.iconAppear))
+        }
+      }
+      .frame(height: 28)
+      .offset(x: -2)
       Text(title)
         .font(.callout.weight(.semibold))
         .foregroundStyle(cream ? Color.studyCream : Color.studyInk)
@@ -564,10 +574,16 @@ struct StudyEmptyState: View {
         .strokeBorder(
           cream ? Color.studyCream25 : Color.studyInk20,
           style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+      .onAppear {
+        guard celebrate, !landed else { return }
+        withAnimation(Motion.resolve(Motion.confirm, reduceMotion)) { landed = true }
+      }
+      .sensoryFeedback(.success, trigger: landed) { _, now in celebrate && now }
   }
 }
 
 struct StudyMetric: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .title2) private var valueSize = 24.0
   let value: String
   let caption: String
@@ -578,7 +594,7 @@ struct StudyMetric: View {
         .font(.system(size: valueSize, weight: .semibold))
         .tracking(-valueSize * 0.02)
         .contentTransition(.numericText())
-        .animation(Motion.crossfade, value: value)
+        .animation(reduceMotion ? nil : Motion.crossfade, value: value)
       Text(caption)
         .font(.caption)
         .foregroundStyle(Color.studyInk60)

@@ -54,8 +54,8 @@ struct StreakCounter: View {
       .font(.headline.weight(.bold))
       .fontDesign(.rounded)
       .monospacedDigit()
-      .animation(.smooth(duration: 0.2), value: isLit)
-      .animation(.snappy(duration: 0.25), value: count)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: isLit)
+      .animation(reduceMotion ? nil : Motion.roll, value: count)
       .frame(minWidth: 44, minHeight: 44)
       .contentShape(.rect)
     }
@@ -115,7 +115,7 @@ struct StreakScreen: View {
           Text("\(streak.weeklyCompleted)/\(streak.weeklyPlanned) na semana")
             .font(.subheadline).monospacedDigit().foregroundStyle(Color.mutedInk)
             .opacity(weekChecked || dashboard.weekAttendance != nil ? 1 : 0)
-            .animation(.smooth(duration: 0.2), value: weekChecked)
+            .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: weekChecked)
           if let reset = resetDay(streak) {
             Text("zera \(dayLabel(reset))")
               .font(.subheadline).foregroundStyle(Color.mutedInk)

@@ -18,6 +18,7 @@ private func pageCountLabel(_ total: Int) -> String? {
 /// bloco destes por matéria; agora mora dentro do detalhe da matéria.
 public struct SubjectNotebookSection: View {
   @Environment(EstudosStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var creating = false
   @State private var failed = false
   @State private var created: NotebookPageRoute?
@@ -29,16 +30,16 @@ public struct SubjectNotebookSection: View {
     VStack(alignment: .leading, spacing: 12) {
       switch store.notebooks {
       case .idle, .loading:
-        StudyLoadingState().transition(.blurReplace)
+        StudyLoadingState().transition(.opacity)
       case .failed(let message):
         StudyFailedState(message: message) { Task { await store.loadNotebooks(force: true) } }
-          .transition(.blurReplace)
+          .transition(.opacity)
       case .ready(let notebooks):
-        pages(notebooks.first { $0.subject.id == subjectId }?.pages ?? []).transition(.blurReplace)
+        pages(notebooks.first { $0.subject.id == subjectId }?.pages ?? []).transition(.opacity)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .animation(Motion.crossfade, value: store.notebooks.phase)
+    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.notebooks.phase)
     .task { await store.loadNotebooks() }
     .navigationDestination(item: $created) { NotebookPageScreen(id: $0.id) }
   }

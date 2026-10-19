@@ -68,7 +68,6 @@ public struct StudyReviewScreen: View {
   @State private var state: StudyReviewState = .empty
   @State private var conflict = false
   @State private var grading = false
-  @State private var flipping = false
   @State private var swiping = false
   @State private var dragX: CGFloat = 0
   @State private var cardY: CGFloat = 0
@@ -86,15 +85,15 @@ public struct StudyReviewScreen: View {
         StudyHeading(title: "revisar")
         switch store.queue {
         case .idle, .loading:
-          StudyLoadingState().transition(.blurReplace)
+          StudyLoadingState().transition(.opacity)
         case .failed(let message):
           StudyFailedState(message: message) { Task { await store.loadQueue(force: true) } }
-            .transition(.blurReplace)
+            .transition(.opacity)
         case .ready:
-          ready.transition(.blurReplace)
+          ready.transition(.opacity)
         }
       }
-      .animation(Motion.crossfade, value: store.queue.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.queue.phase)
       .padding(.horizontal, 16)
     }
     .studyPage()
@@ -121,7 +120,7 @@ public struct StudyReviewScreen: View {
           detail: "os cartões nascem das notas. escreva uma aula e marque o trecho que quer lembrar.",
           action: onWrite.map { (label: "escrever", perform: $0) })
       case .done:
-        StudyEmptyState(icon: "checkmark.circle", title: "fila limpa")
+        StudyEmptyState(icon: "checkmark.circle", title: "fila limpa", celebrate: true)
       case .card(let index, let phase, let hints, let failed):
         if deck.cards.indices.contains(index) {
           let card = deck.cards[index]
@@ -187,6 +186,18 @@ public struct StudyReviewScreen: View {
   }
 
   private func face(card: Flashcard, index: Int, total: Int, phase: StudyReviewPhase) -> some View {
+    StudyReviewFlip(angle: flipAngle) { turned in
+      side(card: card, index: index, total: total, back: reduceMotion ? phase == .back : turned)
+    }
+    .rotationEffect(.degrees(tilt))
+    .offset(x: dragX, y: cardY)
+    .opacity(cardOpacity)
+    .onTapGesture { flip() }
+    .gesture(swipe, isEnabled: swipeEnabled)
+    .accessibilityAddTraits(.isButton)
+  }
+
+  private func side(card: Flashcard, index: Int, total: Int, back: Bool) -> some View {
     ZStack(alignment: .topLeading) {
       // O piso de 300 mora num filho invisível porque `frame(minHeight:)` não
       // repropõe a altura ao conteúdo, e o rodapé precisa dela para descer.
@@ -207,7 +218,7 @@ public struct StudyReviewScreen: View {
           .tracking(-0.52)
           .fixedSize(horizontal: false, vertical: true)
           .padding(.top, 36)
-        if phase == .back {
+        if back {
           Text(card.back)
             .font(.system(size: 16))
             .foregroundStyle(Color.studyGraphite)
@@ -216,7 +227,7 @@ public struct StudyReviewScreen: View {
             .modifier(StudyReviewAnswerEntrance())
         }
         Spacer(minLength: 28)
-        Text(phase == .front ? "toque para virar" : "← errei · fácil →")
+        Text(back ? "← errei · fácil →" : "toque para virar")
           .font(.system(size: 13))
           .foregroundStyle(Color.studyInk40)
           .multilineTextAlignment(.center)
@@ -228,13 +239,6 @@ public struct StudyReviewScreen: View {
     }
     .paperCard(radius: StudyRadius.card)
     .contentShape(.rect)
-    .rotation3DEffect(.degrees(flipAngle), axis: (x: 0, y: 1, z: 0), perspective: 0.3)
-    .rotationEffect(.degrees(tilt))
-    .offset(x: dragX, y: cardY)
-    .opacity(cardOpacity)
-    .onTapGesture { flip() }
-    .gesture(swipe, isEnabled: swipeEnabled)
-    .accessibilityAddTraits(.isButton)
   }
 
   private var tilt: Double {
@@ -259,7 +263,7 @@ public struct StudyReviewScreen: View {
 
   private var swipeEnabled: Bool {
     guard case .card(_, let phase, _, let failed) = state else { return false }
-    return phase == .back && !grading && !conflict && !failed && !flipping
+    return phase == .back && !grading && !conflict && !failed
   }
 
   private var swipe: some Gesture {
@@ -287,7 +291,8 @@ public struct StudyReviewScreen: View {
         Task {
           await grade(
             toRight ? .facil : .errei,
-            fling: toRight ? StudyReviewSwipe.exit : -StudyReviewSwipe.exit)
+            fling: toRight ? StudyReviewSwipe.exit : -StudyReviewSwipe.exit,
+            velocity: value.velocity.width)
         }
       }
   }
@@ -295,39 +300,34 @@ public struct StudyReviewScreen: View {
   /// A velocidade da mola é relativa ao que falta andar, e não ao módulo do
   /// deslocamento, senão a volta sai para o lado errado.
   private func returnCurve(velocity: CGFloat) -> Animation {
-    guard !reduceMotion else { return .easeOut(duration: 0.16) }
-    let distance = 0 - dragX
-    let relative = abs(dragX) > 0.5 ? Double(velocity / distance) : 0
+    fling(to: 0, velocity: velocity)
+  }
+
+  private func fling(to target: CGFloat, velocity: CGFloat) -> Animation {
+    guard !reduceMotion else { return Motion.plain }
+    let distance = target - dragX
+    let relative = abs(distance) > 0.5 ? Double(velocity / distance) : 0
     return .interpolatingSpring(
       mass: 1, stiffness: 420, damping: 36, initialVelocity: min(max(relative, -40), 40))
   }
 
   // MARK: Virar
 
+  /// A fase troca no toque e libera as notas na hora; o giro só alcança depois.
+  /// Um segundo toque no meio do giro redireciona a mola sem esperar.
   private func flip() {
-    guard case .card = state, !flipping, !grading else { return }
-    flipping = true
-    Task {
-      defer { flipping = false }
-      guard !reduceMotion else {
-        dispatch(.flip)
-        setNow { cardOpacity = 0 }
-        await holdFrame()
-        withAnimation(.easeOut(duration: 0.15)) { cardOpacity = 1 }
-        return
-      }
-      withAnimation(.easeIn(duration: 0.18)) { flipAngle = 90 }
-      try? await Task.sleep(for: .milliseconds(180))
-      dispatch(.flip)
-      setNow { flipAngle = -90 }
-      await holdFrame()
-      withAnimation(.easeOut(duration: 0.28)) { flipAngle = 0 }
+    guard case .card = state, !grading else { return }
+    guard !reduceMotion else {
+      withAnimation(Motion.plain) { dispatch(.flip) }
+      return
     }
+    dispatch(.flip)
+    withAnimation(Motion.confirm) { flipAngle += 180 }
   }
 
   // MARK: Resposta
 
-  private func grade(_ rating: FlashcardRating, fling: CGFloat?) async {
+  private func grade(_ rating: FlashcardRating, fling: CGFloat?, velocity: CGFloat = 0) async {
     guard case .card(let index, let phase, _, _) = state, phase == .back, !grading, !conflict,
       let deck, deck.cards.indices.contains(index)
     else { return }
@@ -339,16 +339,16 @@ public struct StudyReviewScreen: View {
     if let fling {
       // A saída começa junto com a chamada. Esperar a rede com o cartão parado
       // debaixo do dedo faria o arrasto parecer travado.
-      withAnimation(.easeIn(duration: reduceMotion ? 0.15 : 0.2)) {
+      withAnimation(self.fling(to: fling, velocity: velocity)) {
         if !reduceMotion { dragX = fling }
-        cardOpacity = 0
       }
+      withAnimation(Motion.plain) { cardOpacity = 0 }
     }
     do {
       let result = try await store.grade(card: card, rating: rating)
       dispatch(.hint(rating: rating, interval: result.interval))
       if fling == nil {
-        withAnimation(.easeIn(duration: reduceMotion ? 0.15 : 0.2)) {
+        withAnimation(Motion.plain) {
           if !reduceMotion { cardY = -14 }
           cardOpacity = 0
         }
@@ -364,7 +364,7 @@ public struct StudyReviewScreen: View {
         flipAngle = 0
       }
       await holdFrame()
-      withAnimation(.easeOut(duration: reduceMotion ? 0.15 : 0.3)) {
+      withAnimation(Motion.resolve(Motion.subtleEntrance, reduceMotion)) {
         cardY = 0
         cardOpacity = 1
       }
@@ -424,13 +424,30 @@ public struct StudyReviewScreen: View {
 
 // MARK: - Peças
 
+/// O lado à mostra sai do ângulo desenhado, quadro a quadro, e não da fase: a
+/// fase já trocou no toque, e o verso só pode surgir quando o cartão passa de
+/// perfil. Depois disso o conteúdo vai espelhado para o giro desfazer.
+@Animatable
+private struct StudyReviewFlip<Content: View>: View {
+  var angle: Double
+  @AnimatableIgnored var content: (Bool) -> Content
+
+  var body: some View {
+    let turned = abs(angle.truncatingRemainder(dividingBy: 360))
+    let back = turned > 90 && turned < 270
+    content(back)
+      .scaleEffect(x: back ? -1 : 1)
+      .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.3)
+  }
+}
+
 private struct StudyReviewAnswerEntrance: ViewModifier {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var shown = false
 
   func body(content: Content) -> some View {
     content
-      .animation(reduceMotion ? Motion.plain : Motion.subtleEntrance) { view in
+      .animation(Motion.resolve(Motion.subtleEntrance, reduceMotion)) { view in
         view.opacity(shown ? 1 : 0)
       }
       .onAppear { shown = true }

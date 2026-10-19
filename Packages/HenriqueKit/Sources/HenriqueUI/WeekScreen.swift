@@ -712,7 +712,7 @@ struct ExercisePicker: View {
       do {
         let found = try await client.search(term, excluding: scope)
         guard !Task.isCancelled else { return }
-        withAnimation(animated ? .easeOut(duration: 0.2) : nil) {
+        withAnimation(animated ? Motion.subtleEntrance : nil) {
           remote = found
           remotePhase = .done
         }

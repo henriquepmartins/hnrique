@@ -3,6 +3,7 @@ import SwiftUI
 
 public struct IdiomasProgressoScreen: View {
   @Environment(IdiomasStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   public init() {}
 
@@ -67,7 +68,7 @@ public struct IdiomasProgressoScreen: View {
           .transition(.opacity)
         }
       }
-      .animation(.easeOut(duration: 0.25), value: store.progress.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.progress.phase)
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }

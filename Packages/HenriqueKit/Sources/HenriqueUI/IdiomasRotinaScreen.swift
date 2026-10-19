@@ -44,7 +44,7 @@ public struct IdiomasRotinaScreen: View {
           }
         }
       }
-      .animation(.easeOut(duration: 0.25), value: store.routine.phase)
+      .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: store.routine.phase)
       .padding(.horizontal, 16)
       .padding(.bottom, 32)
     }
@@ -76,7 +76,7 @@ public struct IdiomasRotinaScreen: View {
         )
       }
       if case .done = session {
-        done
+        done.transition(.opacity)
       } else {
         header(drills: drills)
         TabView(selection: $selection) {
@@ -92,8 +92,15 @@ public struct IdiomasRotinaScreen: View {
           session = .drill(
             index: next, step: .listen, micArmed: false, played: false, failed: false)
         }
+        .transition(.opacity)
       }
     }
+    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: isDone)
+  }
+
+  private var isDone: Bool {
+    if case .done = session { return true }
+    return false
   }
 
   private func header(drills: [LanguageDrill]) -> some View {
@@ -112,14 +119,23 @@ public struct IdiomasRotinaScreen: View {
 
   private var done: some View {
     VStack(alignment: .leading, spacing: 12) {
-      StudyEmptyState(icon: "checkmark.circle", title: sessionFinished ? "dia feito" : "rotina feita")
+      // "dia feito" nasce de novo em vez de só trocar o título: é ele o fim, e o
+      // glifo e a confirmação são dele.
+      StudyEmptyState(
+        icon: "checkmark.circle", title: sessionFinished ? "dia feito" : "rotina feita",
+        celebrate: sessionFinished
+      )
+      .id(sessionFinished)
+      .transition(.opacity)
       if !sessionFinished {
         Button("concluir sessão") { Task { await finish() } }
           .buttonStyle(.glassProminent)
           .controlSize(.large)
           .tint(.idiomasTeal)
+          .transition(.opacity)
       }
     }
+    .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: sessionFinished)
   }
 
   private func finish() async {
@@ -339,7 +355,7 @@ public struct IdiomasRotinaScreen: View {
   private func advance(drills: [LanguageDrill], drill: LanguageDrill) {
     reduce(.advance(total: drills.count), drill: drill, drills: drills)
     if case .drill(let index, _, _, _, _) = session {
-      withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+      withAnimation(reduceMotion ? nil : Motion.entrance) {
         selection = index
       }
     }

@@ -58,6 +58,7 @@ struct MeasurementsScreen: View {
 /// A porta das medidas dentro de progresso. Medidas deixou de ser aba, então o
 /// resumo mostra o número mais recente e o toque abre a tela inteira.
 struct MeasurementsLink: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accent) private var accent
   @Namespace private var cardSource
   let latest: BodyMeasurement?
@@ -112,7 +113,7 @@ struct MeasurementsLink: View {
     VStack(alignment: .leading, spacing: 2) {
       Text(text).font(.system(size: 30, weight: .medium)).monospacedDigit()
         .contentTransition(.numericText())
-        .animation(Motion.crossfade, value: text)
+        .animation(reduceMotion ? nil : Motion.crossfade, value: text)
       Text(caption).font(.caption).foregroundStyle(Color.mutedInk)
     }
   }
