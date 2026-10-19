@@ -166,12 +166,36 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(app.keyboards.firstMatch.waitForNonExistence(timeout: 3), "concluir fecha o teclado")
   }
 
+  /// O nome do treino de hoje, lido no hero: "segunda, 19 de outubro, Pernas e glúteos".
+  func todayWorkoutName() -> String {
+    let today = Self.weekdayNames[Self.saoPaulo.component(.weekday, from: Date()) - 1]
+    let hero = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label BEGINSWITH %@", today + ", ")).firstMatch
+    XCTAssert(hero.waitForExistence(timeout: 5), "hero de hoje apareceu")
+    return hero.label.components(separatedBy: ", ").dropFirst(2).joined(separator: ", ")
+  }
+
+  /// O treino de hoje muda com o dia da semana, então o exercício sai da tela:
+  /// o primeiro cartão aberto e a primeira série valendo dele.
   func testZCargaETeclado() {
     launch()
     ensureWorkoutToday()
-    let weight = app.textFields["set.supino-inclinado.work.1.weight"]
-    XCTAssert(weight.waitForExistence(timeout: 5), "carga da série valendo está disponível")
-    let completion = app.buttons["set.supino-inclinado.work.1.completion"]
+    let workout = todayWorkoutName()
+    let card = app.buttons.matching(NSPredicate(format: "value == 'expandido'")).firstMatch
+    XCTAssert(card.waitForExistence(timeout: 5), "o primeiro exercício de hoje está aberto")
+    let exerciseName = card.label.components(separatedBy: ", ")[0]
+    let firstWork = app.textFields.matching(NSPredicate(format: "identifier ENDSWITH '.work.1.weight'")).firstMatch
+    XCTAssert(firstWork.waitForExistence(timeout: 5), "carga da série valendo está disponível")
+    let weightId = firstWork.identifier
+    let weight = app.textFields[weightId]
+    let completion = app.buttons[weightId.replacingOccurrences(of: ".weight", with: ".completion")]
+    // O plano só segue a carga de série valendo feita, então a série precisa
+    // estar marcada antes da edição.
+    if completion.label.hasPrefix("Concluir") {
+      completion.tap()
+      expectation(for: NSPredicate(format: "label BEGINSWITH 'Desmarcar'"), evaluatedWith: completion)
+      waitForExpectations(timeout: 5)
+    }
     let previousLabel = completion.label
     replaceText(weight, with: "37,5")
     shot("10-teclado-carga")
@@ -179,10 +203,10 @@ final class FluxoDrive: XCTestCase {
     XCTAssertEqual(completion.label, previousLabel, "editar carga preserva conclusão da série")
 
     app.tabBars.buttons["plano"].tap()
-    app.buttons["editar Superiores"].tap()
+    app.buttons["editar \(workout)"].tap()
     app.buttons["editar"].tap()
     goToStep("exercícios")
-    expandPlanExercise("supino inclinado")
+    expandPlanExercise(exerciseName)
     let planWeight = app.textFields["Carga em kg"].firstMatch
     XCTAssert(planWeight.waitForExistence(timeout: 5), "editor mostra carga do plano")
     let updated = NSPredicate(format: "value == %@", "37,5")
