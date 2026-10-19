@@ -59,6 +59,11 @@ struct WorkoutEditor: View {
   @State private var forward = true
   @State private var isSaving = false
   @State private var appliedRestOverrides = false
+  #if os(iOS)
+  /// Mora aqui, e não na lista, para o botão de organizar ficar fixo no topo
+  /// enquanto a lista rola embaixo dele.
+  @State private var editMode: EditMode = .inactive
+  #endif
   /// O catálogo por id, montado uma vez. Cada tecla no nome roda o body de novo
   /// e cada linha de exercício lê daqui, então a busca não pode varrer a lista.
   @State private var exerciseInfo: [String: ExerciseCatalogItem]
@@ -166,6 +171,28 @@ struct WorkoutEditor: View {
           .font(.headline.weight(.semibold))
           .foregroundStyle(Color.ink)
           .accessibilityAddTraits(.isHeader)
+        #if os(iOS)
+        if step == .exercicios, !draft.exercises.isEmpty || isOrganizing {
+          RoundButton(
+            systemImage: isOrganizing ? "checkmark" : "arrow.up.arrow.down",
+            fill: isOrganizing ? Color.ink : Color.surfaceMuted,
+            ink: isOrganizing ? .white : Color.ink,
+            label: isOrganizing ? "concluir ordem" : "ordenar exercícios"
+          ) {
+            dismissKeyboard()
+            withAnimation(Motion.resolve(Motion.expand, reduceMotion)) {
+              editMode = isOrganizing ? .inactive : .active
+            }
+          }
+          .accessibilityHint(isOrganizing
+            ? "Voltar aos ajustes dos exercícios"
+            : "Mostrar alças para arrastar os exercícios")
+          .sensoryFeedback(.selection, trigger: isOrganizing)
+          .frame(maxWidth: .infinity, alignment: .trailing)
+          .disabled(isSaving)
+          .transition(.opacity)
+        }
+        #endif
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 12)
@@ -180,10 +207,16 @@ struct WorkoutEditor: View {
           WorkoutDaysSection(selection: $draft.weekdays, workoutId: workoutId)
             .padding(16).transition(stepTransition)
         case .exercicios:
-          ExercisesStep(
-            exercises: $draft.exercises, exerciseInfo: $exerciseInfo, catalog: catalog,
-            workoutId: workoutId, workoutName: draft.trimmedName, isSaving: isSaving, onDelete: remove
-          )
+          ScrollViewReader { proxy in
+            ExercisesStep(
+              exercises: $draft.exercises, exerciseInfo: $exerciseInfo, catalog: catalog,
+              workoutId: workoutId, workoutName: draft.trimmedName, isSaving: isSaving,
+              scroll: proxy, onDelete: remove
+            )
+          }
+          #if os(iOS)
+          .environment(\.editMode, $editMode)
+          #endif
           .transition(stepTransition)
         }
       }
@@ -203,6 +236,14 @@ struct WorkoutEditor: View {
     }
   }
 
+  private var isOrganizing: Bool {
+    #if os(iOS)
+    editMode.isEditing
+    #else
+    false
+    #endif
+  }
+
   private var displayName: String {
     draft.trimmedName.isEmpty ? "novo treino" : draft.trimmedName
   }
@@ -211,7 +252,12 @@ struct WorkoutEditor: View {
     guard let target else { return }
     dismissKeyboard()
     forward = target.rawValue > step.rawValue
-    withAnimation(stepAnimation) { step = target }
+    withAnimation(stepAnimation) {
+      step = target
+      #if os(iOS)
+      editMode = .inactive
+      #endif
+    }
   }
 
   private func save() {
@@ -256,6 +302,7 @@ private struct RoundButton: View {
           Image(systemName: systemImage)
             .font(.system(.body, weight: .semibold))
             .foregroundStyle(ink)
+            .contentTransition(.symbolEffect(.replace))
             .offset(x: nudge)
         }
     }
@@ -322,9 +369,13 @@ private struct EditorField<Content: View>: View {
 private struct ExercisesStep: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   #if os(iOS)
-  @State private var editMode: EditMode = .inactive
+  @Environment(\.editMode) private var editMode
   #endif
   @State private var isPickingExercise = false
+  /// Quantos exercícios havia ao abrir o seletor. O primeiro depois desse
+  /// índice é o que abre e recebe a rolagem quando o seletor fecha.
+  @State private var countBeforePick = 0
+  @State private var drops = 0
   @State private var confirmDelete = false
   /// Só um exercício aberto por vez; os outros ficam na linha resumida.
   @State private var openExercise: String?
@@ -334,18 +385,19 @@ private struct ExercisesStep: View {
   let workoutId: String?
   let workoutName: String
   let isSaving: Bool
+  let scroll: ScrollViewProxy
   let onDelete: () -> Void
 
   private var isOrganizing: Bool {
     #if os(iOS)
-    editMode.isEditing
+    editMode?.wrappedValue.isEditing == true
     #else
     false
     #endif
   }
 
-  private var editAnimation: Animation? {
-    reduceMotion ? nil : Motion.confirm
+  private var editAnimation: Animation {
+    Motion.resolve(Motion.confirm, reduceMotion)
   }
 
   var body: some View {
@@ -369,8 +421,10 @@ private struct ExercisesStep: View {
                 exercises.removeAll { $0.exerciseId == exerciseId }
               }
             })
-            .deleteDisabled(isSaving)
-            .moveDisabled(isSaving)
+            // Sem o modo organizar, a linha aberta levantada pelo toque longo
+            // tem uns 500 pt e cobre as vizinhas. Só as fechadas arrastam.
+            .deleteDisabled(isSaving || isOrganizing)
+            .moveDisabled(isSaving || (!isOrganizing && openExercise == exerciseId))
         }
         .onDelete { offsets in
           withAnimation(editAnimation) { exercises.remove(atOffsets: offsets) }
@@ -379,39 +433,16 @@ private struct ExercisesStep: View {
           withAnimation(editAnimation) {
             exercises.move(fromOffsets: offsets, toOffset: destination)
           }
+          drops += 1
         }
 
-        Button("adicionar", systemImage: "plus") {
-          isPickingExercise = true
+        if !isOrganizing {
+          Button("adicionar", systemImage: "plus", action: pickExercises)
+            .disabled(exercises.count >= Limits.exerciseCount.upperBound)
         }
-        .disabled(exercises.count >= Limits.exerciseCount.upperBound)
-      } header: {
-        #if os(iOS)
-        if !exercises.isEmpty || isOrganizing {
-          HStack {
-            Spacer()
-            Button {
-              withAnimation(editAnimation) {
-                editMode = isOrganizing ? .inactive : .active
-              }
-            } label: {
-              Text(isOrganizing ? "ok" : "ordenar")
-                .font(.subheadline.weight(.semibold))
-                .textCase(nil)
-                .foregroundStyle(.tint)
-                .frame(minHeight: 44)
-                .contentShape(.rect)
-            }
-            .buttonStyle(StudyPressStyle())
-            .accessibilityHint(isOrganizing
-              ? "Voltar aos ajustes dos exercícios"
-              : "Mostrar alças para arrastar os exercícios")
-          }
-        }
-        #endif
       }
 
-      if workoutId != nil {
+      if workoutId != nil, !isOrganizing {
         Section {
           Button("apagar treino", systemImage: "trash", role: .destructive) {
             confirmDelete = true
@@ -422,14 +453,12 @@ private struct ExercisesStep: View {
       }
     }
     .scrollContentBackground(.hidden)
-    #if os(iOS)
-    .environment(\.editMode, $editMode)
-    #endif
-    .sheet(isPresented: $isPickingExercise) {
+    .sensoryFeedback(.impact(weight: .light), trigger: drops)
+    .sensoryFeedback(.impact(weight: .light), trigger: exercises.count) { old, new in new < old }
+    .sheet(isPresented: $isPickingExercise, onDismiss: revealPicked) {
       ExercisePicker(catalog: catalog, chosen: Set(exercises.map(\.exerciseId))) { item in
         let known = catalog.contains(where: { $0.id == item.id })
         exerciseInfo[item.id] = item
-        openExercise = item.id
         exercises.append(
           PlanExercise(
             exerciseId: item.id, prepSets: 2, workSets: 2, repsMin: 8, repsMax: 12,
@@ -438,6 +467,23 @@ private struct ExercisesStep: View {
             equipment: known ? nil : item.equipment,
             imageUrl: known ? nil : item.imageUrl))
       }
+    }
+  }
+
+  private func pickExercises() {
+    countBeforePick = exercises.count
+    isPickingExercise = true
+  }
+
+  /// O seletor fica aberto para escolher vários. Quando fecha, o primeiro da
+  /// leva abre e a lista rola até ele, porque com cinco ou mais ele nasce fora
+  /// da tela.
+  private func revealPicked() {
+    guard exercises.indices.contains(countBeforePick) else { return }
+    let first = exercises[countBeforePick].exerciseId
+    withAnimation(Motion.resolve(Motion.expand, reduceMotion)) {
+      openExercise = first
+      scroll.scrollTo(first, anchor: .top)
     }
   }
 }

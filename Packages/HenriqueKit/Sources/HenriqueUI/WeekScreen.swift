@@ -326,6 +326,11 @@ struct PlanExerciseRow: View {
             .accessibilityLabel(name.lowercased())
             .accessibilityValue(spokenSummary)
             .accessibilityHint(isExpanded ? "fechar ajustes" : "abrir ajustes")
+        } else if isOrganizing {
+          header
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(name.lowercased())
+            .accessibilityValue(spokenSummary)
         } else {
           header
         }
@@ -361,10 +366,13 @@ struct PlanExerciseRow: View {
 
   private var header: some View {
     HStack(spacing: 12) {
-      ExerciseThumb(imageUrl: imageUrl, size: 48)
+      // Organizando, a linha encolhe para caberem muitas na tela: foto menor,
+      // nome numa linha e sem o resumo.
+      ExerciseThumb(imageUrl: imageUrl, size: isOrganizing ? 36 : 48)
       VStack(alignment: .leading, spacing: 3) {
         Text(name.lowercased()).font(.headline.weight(.semibold)).foregroundStyle(Color.ink)
-        if onToggle != nil || isOrganizing {
+          .lineLimit(isOrganizing ? 1 : nil)
+        if onToggle != nil, !isOrganizing {
           HStack(spacing: 4) {
             Text(exercise.summary).monospacedDigit()
             if exercise.workToFailure {
@@ -372,7 +380,7 @@ struct PlanExerciseRow: View {
             }
           }
           .font(.caption).foregroundStyle(Color.mutedInk)
-        } else if let subtitle {
+        } else if !isOrganizing, let subtitle {
           Text(subtitle).font(.caption).foregroundStyle(Color.mutedInk)
         }
       }
@@ -543,6 +551,7 @@ struct ExercisePicker: View {
   @State private var remote: [ExerciseCatalogItem] = []
   @State private var remotePhase: RemotePhase = .idle
   @State private var lookup: Task<Void, Never>?
+  @State private var pickedHere = 0
 
   let catalog: [ExerciseCatalogItem]
   let chosen: Set<String>
@@ -674,15 +683,18 @@ struct ExercisePicker: View {
       }
       .keyboardDone()
       .onAppear { searchFocused = true }
+      .sensoryFeedback(.success, trigger: pickedHere)
       .onChange(of: search) { scheduleRemote() }
       .onChange(of: muscle) { scheduleRemote() }
     }
   }
 
+  /// A folha fica aberta para montar o treino de uma vez. A linha passa a "no
+  /// treino" porque `chosen` chega de novo de quem abriu.
   private func pick(_ item: ExerciseCatalogItem) {
     guard !chosen.contains(item.id) else { return }
     onPick(item)
-    dismiss()
+    pickedHere += 1
   }
 
   private func createCustom() {
@@ -693,7 +705,8 @@ struct ExercisePicker: View {
       muscleGroup: muscle ?? "Geral", equipment: "Livre", imageUrl: nil)
     guard !chosen.contains(item.id) else { return }
     onPick(item)
-    dismiss()
+    pickedHere += 1
+    search = ""
   }
 
   private func scheduleRemote() {
