@@ -4,6 +4,7 @@ import SwiftUI
 public struct IdiomasProgressoScreen: View {
   @Environment(IdiomasStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .largeTitle) private var figureSize = 44.0
 
   public init() {}
 
@@ -25,7 +26,9 @@ public struct IdiomasProgressoScreen: View {
             VStack(alignment: .leading, spacing: 4) {
               HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(progress.figure.count)")
-                  .font(.system(size: 44, weight: .semibold))
+                  .font(.system(size: figureSize, weight: .semibold))
+                  .monospacedDigit()
+                  .contentTransition(.numericText())
                   .padding(.leading, -1.5)
                   .foregroundStyle(Color.idiomasTeal)
                 if let target = progress.figure.target {

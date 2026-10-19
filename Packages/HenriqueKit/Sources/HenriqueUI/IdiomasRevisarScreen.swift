@@ -42,6 +42,7 @@ private enum IdiomasReviewState {
 public struct IdiomasRevisarScreen: View {
   @Environment(IdiomasStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .title2) private var promptSize = 26.0
 
   @State private var deck: LanguageReviewQueue?
   @State private var state: IdiomasReviewState = .empty
@@ -99,7 +100,7 @@ public struct IdiomasRevisarScreen: View {
               detail: store.conflictDrillIds.contains(drill.id)
                 ? "o treino mudou" : "tente de novo")
             if store.conflictDrillIds.contains(drill.id) {
-              Button("atualizar") { Task { await refresh() } }
+              Button("atualizar", systemImage: "arrow.clockwise") { Task { await refresh() } }
                 .buttonStyle(.glass)
                 .controlSize(.large)
                 .tint(Color.studyInk)
@@ -137,31 +138,36 @@ public struct IdiomasRevisarScreen: View {
     .contentShape(.rect)
     .onTapGesture { state = state.reduce(.flip) }
     .accessibilityAddTraits(.isButton)
+    .accessibilityAction { state = state.reduce(.flip) }
+    .accessibilityHint(phase == .front ? "mostra a resposta" : "volta para a frente")
+    .sensoryFeedback(.selection, trigger: phase)
+    .sensoryFeedback(.impact(weight: .light), trigger: index)
   }
 
   private func prompt(drill: LanguageDrill, phase: IdiomasReviewPhase) -> some View {
     VStack(alignment: .leading, spacing: 12) {
       Text(drill.promptDE)
-        .font(.system(size: 26, weight: .semibold).leading(.tight))
+        .font(.system(size: promptSize, weight: .semibold).leading(.tight))
         .fixedSize(horizontal: false, vertical: true)
         .padding(.top, 12)
       Text(drill.glossPT)
-        .font(.system(size: 16))
+        .font(.body)
         .foregroundStyle(Color.studyGraphite)
         .fixedSize(horizontal: false, vertical: true)
       if phase == .back {
         Text(drill.expectedDE ?? drill.glossPT)
-          .font(.system(size: 16).weight(.medium))
+          .font(.body.weight(.medium))
           .fixedSize(horizontal: false, vertical: true)
           .padding(.top, 8)
           .transition(.opacity)
       } else {
         Text("toque para virar")
-          .font(.system(size: 13))
+          .font(.footnote)
           .foregroundStyle(Color.studyInk40)
           .frame(maxWidth: .infinity, alignment: .center)
           .padding(.top, 8)
           .transition(.opacity)
+          .accessibilityHidden(true)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -177,10 +183,10 @@ public struct IdiomasRevisarScreen: View {
           Task { await grade(drill: drill, rating: rating) }
         } label: {
           VStack(spacing: 2) {
-            Text(rating.label).font(.system(size: 14, weight: .semibold))
+            Text(rating.label).font(.subheadline.weight(.semibold))
             if let hint = hints[rating] {
               Text(hint)
-                .font(.system(size: 11))
+                .font(.caption2)
                 .monospacedDigit()
                 .foregroundStyle(Color.studyInk40)
             }

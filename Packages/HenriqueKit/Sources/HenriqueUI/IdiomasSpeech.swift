@@ -6,7 +6,7 @@ import Observation
 /// resto fala com a fala por aqui, sem tocar em sessão de áudio direto.
 @MainActor
 @Observable
-public final class IdiomasSpeech {
+public final class IdiomasSpeech: NSObject, AVSpeechSynthesizerDelegate {
   /// Taxa de aprendiz, perto do padrão da voz. Mais devagar que isso a frase
   /// alemã perde o ritmo e vira sílaba solta.
   private static let learnerRate: Float = 0.5
@@ -14,8 +14,14 @@ public final class IdiomasSpeech {
   private let synthesizer = AVSpeechSynthesizer()
   public private(set) var isGermanVoiceAvailable = false
   public private(set) var micDenied = false
+  /// Segue o delegado do sintetizador, para o botão de ouvir virar parar
+  /// enquanto a voz fala.
+  public private(set) var isSpeaking = false
 
-  public init() {}
+  override public init() {
+    super.init()
+    synthesizer.delegate = self
+  }
 
   /// Confere a voz alemã sem travar a entrada no hub. A lista de vozes pode
   /// demorar na primeira chamada, então isto roda solto e a tela segue sem ela.
@@ -25,8 +31,6 @@ public final class IdiomasSpeech {
       await MainActor.run { self?.isGermanVoiceAvailable = available }
     }
   }
-
-  public var isSpeaking: Bool { synthesizer.isSpeaking }
 
   public func speak(_ text: String) {
     let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -70,6 +74,24 @@ public final class IdiomasSpeech {
       try? session.setCategory(.playback, mode: .spokenAudio)
       try? session.setActive(true)
     #endif
+  }
+
+  nonisolated public func speechSynthesizer(
+    _ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance
+  ) {
+    Task { @MainActor in self.isSpeaking = true }
+  }
+
+  nonisolated public func speechSynthesizer(
+    _ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance
+  ) {
+    Task { @MainActor in self.isSpeaking = false }
+  }
+
+  nonisolated public func speechSynthesizer(
+    _ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance
+  ) {
+    Task { @MainActor in self.isSpeaking = false }
   }
 
   private nonisolated static func germanVoice() -> AVSpeechSynthesisVoice? {
