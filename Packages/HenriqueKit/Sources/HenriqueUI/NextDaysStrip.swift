@@ -33,21 +33,35 @@ func plannedDays(from today: CalendarDate, schedule: PlanSchedule, count: Int = 
 
 struct NextDaysStrip: View {
   @Environment(AcademiaStore.self) private var store
+  @ScaledMetric(relativeTo: .caption) private var cardWidth = 104.0
+  @ScaledMetric(relativeTo: .caption) private var cardHeight = 96.0
   let days: [PlannedDay]
   let onPlan: () -> Void
+  /// Abre o dia tocado. Sem ela, os cartões são só leitura.
+  var onDay: ((CalendarDate) -> Void)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
       HStack(alignment: .firstTextBaseline) {
-        Text("próximos dias").font(.title3.weight(.medium)).tracking(-0.6)
+        SectionHeading(title: "próximos dias", systemImage: "calendar.day.timeline.left")
         Spacer()
-        Button("plano", action: onPlan).font(.subheadline).buttonStyle(.plain)
-          .foregroundStyle(Color.accentColor)
+        Button("plano", systemImage: "calendar", action: onPlan)
+          .labelStyle(.titleAndIcon)
+          .font(.subheadline).buttonStyle(.plain)
+          .foregroundStyle(.tint)
+          .frame(minHeight: 44).contentShape(.rect)
           .accessibilityIdentifier("hoje.plano")
       }
       ScrollView(.horizontal) {
         HStack(spacing: Space.s) {
-          ForEach(days) { day in card(day) }
+          ForEach(days) { day in
+            if let onDay {
+              Button { onDay(day.date) } label: { card(day) }
+                .buttonStyle(StudyPressStyle())
+            } else {
+              card(day)
+            }
+          }
         }
         .scrollTargetLayout()
       }
@@ -84,14 +98,15 @@ struct NextDaysStrip: View {
           .padding(.top, 4)
       }
     }
-    .frame(width: 104, height: 96, alignment: .topLeading)
+    .frame(width: cardWidth, alignment: .topLeading)
+    .frame(minHeight: cardHeight, alignment: .topLeading)
     .padding(Space.m)
     .background(day.isToday ? AnyShapeStyle(Color.ink) : AnyShapeStyle(Color.white),
       in: .rect(cornerRadius: Radius.tile))
     .overlay(RoundedRectangle(cornerRadius: Radius.tile)
       .strokeBorder(Color.ink.opacity(day.isToday ? 0 : 0.07)))
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(day.weekdayLabel), \(day.title)")
+    .accessibilityLabel("\(day.weekdayLabel), \(day.title)" + (isDone(day) ? ", feito" : ""))
   }
 
   /// `sessionDates` diz que houve treino completo na data, não qual. Com o dia

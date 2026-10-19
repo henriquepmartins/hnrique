@@ -44,18 +44,35 @@ struct DayCard: View {
         RestChip(rest: rest, onOpen: onWorkout)
       }
       SyncStatusLine()
-      ZStack(alignment: .topLeading) {
-        DayCardTitle(
-          workout: workout, tone: workout.flatMap { store.dashboard?.tone(forWorkout: $0.id) },
-          time: time)
-          .id(workout?.id)
-          .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
-      }
-      .accessibilityElement(children: .combine)
-      .accessibilityIdentifier("hoje.treino")
-      .accessibilityActions {
-        ForEach(choices?.all ?? []) { option in
-          Button(option.title) { choose(option) }
+      HStack(alignment: .top, spacing: Space.s) {
+        ZStack(alignment: .topLeading) {
+          DayCardTitle(
+            workout: workout, tone: workout.flatMap { store.dashboard?.tone(forWorkout: $0.id) },
+            time: time)
+            .id(workout?.id)
+            .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("hoje.treino")
+        .accessibilityActions {
+          ForEach(choices?.all ?? []) { option in
+            Button(option.title) { choose(option) }
+          }
+        }
+        // O toque longo no cartão continua, mas sozinho ninguém o descobre.
+        if let choices, !choices.all.isEmpty {
+          Menu {
+            DaySwapMenu(choices: choices, choose: choose)
+          } label: {
+            Image(systemName: "arrow.triangle.2.circlepath")
+              .font(.system(size: 15, weight: .semibold))
+              .foregroundStyle(accent.deep)
+              .frame(width: 32, height: 32)
+              .glassEffect(.regular.interactive(), in: .circle)
+              .frame(width: 44, height: 44)
+              .contentShape(.rect)
+          }
+          .accessibilityLabel("trocar o treino do dia")
         }
       }
       Button(action, systemImage: actionSymbol) {
@@ -258,7 +275,7 @@ private struct DaySwapMenu: View {
     if !choices.others.isEmpty {
       Section("treinar outro hoje") {
         ForEach(choices.others) { option in
-          Button(option.title) { choose(option) }
+          Button(option.title, systemImage: "dumbbell") { choose(option) }
         }
       }
     }
@@ -267,5 +284,24 @@ private struct DaySwapMenu: View {
         Button(revert.title, systemImage: "arrow.uturn.backward") { choose(revert) }
       }
     }
+  }
+}
+
+/// Título de seção, com o ícone no acento.
+struct SectionHeading: View {
+  @Environment(\.accent) private var accent
+  let title: String
+  let systemImage: String
+  var font: Font = .title3.weight(.medium)
+  var tracking: CGFloat = -0.6
+
+  var body: some View {
+    Label {
+      Text(title).tracking(tracking)
+    } icon: {
+      Image(systemName: systemImage).foregroundStyle(accent.base)
+    }
+    .font(font)
+    .accessibilityAddTraits(.isHeader)
   }
 }
