@@ -425,7 +425,7 @@ public final class AcademiaStore {
     } catch let error as APIError {
       phase = .failed(error.message)
     } catch {
-      phase = .failed("não entrou")
+      phase = .failed("algo deu errado, tente de novo")
     }
   }
 
@@ -862,7 +862,7 @@ public final class AcademiaStore {
       hold(pending)
       return .refused
     case APIError.decoding:
-      drop(pending, reason: "resposta inválida")
+      drop(pending, reason: "o app não entendeu a resposta")
       return .refused
     case APIError.unauthorized:
       hold(pending)
@@ -918,7 +918,7 @@ public final class AcademiaStore {
         banner = error.message
       }
     default:
-      banner = "erro"
+      banner = "algo deu errado, tente de novo"
     }
   }
 }

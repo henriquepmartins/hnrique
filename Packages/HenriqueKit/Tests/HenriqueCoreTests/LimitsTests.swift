@@ -101,7 +101,7 @@ struct LimitsTests {
          {"origin":"number","code":"too_small","minimum":0,"path":["weightKg"],
           "message":"Too small: expected number to be >=0"}]}}
       """
-    #expect(APIClient.serverMessage(from: Data(json.utf8)) == "repetições: no máximo 100")
+    #expect(APIClient.serverMessage(status: 400, from: Data(json.utf8)) == "repetições: no máximo 100")
   }
 
   @Test("o caminho com índice de array nomeia o campo e conta caracteres")
@@ -111,7 +111,7 @@ struct LimitsTests {
         {"origin":"string","code":"too_small","minimum":2,"path":["exercises",0,"name"],
          "message":"Too small: expected string to have >=2 characters"}]}}
       """
-    #expect(APIClient.serverMessage(from: Data(json.utf8)) == "nome: no mínimo 2 caracteres")
+    #expect(APIClient.serverMessage(status: 400, from: Data(json.utf8)) == "nome: no mínimo 2 caracteres")
   }
 
   @Test("um issue sem faixa mostra a mensagem do servidor em minúsculas")
@@ -122,15 +122,27 @@ struct LimitsTests {
          "message":"O topo da faixa de repetições não pode ser menor que a base"}]}}
       """
     #expect(
-      APIClient.serverMessage(from: Data(json.utf8))
+      APIClient.serverMessage(status: 400, from: Data(json.utf8))
         == "reps máx.: o topo da faixa de repetições não pode ser menor que a base")
   }
 
   @Test("sem issues fica a mensagem que já vinha")
   func withoutIssuesKeepsMessage() {
-    #expect(APIClient.serverMessage(from: Data(#"{"message":"treino não existe"}"#.utf8)) == "treino não existe")
-    #expect(APIClient.serverMessage(from: Data(#"{"error":"nope"}"#.utf8)) == "nope")
-    #expect(APIClient.serverMessage(from: Data("não é json".utf8)) == "servidor recusou")
+    #expect(APIClient.serverMessage(status: 400, from: Data(#"{"message":"treino não existe"}"#.utf8)) == "treino não existe")
+    #expect(APIClient.serverMessage(status: 400, from: Data(#"{"error":"nope"}"#.utf8)) == "nope")
+    #expect(APIClient.serverMessage(status: 400, from: Data("não é json".utf8)) == "o servidor não aceitou")
+  }
+
+  @Test("frase do better-auth, do tRPC ou do zod em inglês não chega à tela")
+  func englishNeverReachesScreen() {
+    let auth = Data(#"{"message":"Too many requests. Please try again later."}"#.utf8)
+    #expect(APIClient.serverMessage(status: 429, from: auth) == "muitas tentativas, espere um minuto")
+    let crash = Data(#"{"message":"Internal server error"}"#.utf8)
+    #expect(APIClient.serverMessage(status: 500, from: crash) == "o servidor falhou, tente de novo daqui a pouco")
+    let invalid = Data(#"{"message":"Invalid username"}"#.utf8)
+    #expect(APIClient.serverMessage(status: 400, from: invalid) == "o servidor não aceitou")
+    let zod = Data(#"{"data":{"issues":[{"code":"invalid_type","path":["clientId"],"message":"Invalid input: expected number"}]}}"#.utf8)
+    #expect(APIClient.serverMessage(status: 400, from: zod) == "valor inválido")
   }
 
   @Test("a contagem de séries fica na faixa do tipo: 0 a 6 no aquecimento, 1 a 10 valendo")
