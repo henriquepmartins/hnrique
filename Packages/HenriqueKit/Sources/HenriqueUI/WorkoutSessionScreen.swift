@@ -64,8 +64,14 @@ struct WorkoutSessionScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var typeSize
   @ScaledMetric(relativeTo: .title) private var nameSize = 27.0
   @ScaledMetric(relativeTo: .body) private var collapsedNameSize = 17.0
+  @ScaledMetric(relativeTo: .footnote) private var metaSize = 12.5
+  @ScaledMetric(relativeTo: .footnote) private var noteSize = 13.5
+  @ScaledMetric(relativeTo: .subheadline) private var actionSize = 14.0
+  @ScaledMetric(relativeTo: .subheadline) private var addSetSize = 14.5
+  @ScaledMetric(relativeTo: .subheadline) private var addExerciseSize = 15.0
   @State private var open: String?
   /// O exercício que acabou de fechar, ainda aberto para o visto da última série
   /// aparecer antes de o próximo tomar o lugar.
@@ -86,7 +92,7 @@ struct WorkoutSessionScreen: View {
   let onClose: () -> Void
 
   private var hairline: Color { Color.ink.opacity(0.08) }
-  private var glide: Animation? { reduceMotion ? nil : Motion.glide }
+  private var glide: Animation { Motion.resolve(Motion.glide, reduceMotion) }
 
   var body: some View {
     // A tela abre em tela cheia, e sem uma pilha de navegação o iOS não desenha a
@@ -168,7 +174,7 @@ struct WorkoutSessionScreen: View {
             hold(id, proxy: proxy)
           }
         }
-        .animation(reduceMotion ? nil : Motion.subtleEntrance, value: openId)
+        .animation(Motion.resolve(Motion.subtleEntrance, reduceMotion), value: openId)
         // As peças só começam a aparecer quando o cartão já cresceu o bastante
         // para elas caberem dentro dele.
         .task {
@@ -245,7 +251,7 @@ struct WorkoutSessionScreen: View {
           }
         } label: {
           Text(closedAt == nil ? "encerrar" : "resumo")
-            .font(.system(size: 14, weight: .medium))
+            .font(.system(size: actionSize, weight: .medium))
             .foregroundStyle(complete ? Color.white : Color.ink)
             .padding(.top, 10).padding(.bottom, 12).padding(.horizontal, 16)
             .background(complete ? accent.base : .white, in: .capsule)
@@ -269,7 +275,7 @@ struct WorkoutSessionScreen: View {
               .animation(reduceMotion ? nil : Motion.roll, value: progress.volumeKg)
           }
         }
-        .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Color.mutedInk)
+        .font(.system(size: metaSize)).monospacedDigit().foregroundStyle(Color.mutedInk)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(progress.done) de \(progress.total) séries valendo")
         .accessibilityValue(progress.volumeKg > 0
@@ -324,7 +330,7 @@ struct WorkoutSessionScreen: View {
         }
         Spacer(minLength: Space.s)
         Text("\(exercise.sets.completedWorkCount)/\(exercise.prescription.workSets)")
-          .font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.mutedInk)
+          .font(.system(.caption, design: .monospaced)).foregroundStyle(Color.mutedInk)
           .padding(.horizontal, 10).padding(.vertical, 5)
           .background(Color.surfaceMuted, in: .capsule)
       }
@@ -391,10 +397,10 @@ struct WorkoutSessionScreen: View {
       }
     } label: {
       HStack(spacing: 5) {
-        Image(systemName: "clock").font(.system(size: 12))
+        Image(systemName: "clock").font(.caption)
         Text("descanso \(restClock(TimeInterval(store.restSeconds(for: exercise.id))))")
       }
-      .font(.system(size: 12.5)).monospacedDigit().foregroundStyle(Color.ink)
+      .font(.system(size: metaSize)).monospacedDigit().foregroundStyle(Color.ink)
       .padding(.horizontal, 11).padding(.vertical, 5)
       .background(Color.surfaceMuted, in: .capsule)
     }
@@ -407,13 +413,17 @@ struct WorkoutSessionScreen: View {
   private var header: some View {
     HStack(spacing: 8) {
       Text("#").frame(width: 30)
-      Text("anterior").frame(maxWidth: .infinity, alignment: .leading)
+      if typeSize.isAccessibilitySize {
+        Spacer(minLength: 0)
+      } else {
+        Text("anterior").frame(maxWidth: .infinity, alignment: .leading)
+      }
       Text("kg").frame(minWidth: 56, maxWidth: 66)
       Text("reps").frame(minWidth: 56, maxWidth: 66)
       Color.clear.frame(width: SetRowScale.session.check, height: 1)
     }
     .padding(.horizontal, 2)
-    .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.mutedInk)
+    .font(.system(.caption2, design: .monospaced)).foregroundStyle(Color.mutedInk)
     .accessibilityHidden(true)
   }
 
@@ -444,7 +454,7 @@ struct WorkoutSessionScreen: View {
           exerciseId: exercise.id, kind: .work, count: count + 1)) }
       } label: {
         Text("+ série")
-          .font(.system(size: 14.5, weight: .medium)).foregroundStyle(accent.base)
+          .font(.system(size: addSetSize, weight: .medium)).foregroundStyle(accent.base)
           .frame(maxWidth: .infinity)
           .padding(11)
           .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(hairline))
@@ -476,7 +486,7 @@ struct WorkoutSessionScreen: View {
         .padding(.top, 2)
       TextField("anotação", text: noteBinding(exercise), axis: .vertical)
         .lineLimit(1...2)
-        .font(.system(size: 13.5)).foregroundStyle(Color.mutedInk)
+        .font(.system(size: noteSize)).foregroundStyle(Color.mutedInk)
         .focused($noteFocus, equals: exercise.id)
         .submitLabel(.done)
         .onSubmit { noteFocus = nil }
@@ -519,7 +529,7 @@ struct WorkoutSessionScreen: View {
     } label: {
       Label("só hoje", systemImage: "chevron.down")
         .labelStyle(.titleAndIcon)
-        .font(.system(size: 12, weight: .medium)).foregroundStyle(Color.mutedInk)
+        .font(.caption.weight(.medium)).foregroundStyle(Color.mutedInk)
         .padding(.horizontal, 11).padding(.vertical, 5)
         .background(Color.surfaceMuted, in: .capsule)
     }
@@ -532,7 +542,7 @@ struct WorkoutSessionScreen: View {
       adding = true
     } label: {
       Text("+ adicionar exercício")
-        .font(.system(size: 15)).foregroundStyle(Color.mutedInk)
+        .font(.system(size: addExerciseSize)).foregroundStyle(Color.mutedInk)
         .frame(maxWidth: .infinity)
         .padding(16)
         .overlay(RoundedRectangle(cornerRadius: Radius.row).strokeBorder(hairline))
