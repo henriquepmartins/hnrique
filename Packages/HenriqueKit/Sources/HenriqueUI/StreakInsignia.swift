@@ -301,11 +301,14 @@ struct InsigniaBadge: View {
           .opacity(pose.layers[2].opacity)
       }
     }
-    // As sombras e o neon das camadas viram uma textura só, num quadro com folga
-    // para nenhuma sombra ser cortada. Sem isso cada quadro da comemoração refazia
-    // o desfoque de cada sombra.
+    // As sombras e o neon das camadas viram uma textura só. Sem isso cada quadro da
+    // comemoração refazia o desfoque de cada sombra. A folga cobre o pior caso: a
+    // placa de trás (raio 0,6) no pico da mola (bounce 0,34, ~6% acima) mais a
+    // sombra dela, cerca de 0,71 do tamanho. O padding negativo devolve o layout.
     .frame(width: size * 1.2, height: size * 1.2)
+    .padding(size * 0.12)
     .drawingGroup()
+    .padding(-size * 0.12)
     .hueRotation(.degrees(style.shiftsHue ? time * 50 : 0))
   }
 
