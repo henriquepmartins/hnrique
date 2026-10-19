@@ -460,11 +460,6 @@ public struct FocusSessionScreen: View {
     .dateSeparator(.dash)
 }
 
-extension FocusSessionScreen {
-  /// Para a casca reabrir o bloco que estava rodando quando o app fechou.
-  static var hasActiveBlock: Bool { FocoStore.blockIsRunning }
-}
-
 // MARK: - Peças
 
 private let focusSessionGreen = LinearGradient(

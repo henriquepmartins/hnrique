@@ -17,6 +17,7 @@ public enum EstudosTab: String, Hashable, Sendable, CaseIterable {
 
 struct EstudosTabs: View {
   @Environment(EstudosStore.self) private var store
+  @Environment(FocoStore.self) private var foco
   @Binding var tab: EstudosTab
   @State private var showingSession: Bool
   @State private var showingWrite: Bool
@@ -28,7 +29,7 @@ struct EstudosTabs: View {
   ) {
     _tab = tab
     _showingApps = showingApps
-    showingSession = openSession || FocusSessionScreen.hasActiveBlock
+    showingSession = openSession
     showingWrite = openWrite
   }
 
@@ -63,7 +64,10 @@ struct EstudosTabs: View {
       }
     }
     .focoAccessory()
-    .onAppear { if tab == .apps { tab = .hoje; showingApps = true } }
+    .onAppear {
+      if tab == .apps { tab = .hoje; showingApps = true }
+      if foco.takeBlockResume() { showingSession = true }
+    }
     #if os(iOS)
       .fullScreenCover(isPresented: $showingSession) {
         FocusSessionScreen(onReview: { tab = .revisar })
