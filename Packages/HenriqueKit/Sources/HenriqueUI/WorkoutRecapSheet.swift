@@ -6,8 +6,10 @@ import SwiftUI
 struct WorkoutRecapSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .caption) private var badgeSize = 11.0
   @ScaledMetric(relativeTo: .caption) private var medalSize = 36.0
+  @State private var shown = false
   let recap: WorkoutRecap
 
   var body: some View {
@@ -20,9 +22,13 @@ struct WorkoutRecapSheet: View {
             stat("\(Formatting.trim(recap.workVolumeKg.rounded())) kg", caption: "de volume", delta: delta)
             stat("\(recap.doneSets)/\(recap.totalSets)", caption: "séries valendo")
           }
+          .revealEntrance(index: 0, shown: shown)
           if !recap.records.isEmpty {
             VStack(spacing: Space.s) {
-              ForEach(recap.records) { record(for: $0) }
+              ForEach(Array(recap.records.enumerated()), id: \.element.id) { index, item in
+                record(for: item, index: index + 1)
+                  .revealEntrance(index: index + 1, shown: shown)
+              }
             }
           }
           VStack(spacing: 0) {
@@ -31,6 +37,7 @@ struct WorkoutRecapSheet: View {
               if line.id != recap.exercises.last?.id { Divider() }
             }
           }
+          .revealEntrance(index: recap.records.count + 1, shown: shown)
         }
         .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,6 +50,12 @@ struct WorkoutRecapSheet: View {
     }
     .background(Color.canvas.ignoresSafeArea())
     .presentationDetents([.medium, .large])
+    // Os números entram depois de a folha parar de subir; junto com a subida,
+    // a cascata corria por baixo do movimento e ninguém via.
+    .task {
+      if !reduceMotion { try? await Task.sleep(for: .milliseconds(250)) }
+      shown = true
+    }
   }
 
   private var duration: String {
@@ -78,18 +91,27 @@ struct WorkoutRecapSheet: View {
     .accessibilityElement(children: .combine)
   }
 
-  private func record(for record: PersonalRecord) -> some View {
+  private func record(for record: PersonalRecord, index: Int) -> some View {
     let badge = record.kind.badge(delta: record.delta)
     return HStack(spacing: 12) {
-      Group {
-        if let symbol = record.kind.badgeSymbol {
-          Image(systemName: symbol).font(.system(size: badgeSize + 3, weight: .semibold))
-        } else if let badge {
-          Text(badge)
-            .font(.system(size: badgeSize, weight: .semibold, design: .monospaced))
-            .multilineTextAlignment(.center)
+      ZStack {
+        if shown {
+          Group {
+            if let symbol = record.kind.badgeSymbol {
+              Image(systemName: symbol).font(.system(size: badgeSize + 3, weight: .semibold))
+            } else if let badge {
+              Text(badge)
+                .font(.system(size: badgeSize, weight: .semibold, design: .monospaced))
+                .multilineTextAlignment(.center)
+            }
+          }
+          .transition(reduceMotion ? .opacity : AnyTransition(.iconAppear))
         }
       }
+      .animation(
+        Motion.resolve(Motion.confirm, reduceMotion).delay(Motion.delay(index: index) + 0.1),
+        value: shown
+      )
       .foregroundStyle(accent.deep)
       .frame(width: medalSize, height: medalSize)
       .background(accent.pale, in: .rect(cornerRadius: medalSize / 3))
@@ -130,8 +152,10 @@ struct RestChip: View {
 
   var body: some View {
     Button(action: onOpen) {
-      TimelineView(.periodic(from: .now, by: 1)) { context in
-        let remaining = rest.remaining(at: context.date)
+      // Mesma âncora do cartão do descanso: o tick cai onde o número arredondado
+      // troca, e a leitura vem 10 ms depois para não ficar em cima do meio exato.
+      TimelineView(.periodic(from: rest.startedAt - 0.5, by: 1)) { context in
+        let remaining = rest.remaining(at: context.date + 0.01)
         HStack(spacing: 6) {
           Image(systemName: "timer")
           Text(remaining > 0 ? "descanso \(restClock(remaining))" : "descanso completo, vai")
@@ -151,6 +175,7 @@ struct RestChip: View {
 /// série que o servidor recusou.
 struct SyncStatusLine: View {
   @Environment(AcademiaStore.self) private var store
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     if let notice = store.notice {
@@ -162,14 +187,18 @@ struct SyncStatusLine: View {
       }
       .font(.caption)
       .accessibilityIdentifier("fila.aviso")
+      .transition(.opacity)
     } else if store.waitingCount > 0 {
       Label(
         store.waitingCount == 1 ? "1 série esperando a rede" : "\(store.waitingCount) séries esperando a rede",
         systemImage: "clock"
       )
+      .contentTransition(.numericText(value: Double(store.waitingCount)))
+      .animation(Motion.resolve(Motion.roll, reduceMotion), value: store.waitingCount)
       .font(.caption).foregroundStyle(Color.mutedInk)
       .frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityIdentifier("fila.esperando")
+      .transition(.opacity)
     }
   }
 }
