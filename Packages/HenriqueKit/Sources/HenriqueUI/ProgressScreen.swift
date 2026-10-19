@@ -36,6 +36,7 @@ enum GoalKind: Hashable, CaseIterable, Identifiable {
 struct ProgressScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var editing: GoalKind?
   var onWorkout: () -> Void = {}
 
@@ -45,18 +46,18 @@ struct ProgressScreen: View {
         if let dashboard = store.dashboard {
           let streakGoals = dashboard.streakGoals ?? []
           HStack {
-            Text("metas").font(.title2.weight(.medium)).tracking(-0.8)
+            SectionHeading(title: "metas", systemImage: "target", font: .title2.weight(.medium), tracking: -0.8)
             Spacer()
             IconButton(title: "nova meta", systemImage: "plus", glass: true) {
               editing = newGoalKind(in: dashboard)
             }
-            .disabled(dashboard.exerciseCatalog.isEmpty)
           }
           .subtleEntrance()
           if let goal = dashboard.strengthGoal {
             GoalCard(
               exerciseName: goal.exerciseName, targetValue: goal.targetValue,
-              projection: dashboard.projection)
+              projection: dashboard.projection
+            ) { editing = .strength }
               .subtleEntrance()
           }
           ForEach(streakGoals, id: \.kind) { goal in
@@ -75,6 +76,8 @@ struct ProgressScreen: View {
         if let dashboard = store.dashboard {
           VStack(alignment: .leading, spacing: 10) {
             Text("\(dashboard.consistencyPercent)%").font(.system(size: 48, weight: .medium)).monospacedDigit()
+              .contentTransition(.numericText(value: Double(dashboard.consistencyPercent)))
+              .animation(Motion.resolve(Motion.roll, reduceMotion), value: dashboard.consistencyPercent)
             Text("4 semanas").font(.subheadline)
           }
           .foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
@@ -95,14 +98,18 @@ struct ProgressScreen: View {
             VolumeChart(points: series.points)
               .subtleEntrance()
           } else {
-            Image(systemName: "chart.xyaxis.line")
-              .font(.system(size: 44)).foregroundStyle(Color.mutedInk)
-              .padding(.vertical, 40)
-              .accessibilityLabel("sem histórico")
-              .subtleEntrance()
+            ContentUnavailableView {
+              Label("sem histórico", systemImage: "chart.xyaxis.line")
+            } actions: {
+              Button("começar treino", systemImage: "play.fill", action: onWorkout)
+                .buttonStyle(.glassProminent)
+            }
+            .subtleEntrance()
           }
           MeasurementsLink(latest: latest(in: dashboard))
             .subtleEntrance()
+        } else {
+          ProgressPlaceholder(phase: store.phase) { await store.load() }
         }
       }
       .padding(.horizontal, 16)
@@ -120,8 +127,36 @@ struct ProgressScreen: View {
   /// O botão abre o editor no primeiro tipo ainda sem meta, começando pela de
   /// força. Com as três definidas, volta para a força.
   private func newGoalKind(in dashboard: Dashboard) -> GoalKind {
-    if dashboard.strengthGoal == nil { return .strength }
-    return StreakKind.allCases.first { dashboard.goal($0) == nil }.map(GoalKind.init) ?? .strength
+    if dashboard.strengthGoal == nil, !dashboard.exerciseCatalog.isEmpty { return .strength }
+    return StreakKind.allCases.first { dashboard.goal($0) == nil }.map(GoalKind.init)
+      ?? (dashboard.exerciseCatalog.isEmpty ? .attendance : .strength)
+  }
+}
+
+/// A aba sem painel: o esqueleto no formato da constância, do gráfico de força e
+/// das medidas enquanto carrega, e a nova tentativa quando falhou.
+private struct ProgressPlaceholder: View {
+  let phase: AcademiaStore.Phase
+  let retry: () async -> Void
+
+  var body: some View {
+    switch phase {
+    case .loading:
+      VStack(spacing: Space.xxl) {
+        ForEach([140, 260, 120], id: \.self) { height in
+          RoundedRectangle(cornerRadius: Radius.card).frame(height: CGFloat(height))
+        }
+      }
+      .foregroundStyle(Color.surfaceMuted)
+      .modifier(SkeletonPulse())
+      .accessibilityHidden(true)
+      .transition(.opacity)
+    case .failed(let message):
+      LoadFailure(message: message, retry: retry)
+        .transition(.opacity)
+    case .idle, .ready:
+      EmptyView()
+    }
   }
 }
 
@@ -144,6 +179,8 @@ struct StreakGoalCard: View {
           Text("\(current)")
             .font(.largeTitle.weight(.semibold))
             .foregroundStyle(accent.base)
+            .contentTransition(.numericText(value: Double(current)))
+            .animation(Motion.resolve(Motion.roll, reduceMotion), value: current)
           Text("/\(target)")
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -189,19 +226,30 @@ private func latest(in dashboard: Dashboard) -> BodyMeasurement? {
 
 struct GoalCard: View {
   @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let exerciseName: String
   let targetValue: Double
   let projection: Projection?
+  let action: () -> Void
 
   var body: some View {
+    Button(action: action) { card }
+      .buttonStyle(StudyPressStyle())
+      .foregroundStyle(Color.ink)
+  }
+
+  private var card: some View {
     VStack(alignment: .leading, spacing: Space.m) {
       Label { Text(exerciseName) } icon: { Image(systemName: "target").frame(width: 24) }
         .font(.headline)
       HStack(alignment: .firstTextBaseline, spacing: 6) {
-        Text(weightLabel(projection?.current ?? 0))
+        // Sem projeção ainda não há carga para mostrar, e um "0 kg" leria como dado.
+        Text(projection.map { weightLabel($0.current) } ?? "–")
           .font(.largeTitle.weight(.semibold))
           .monospacedDigit()
           .foregroundStyle(accent.base)
+          .contentTransition(.numericText(value: projection?.current ?? 0))
+          .animation(Motion.resolve(Motion.roll, reduceMotion), value: projection?.current)
         Text("de \(weightLabel(targetValue))")
           .font(.callout)
           .foregroundStyle(.secondary)
@@ -217,6 +265,7 @@ struct GoalCard: View {
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(Space.xl)
     .background(accent.pale, in: .rect(cornerRadius: Radius.card))
+    .contentShape(.rect(cornerRadius: Radius.card))
   }
 
   private func projectionSentence(_ projection: Projection) -> String? {
@@ -263,19 +312,55 @@ struct OneRepMaxChart: View {
 
 struct VolumeChart: View {
   @Environment(\.accent) private var accent
+  @State private var selectedDate: Date?
   let points: [ProgressPoint]
+
+  private var selected: ProgressPoint? {
+    guard let selectedDate else { return nil }
+    return points.min {
+      abs($0.date.date().timeIntervalSince(selectedDate)) < abs($1.date.date().timeIntervalSince(selectedDate))
+    }
+  }
 
   var body: some View {
     ChartCard(title: "volume") {
-      Chart(points) { point in
-        AreaMark(x: .value("dia", point.date.date()), y: .value("volume", point.volumeKg))
-          .interpolationMethod(.monotone)
-          .foregroundStyle(LinearGradient(colors: [accent.mint.opacity(0.8), accent.mint.opacity(0.08)], startPoint: .top, endPoint: .bottom))
-        LineMark(x: .value("dia", point.date.date()), y: .value("volume", point.volumeKg))
-          .interpolationMethod(.monotone).foregroundStyle(accent.base)
+      Chart {
+        ForEach(points) { point in
+          AreaMark(x: .value("dia", point.date.date()), y: .value("volume", point.volumeKg))
+            .interpolationMethod(.monotone)
+            .foregroundStyle(LinearGradient(colors: [accent.mint.opacity(0.8), accent.mint.opacity(0.08)], startPoint: .top, endPoint: .bottom))
+          LineMark(x: .value("dia", point.date.date()), y: .value("volume", point.volumeKg))
+            .interpolationMethod(.monotone).foregroundStyle(accent.base)
+        }
+        if let selected {
+          RuleMark(x: .value("dia", selected.date.date()))
+            .foregroundStyle(Color.ink.opacity(0.2))
+            .annotation(
+              position: .top, spacing: 4,
+              overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
+            ) {
+              ChartReadout(value: selected.volumeKg, date: selected.date)
+            }
+        }
       }
       .chartYAxisLabel("kg")
+      .chartXSelection(value: $selectedDate)
+      .sensoryFeedback(.selection, trigger: selected?.date)
     }
+  }
+}
+
+/// O valor e o dia do ponto sob o dedo, em cima da régua.
+struct ChartReadout: View {
+  let value: Double
+  let date: CalendarDate
+
+  var body: some View {
+    Text("\(weightLabel(value)) · \(date.date().formatted(.dateTime.day().month(.abbreviated)))")
+      .font(.caption.weight(.medium)).monospacedDigit()
+      .foregroundStyle(Color.ink)
+      .padding(.horizontal, 8).padding(.vertical, 4)
+      .background(Color.surfaceMuted, in: .capsule)
   }
 }
 
@@ -342,7 +427,10 @@ struct GoalEditor: View {
       Form {
         Section {
           Picker("tipo", selection: $kind) {
-            ForEach(GoalKind.allCases) { Text($0.face.label).tag($0) }
+            // Força pede um exercício do catálogo; sem catálogo, o segmento sai.
+            ForEach(GoalKind.allCases.filter { $0 != .strength || !catalog.isEmpty }) { kind in
+              Text(kind.face.label).tag(kind)
+            }
           }
           .pickerStyle(.segmented)
           .labelsHidden()
@@ -432,8 +520,10 @@ private struct StreakGoalFields: View {
 struct MetricDetailScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var bodyTrack = false
   @State private var allHistory = false
+  @State private var selectedDate: Date?
 
   private var values: [(date: CalendarDate, value: Double)] {
     guard let data = store.dashboard else { return [] }
@@ -449,6 +539,13 @@ struct MetricDetailScreen: View {
     guard !allHistory, let last = values.last else { return values }
     return values.filter { $0.date >= last.date.adding(days: -56) }
   }
+  /// O ponto sob o dedo no gráfico; sem toque, o último.
+  private var shown: (date: CalendarDate, value: Double)? {
+    guard let selectedDate else { return window.last }
+    return window.min {
+      abs($0.date.date().timeIntervalSince(selectedDate)) < abs($1.date.date().timeIntervalSince(selectedDate))
+    }
+  }
 
   @State private var isAddingMeasurement = false
   @State private var isEditingGoal = false
@@ -462,10 +559,12 @@ struct MetricDetailScreen: View {
           Text("corpo").tag(true)
         }.pickerStyle(.segmented)
         VStack(spacing: Space.l) {
-          if let latest = window.last {
+          if let latest = shown {
             Text(latest.date.date(), format: .dateTime.day().month(.wide).year()).font(.caption)
             Text(weightLabel(latest.value)).font(.system(size: 64, weight: .medium)).tracking(-3).monospacedDigit()
               .minimumScaleFactor(0.6).lineLimit(1)
+              .contentTransition(.numericText(value: latest.value))
+              .animation(Motion.resolve(Motion.roll, reduceMotion), value: latest.value)
               .accessibilityLabel(bodyTrack ? "massa magra" : "força")
               .accessibilityValue(weightLabel(latest.value))
             if let first = window.first, first.date != latest.date {
@@ -476,12 +575,39 @@ struct MetricDetailScreen: View {
           } else {
             Text(bodyTrack ? "sem % de gordura" : "sem séries").font(.title2)
           }
-        }.frame(maxWidth: .infinity, minHeight: 230).padding(.vertical, 24)
+        }.frame(maxWidth: .infinity, minHeight: 150).padding(.top, 8)
+        if !window.isEmpty {
+          VStack(spacing: Space.m) {
+            Picker("período", selection: $allHistory) {
+              Text("8 sem").tag(false)
+              Text("tudo").tag(true)
+            }
+            .pickerStyle(.segmented)
+            Chart {
+              ForEach(window, id: \.date) { point in
+                LineMark(x: .value("dia", point.date.date()), y: .value("kg", point.value))
+                  .interpolationMethod(.monotone)
+                  .foregroundStyle(accent.base)
+                PointMark(x: .value("dia", point.date.date()), y: .value("kg", point.value))
+                  .symbolSize(30)
+                  .foregroundStyle(accent.base)
+              }
+              if selectedDate != nil, let shown {
+                RuleMark(x: .value("dia", shown.date.date()))
+                  .foregroundStyle(Color.ink.opacity(0.2))
+              }
+            }
+            .chartYScale(domain: .automatic(includesZero: false))
+            .chartYAxisLabel("kg")
+            .chartXSelection(value: $selectedDate)
+            .sensoryFeedback(.selection, trigger: selectedDate == nil ? nil : shown?.date)
+            .frame(height: 220)
+          }
+        }
         HStack(alignment: .top, spacing: 8) {
           action("registrar", symbol: "square.and.pencil") {
             if bodyTrack { isAddingMeasurement = true } else { onWorkout() }
           }
-          action(allHistory ? "tudo" : "8 sem", symbol: "calendar") { allHistory.toggle() }
           action("meta", symbol: "target") { isEditingGoal = true }
         }
         if !bodyTrack, let last = store.dashboard?.strengthGoal?.lastSession {
@@ -504,7 +630,9 @@ struct MetricDetailScreen: View {
     }.background(Color.canvas.ignoresSafeArea())
       .navigationTitle(bodyTrack ? "corpo" : (store.dashboard?.strengthSeries?.exerciseName.lowercased() ?? "força"))
       .toolbarTitleDisplayMode(.inline)
-      .sheet(isPresented: $isAddingMeasurement) { MeasurementEditor(previous: store.dashboard?.measurements.first) }
+      .onChange(of: bodyTrack) { selectedDate = nil }
+      .onChange(of: allHistory) { selectedDate = nil }
+      .sheet(isPresented: $isAddingMeasurement) { MeasurementEditor(previous: store.dashboard.flatMap(latest(in:))) }
       .sheet(isPresented: $isEditingGoal) {
         if let dashboard = store.dashboard {
           // Uma meta são dois campos. Subir até o topo dava peso de tela nova
