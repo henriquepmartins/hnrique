@@ -482,7 +482,7 @@ struct FocoPulseRing: View {
       .frame(width: 56, height: 56)
       .scaleEffect(expanded ? 1 : 40.0 / 56)
       .opacity(expanded ? 0 : 0.6)
-      .animation(.linear(duration: 1.6).repeatForever(autoreverses: false), value: expanded)
+      .animation(expanded ? Motion.pulse : nil, value: expanded)
       .onAppear { expanded = !reduceMotion }
   }
 }

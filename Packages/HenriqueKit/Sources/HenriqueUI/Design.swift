@@ -317,6 +317,15 @@ enum Motion {
   /// O pulso que respira sem parar: ponto de gravação, anel de foco, onda do
   /// mapa. Quem usa checa Reduzir Movimento e não anima.
   static let breathe = Animation.easeInOut(duration: 1).repeatForever(autoreverses: true)
+  /// O mesmo respiro, no dobro do tempo: a aura atrás do foco que roda.
+  static let breatheSlow = Animation.easeInOut(duration: 2).repeatForever(autoreverses: true)
+  /// O anel que cresce e some sem voltar, em volta do botão que está rodando.
+  static let pulse = Animation.linear(duration: 1.6).repeatForever(autoreverses: false)
+  /// A cintilação de uma casa do mapa de frequência. A semente, de 0 a 1, estica
+  /// o ciclo de 2 a 3,4 segundos para as casas vizinhas não piscarem juntas.
+  static func twinkle(seed: Double) -> Animation {
+    .easeInOut(duration: 1 + seed * 0.7).repeatForever(autoreverses: true)
+  }
 
   /// O passo entre um item e o seguinte. O atraso para de crescer no sétimo
   /// para a última linha de uma lista longa não esperar a lista inteira.

@@ -236,7 +236,7 @@ struct SkeletonPulse: ViewModifier {
   func body(content: Content) -> some View {
     content
       .opacity(dim ? 0.5 : 1)
-      .animation(dim ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : nil, value: dim)
+      .animation(dim ? Motion.breathe : nil, value: dim)
       .onAppear { if !reduceMotion { dim = true } }
   }
 }
