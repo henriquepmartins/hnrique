@@ -190,7 +190,20 @@ public final class EstudosStore {
       return page
     } catch {
       guard generation == sessionID, !(error is CancellationError) else { return nil }
-      await handle(error)
+      await handle(error, reportsInline: true)
+      return nil
+    }
+  }
+
+  /// Uma nota inteira, para abrir no editor. A falha fica na própria tela.
+  public func note(path: String) async -> StudyNote? {
+    let generation = sessionID
+    do {
+      let note = try await client.studyNote(path: path)
+      return generation == sessionID ? note : nil
+    } catch {
+      guard generation == sessionID, !(error is CancellationError) else { return nil }
+      await handle(error, reportsInline: true)
       return nil
     }
   }

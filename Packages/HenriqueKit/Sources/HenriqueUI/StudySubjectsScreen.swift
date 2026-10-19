@@ -85,6 +85,8 @@ private func semestreLabel(_ subjects: [StudySubject]) -> String? {
 
 struct StudySubjectCard: View {
   let subject: StudySubject
+  @ScaledMetric(relativeTo: .caption2) private var codeSize = 11.0
+  @ScaledMetric(relativeTo: .callout) private var nameSize = 16.0
 
   var body: some View {
     VStack(alignment: .leading, spacing: 22) {
@@ -93,7 +95,7 @@ struct StudySubjectCard: View {
         Spacer(minLength: 8)
         if let code = subject.code {
           Text(code)
-            .font(.system(size: 11, weight: .medium))
+            .font(.system(size: codeSize, weight: .medium))
             .opacity(0.75)
             .lineLimit(1)
         }
@@ -101,7 +103,7 @@ struct StudySubjectCard: View {
       Spacer(minLength: 0)
       VStack(alignment: .leading, spacing: 3) {
         Text(subject.name)
-          .font(.system(size: 16, weight: .semibold))
+          .font(.system(size: nameSize, weight: .semibold))
           .tracking(-0.18)
           .lineLimit(3)
         if let semester = subject.semester {
@@ -113,6 +115,8 @@ struct StudySubjectCard: View {
     .padding(14)
     .foregroundStyle(Color.subjectInk(for: subject.color))
     .background(Color(hexString: subject.color), in: .rect(cornerRadius: StudyRadius.card))
+    // Duas colunas não aguentam os tamanhos de acessibilidade mais altos.
+    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
   }
 }
 
@@ -121,9 +125,12 @@ struct StudySubjectCard: View {
 public struct StudySubjectScreen: View {
   @Environment(EstudosStore.self) private var store
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openURL) private var openURL
   @State private var state: DetailState = .loading
   @State private var tab: SubjectTab = .slides
   @State private var switched = false
+  @State private var openNote: NoteSummary?
+  @ScaledMetric(relativeTo: .footnote) private var propertyWidth = 104.0
   let id: String
 
   public init(id: String) { self.id = id }
@@ -143,6 +150,9 @@ public struct StudySubjectScreen: View {
   public var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
+        // O cabeçalho sai da lista de matérias desde o primeiro quadro, para o
+        // zoom do cartão chegar numa tela com nome e cor, e não num giro solto.
+        if let subject = shownSubject { header(subject) }
         switch state {
         case .loading:
           StudyLoadingState().transition(.opacity)
@@ -162,39 +172,51 @@ public struct StudySubjectScreen: View {
     .toolbarTitleDisplayMode(.inline)
     .task { await load(force: false) }
     .refreshable { await load(force: true) }
+    .sheet(item: $openNote) { WriteScreen(path: $0.path) }
+  }
+
+  private var shownSubject: StudySubject? {
+    if case .ready(let detail) = state { return detail.subject }
+    return store.subjects.value?.first { $0.id == id }
+  }
+
+  private func header(_ subject: StudySubject) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Image(systemName: "book")
+        .font(.system(size: 24))
+        .foregroundStyle(Color.subjectInk(for: subject.color))
+        .frame(width: 44, height: 44)
+        .background(Color(hexString: subject.color), in: .rect(cornerRadius: 10))
+      StudyHeading(title: subject.name)
+    }
   }
 
   @ViewBuilder
   private func content(_ detail: SubjectDetail) -> some View {
     let now = Date()
 
-    VStack(alignment: .leading, spacing: 12) {
-      Image(systemName: "book")
-        .font(.system(size: 24))
-        .foregroundStyle(Color.subjectInk(for: detail.subject.color))
-        .frame(width: 44, height: 44)
-        .background(Color(hexString: detail.subject.color), in: .rect(cornerRadius: 10))
-      StudyHeading(title: detail.subject.name)
-      VStack(alignment: .leading, spacing: 2) {
-        ForEach(properties(of: detail, now: now), id: \.icon) { property in
-          HStack(alignment: .firstTextBaseline, spacing: 8) {
-            HStack(spacing: 6) {
-              Image(systemName: property.icon)
-              if property.showsName { Text(property.name) }
-            }
-              .font(.footnote)
-              .foregroundStyle(Color.studyInk40)
-              .frame(width: 104, alignment: .leading)
-              .accessibilityLabel(property.name)
-            Text(property.value)
-              .font(.footnote)
-              .foregroundStyle(Color.black.opacity(0.95))
-              .fixedSize(horizontal: false, vertical: true)
+    VStack(alignment: .leading, spacing: 2) {
+      ForEach(properties(of: detail, now: now), id: \.icon) { property in
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+          HStack(spacing: 6) {
+            Image(systemName: property.icon)
+            if property.showsName { Text(property.name) }
           }
-          .frame(minHeight: 30, alignment: .center)
+          .font(.footnote)
+          .foregroundStyle(Color.studyInk40)
+          .frame(width: property.showsName ? propertyWidth : 20, alignment: .leading)
+          .accessibilityLabel(property.name)
+          Text(property.value)
+            .font(.footnote)
+            .foregroundStyle(Color.black.opacity(0.95))
+            .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(minHeight: 30, alignment: .center)
       }
     }
+    // O cabeçalho mora fora do detalhe; as propriedades continuam coladas a
+    // ele como antes, a 12 e não aos 20 da pilha.
+    .padding(.top, -8)
 
     Picker("seção da matéria", selection: Binding(get: { tab }, set: select)) {
       ForEach(SubjectTab.allCases) { entry in Text(entry.label).tag(entry) }
@@ -207,8 +229,6 @@ public struct StudySubjectScreen: View {
       case .caderno: SubjectNotebookSection(subjectId: detail.subject.id)
       case .notas: notes(detail.notes)
       case .entregas: assignments(detail.assignments, now: now)
-      case .cartoes:
-        StudyEmptyState(icon: "rectangle.on.rectangle", title: "na aba revisar")
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -227,14 +247,36 @@ public struct StudySubjectScreen: View {
           StudyGroupLabel(left: group.key)
           StudyDbList {
             ForEach(group.items) { material in
-              StudyDbRow(
-                icon: material.kind == .link ? "link" : "doc.richtext", title: material.title,
-                detail: materialDetail(material), end: { EmptyView() })
+              materialRow(material)
             }
           }
         }
         .firstEntrance(index: index, settled: switched)
       }
+    }
+  }
+
+  /// Material com link abre fora do app. O que só tem arquivo no storage
+  /// precisa de link assinado do servidor, e até lá a linha diz isso.
+  @ViewBuilder
+  private func materialRow(_ material: StudyMaterial) -> some View {
+    let icon = material.kind == .link ? "link" : "doc.richtext"
+    if let url = material.url.flatMap(URL.init(string:)) {
+      StudyDbRow(
+        icon: icon, title: material.title, detail: materialDetail(material),
+        end: { Image(systemName: "arrow.up.right").font(.system(size: 12)) },
+        action: { openURL(url) }
+      )
+      .contextMenu {
+        Button("abrir", systemImage: "arrow.up.right.square") { openURL(url) }
+        #if os(iOS)
+          Button("copiar link", systemImage: "link") { UIPasteboard.general.url = url }
+        #endif
+      }
+    } else {
+      StudyDbRow(
+        icon: icon, title: material.title, detail: materialDetail(material),
+        end: { Text("só no web") })
     }
   }
 
@@ -247,9 +289,8 @@ public struct StudySubjectScreen: View {
         ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
           StudyDbRow(
             icon: "doc.text", title: note.title,
-            detail: StudyFormat.relative(note.updatedAt, now: Date()),
-            end: { EmptyView() }
-          )
+            detail: StudyFormat.relative(note.updatedAt, now: Date())
+          ) { openNote = note }
           .firstEntrance(index: index, settled: switched)
         }
       }
@@ -302,13 +343,13 @@ public struct StudySubjectScreen: View {
     } else if case .ready = state {
       return
     } else {
-      state = .failed("não abriu")
+      state = .failed("a matéria não abriu")
     }
   }
 }
 
 enum SubjectTab: String, Hashable, CaseIterable, Identifiable {
-  case slides, caderno, notas, entregas, cartoes
+  case slides, caderno, notas, entregas
 
   var id: String { rawValue }
 
@@ -318,7 +359,6 @@ enum SubjectTab: String, Hashable, CaseIterable, Identifiable {
     case .caderno: "caderno"
     case .notas: "notas"
     case .entregas: "entregas"
-    case .cartoes: "cartões"
     }
   }
 }
