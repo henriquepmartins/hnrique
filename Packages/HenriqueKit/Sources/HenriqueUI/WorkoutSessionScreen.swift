@@ -234,7 +234,7 @@ struct WorkoutSessionScreen: View {
         .sheet(item: $recap, onDismiss: { if closesAfterRecap { onClose() } }) { presentation in
           LiveWorkoutRecap(
             date: presentation.date, opened: presentation.recap,
-            onClose: closesAfterRecap ? onClose : nil)
+            onClose: closesAfterRecap ? onClose : nil, celebrating: presentation.celebrating)
         }
         .sheet(isPresented: $adding) {
           SessionExercisePicker(
@@ -720,7 +720,8 @@ struct WorkoutSessionScreen: View {
     if !wasClosed { store.finishWorkout() }
     closesAfterRecap = !wasClosed
     guard let opened = sessionRecap(store, on: data.date) else { return }
-    recap = RecapPresentation(date: data.date, recap: opened)
+    recap = RecapPresentation(
+      date: data.date, recap: opened, celebrating: wasClosed ? nil : "\(data.date.iso).\(workout.id)")
   }
 }
 
@@ -748,6 +749,7 @@ private struct RecapPresentation: Identifiable {
   let id = UUID()
   let date: CalendarDate
   let recap: WorkoutRecap
+  let celebrating: String?
 }
 
 @MainActor
@@ -766,9 +768,11 @@ private struct LiveWorkoutRecap: View {
   let date: CalendarDate
   let opened: WorkoutRecap
   let onClose: (() -> Void)?
+  let celebrating: String?
 
   var body: some View {
-    WorkoutRecapSheet(recap: sessionRecap(store, on: date) ?? opened, onClose: onClose)
+    WorkoutRecapSheet(
+      recap: sessionRecap(store, on: date) ?? opened, onClose: onClose, celebrating: celebrating)
   }
 }
 
