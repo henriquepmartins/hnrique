@@ -133,15 +133,30 @@ struct FocoTests {
     #expect(days.map(\.level) == [0, 1, 2, 3, 4])
   }
 
+  @Test("o bloco de 25 min para de contar no alvo, com pausa no meio")
+  func blockStopsCountingAtItsTarget() {
+    var ledger = FocoLedger()
+    ledger.start(Self.fisica, target: 25 * 60, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    ledger.pause(at: Self.at("2026-09-08", "10:10"))
+    ledger.resume(at: Self.at("2026-09-08", "10:20"))
+    #expect(ledger.running?.remaining(at: Self.at("2026-09-08", "10:30")) == TimeInterval(5 * 60))
+    let later = Self.at("2026-09-08", "11:00")
+    #expect(ledger.seconds(on: Self.day("2026-09-08"), now: later, calendar: Self.calendar) == 25 * 60)
+    #expect(ledger.streak(now: later, calendar: Self.calendar).isTodayDone)
+    let entries = ledger.stop(at: later, calendar: Self.calendar)
+    #expect(entries.map(\.endedAt) == [Self.at("2026-09-08", "10:10"), Self.at("2026-09-08", "10:35")])
+  }
+
   @Test("o registro faz ida e volta em JSON com a corrida")
   func ledgerRoundTripsThroughJSON() throws {
     var ledger = FocoLedger(entries: [Self.counted("2026-09-07")], dailyGoalMinutes: 180)
-    ledger.start(Self.fisica, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
+    ledger.start(Self.fisica, target: 25 * 60, at: Self.at("2026-09-08", "10:00"), calendar: Self.calendar)
     ledger.running?.serverSessionId = "srv-1"
     let data = try JSONEncoder().encode(ledger)
     let decoded = try JSONDecoder().decode(FocoLedger.self, from: data)
     #expect(decoded == ledger)
     #expect(decoded.running?.serverSessionId == "srv-1")
+    #expect(decoded.running?.target == TimeInterval(25 * 60))
   }
 
   // MARK: Fila de sincronização
