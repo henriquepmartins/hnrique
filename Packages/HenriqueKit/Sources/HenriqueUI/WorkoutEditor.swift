@@ -430,7 +430,7 @@ private struct StepDots: View {
   let go: (EditorStep) -> Void
 
   var body: some View {
-    HStack(spacing: 2) {
+    HStack(spacing: 0) {
       ForEach(EditorStep.allCases, id: \.self) { step in
         if step == current {
           Text(step.title)
@@ -447,7 +447,7 @@ private struct StepDots: View {
             Circle()
               .fill(Color.mutedInk.opacity(0.3))
               .frame(width: 8, height: 8)
-              .frame(width: 22, height: 44)
+              .frame(width: 44, height: 44)
               .contentShape(.rect)
           }
           .buttonStyle(StudyPressStyle())
