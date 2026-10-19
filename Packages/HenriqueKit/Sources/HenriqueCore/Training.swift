@@ -581,6 +581,17 @@ extension Dashboard {
     return copy
   }
 
+  /// A carga do exercício para quem o põe num treino novo. Enquanto ela for
+  /// guardada por treino, dois treinos podem discordar; a maior ganha, que é a
+  /// que a última série valendo marcada deixa em todos. Sem plano, o topo da
+  /// última vez.
+  public func loadKg(exerciseId: String) -> Double? {
+    weekPlan.flatMap(\.exercises)
+      .filter { $0.exerciseId == exerciseId && $0.startingWeightKg > 0 }
+      .map(\.startingWeightKg).max()
+      ?? workout?.exercises.first { $0.id == exerciseId }?.previous?.weightKg
+  }
+
   public var highlightedWorkoutIDs: Set<String> {
     let sessions = weeklyWorkoutSessions ?? []
     let maximum = sessions.map(\.count).max() ?? 0

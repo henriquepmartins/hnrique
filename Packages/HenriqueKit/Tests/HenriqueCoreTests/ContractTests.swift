@@ -150,6 +150,15 @@ struct ContractTests {
     #expect(updated.workout?.exercises.first?.prescription.startingWeightKg == 50)
   }
 
+  @Test("o exercício posto num treino novo começa com a carga que já tem")
+  func newExerciseStartsWithItsLoad() throws {
+    var dashboard = try Self.dashboard()
+    #expect(dashboard.loadKg(exerciseId: "supino-reto") == 40)
+    #expect(dashboard.loadKg(exerciseId: "desenvolvimento") == nil)
+    dashboard.weekPlan = []
+    #expect(dashboard.loadKg(exerciseId: "supino-reto") == 42.5)
+  }
+
   @Test("o aquecimento sai sem o campo de falha")
   func prepSetOmitsToFailure() throws {
     let input = RecordSetInput.prep(
