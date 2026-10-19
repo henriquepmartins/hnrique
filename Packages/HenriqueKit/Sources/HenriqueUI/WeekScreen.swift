@@ -1076,6 +1076,7 @@ private struct MuscleChip: View {
 
 struct ExercisePickerRow: View {
   @Environment(\.accent) private var accent
+  @Environment(\.dynamicTypeSize) private var typeSize
   let item: ExerciseCatalogItem
   let picked: Bool
   /// O treino chegou ao limite: o "+" apaga, mas o toque continua chegando
@@ -1087,43 +1088,68 @@ struct ExercisePickerRow: View {
 
   var body: some View {
     Button(action: onUnpick ?? action) {
-      HStack(spacing: Space.m) {
-        ExerciseThumb(imageUrl: item.imageUrl, size: 56)
-        VStack(alignment: .leading, spacing: 3) {
-          Text(item.name.lowercased())
-            .font(.body.weight(.medium)).foregroundStyle(Color.ink)
-            .lineLimit(2)
-          Text("\(item.muscleGroup.lowercased()) · \(item.equipment.lowercased())")
-            .font(.caption).foregroundStyle(Color.mutedInk)
-            .lineLimit(1)
-        }
-        Spacer(minLength: 8)
-        if picked {
-          HStack(spacing: 4) {
-            if onUnpick != nil {
-              Image(systemName: "checkmark.circle.fill").foregroundStyle(accent.base)
-            }
-            Text("no treino")
-          }
-          .font(.caption2.weight(.medium))
-          .foregroundStyle(Color.mutedInk)
-          .padding(.horizontal, 10).padding(.vertical, 6)
-          .background(Color.surfaceMuted, in: .capsule)
-        } else {
-          Image(systemName: "plus.circle.fill")
-            .font(.title2).foregroundStyle(Color.ink.opacity(isFull ? 0.25 : 0.75))
-            .frame(width: 44, height: 44)
-            .contentShape(.rect)
-        }
-      }
-      .padding(.horizontal, Space.l).padding(.vertical, Space.s)
-      .contentShape(.rect)
-      .opacity(picked && onUnpick == nil ? 0.55 : 1)
+      layout
+        .padding(.horizontal, Space.l).padding(.vertical, Space.s)
+        .contentShape(.rect)
+        .opacity(picked && onUnpick == nil ? 0.55 : 1)
     }
     .buttonStyle(StudyPressStyle())
     .disabled(picked && onUnpick == nil)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(accessibilityLabel)
+  }
+
+  /// Nos tamanhos de acessibilidade a foto e o "+" ficam numa linha própria, e o
+  /// nome ganha a largura toda em vez de quebrar no meio e cortar.
+  @ViewBuilder private var layout: some View {
+    if typeSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: Space.s) {
+        HStack {
+          ExerciseThumb(imageUrl: item.imageUrl, size: 56)
+          Spacer(minLength: 8)
+          trailing
+        }
+        titles
+      }
+    } else {
+      HStack(spacing: Space.m) {
+        ExerciseThumb(imageUrl: item.imageUrl, size: 56)
+        titles
+        Spacer(minLength: 8)
+        trailing
+      }
+    }
+  }
+
+  private var titles: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(item.name.lowercased())
+        .font(.body.weight(.medium)).foregroundStyle(Color.ink)
+        .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+      Text("\(item.muscleGroup.lowercased()) · \(item.equipment.lowercased())")
+        .font(.caption).foregroundStyle(Color.mutedInk)
+        .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+    }
+  }
+
+  @ViewBuilder private var trailing: some View {
+    if picked {
+      HStack(spacing: 4) {
+        if onUnpick != nil {
+          Image(systemName: "checkmark.circle.fill").foregroundStyle(accent.base)
+        }
+        Text("no treino")
+      }
+      .font(.caption2.weight(.medium))
+      .foregroundStyle(Color.mutedInk)
+      .padding(.horizontal, 10).padding(.vertical, 6)
+      .background(Color.surfaceMuted, in: .capsule)
+    } else {
+      Image(systemName: "plus.circle.fill")
+        .font(.title2).foregroundStyle(Color.ink.opacity(isFull ? 0.25 : 0.75))
+        .frame(width: 44, height: 44)
+        .contentShape(.rect)
+    }
   }
 
   private var accessibilityLabel: String {
