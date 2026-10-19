@@ -76,8 +76,10 @@ private struct FocoTimerView: View {
         )
         .padding(.top, 16)
         .transition(.opacity)
-        .task {
+        // Com `id`, uma segunda troca em menos de 2 s ganha os 2 s inteiros.
+        .task(id: switched.startedAt) {
           try? await Task.sleep(for: .seconds(2))
+          guard !Task.isCancelled else { return }
           foco.clearSwitched()
         }
       }

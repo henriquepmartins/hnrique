@@ -39,9 +39,11 @@ public final class FocoStore {
   /// A tela do bloco mostra o resumo dela mesma. Aberta, parar não chama a
   /// tela escura, que não teria onde aparecer por cima dela.
   @ObservationIgnored public var isBlockOpen = false
-  /// Verdadeiro só entre abrir o app com uma corrida gravada e a primeira tela
-  /// de foco reabrir o cronômetro. Minimizar depois disso não reabre.
-  private var resumePending: Bool
+  /// Verdadeiro só entre abrir o app com uma corrida livre gravada e a primeira
+  /// tela de foco reabrir o cronômetro. Minimizar depois disso não reabre.
+  private var resumePending = false
+  /// O mesmo para o bloco, que reabre na casca de Estudos e não no cronômetro.
+  private var blockResumePending = false
   private let fileURL: URL
   private let estudos: EstudosStore?
   private let calendar = StudyFormat.calendar
@@ -58,21 +60,23 @@ public final class FocoStore {
     self.estudos = estudos
     let loaded = Self.load(from: fileURL)
     ledger = loaded
-    resumePending = false
-    Self.blockIsRunning = loaded.running?.target != nil
     followTarget()
-    // Depois de fechar o bloco vencido, para a tela de foco não reabrir a
-    // tela escura de uma corrida que já virou resumo.
-    resumePending = ledger.running != nil
+    // Depois de fechar o bloco vencido, para nenhuma tela reabrir uma corrida
+    // que já virou resumo.
+    resumePending = ledger.running.map { $0.target == nil } ?? false
+    blockResumePending = ledger.running?.target != nil
   }
-
-  /// A casca de estudos pergunta ao montar se reabre a tela do bloco, antes de
-  /// ter o store na mão.
-  static private(set) var blockIsRunning = false
 
   public func takeResume() -> Bool {
     defer { resumePending = false }
     return resumePending
+  }
+
+  /// Verdadeiro uma vez só, para a casca de Estudos reabrir o bloco que rodava
+  /// quando o app fechou e não a cada volta para Estudos.
+  func takeBlockResume() -> Bool {
+    defer { blockResumePending = false }
+    return blockResumePending && ledger.running?.target != nil
   }
 
   public static var defaultFileURL: URL {
@@ -100,7 +104,11 @@ public final class FocoStore {
       switched = nil
     }
     if target != nil {
-      Task { await FocoBlockAlarm.requestPermission() }
+      // O aviso agendado antes da permissão no primeiro bloco falhava calado.
+      Task {
+        await FocoBlockAlarm.requestPermission()
+        updateAlarm()
+      }
     }
     guard track.source == .estudos, let subjectId = track.subjectId, let estudos else { return }
     let startedAt = ledger.running?.startedAt
@@ -362,7 +370,6 @@ public final class FocoStore {
   }
 
   private func save() {
-    Self.blockIsRunning = ledger.running?.target != nil
     do {
       try FileManager.default.createDirectory(
         at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)

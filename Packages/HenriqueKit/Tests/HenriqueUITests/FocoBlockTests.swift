@@ -25,4 +25,34 @@ struct FocoBlockTests {
     #expect(abs(counted - 25 * 60) < 0.01)
     #expect(store.result != nil)
   }
+
+  @Test("o bloco aberto ao abrir o app reabre a casca uma vez e não o cronômetro")
+  func openBlockResumesOnceInTheEstudosShell() throws {
+    defer { try? FileManager.default.removeItem(at: url) }
+    var ledger = FocoLedger()
+    let start = Date.now.addingTimeInterval(-5 * 60)
+    ledger.start(.alemao, target: 25 * 60, at: start, calendar: StudyFormat.calendar)
+    ledger.pause(at: start.addingTimeInterval(60))
+    try JSONEncoder.henrique().encode(ledger).write(to: url)
+
+    let store = FocoStore(fileURL: url, estudos: nil)
+
+    #expect(store.takeResume() == false)
+    #expect(store.takeBlockResume() == true)
+    #expect(store.takeBlockResume() == false)
+  }
+
+  @Test("a corrida livre aberta ao abrir o app reabre o cronômetro e não a casca")
+  func openFreeRunResumesTheTimerOnly() throws {
+    defer { try? FileManager.default.removeItem(at: url) }
+    var ledger = FocoLedger()
+    ledger.start(.alemao, at: .now.addingTimeInterval(-5 * 60), calendar: StudyFormat.calendar)
+    try JSONEncoder.henrique().encode(ledger).write(to: url)
+
+    let store = FocoStore(fileURL: url, estudos: nil)
+
+    #expect(store.takeBlockResume() == false)
+    #expect(store.takeResume() == true)
+    #expect(store.takeResume() == false)
+  }
 }

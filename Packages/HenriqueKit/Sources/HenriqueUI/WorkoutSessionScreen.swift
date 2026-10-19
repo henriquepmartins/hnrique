@@ -173,6 +173,12 @@ struct WorkoutSessionScreen: View {
               }
             }
           }
+          // O exercício derivado vira escolha fixa assim que aparece. Sem isso, a
+          // última série dele levava o derivado direto ao próximo no mesmo desenho,
+          // e o visto e a espera não aconteciam.
+          .onChange(of: openId, initial: true) { _, id in
+            if open == nil, holding == nil { open = id }
+          }
           .onChange(of: OpenExerciseState(openId, in: workout)) { old, new in
             guard let id = new.id, old.id == id, !old.complete, new.complete else { return }
             hold(id, proxy: proxy)
@@ -617,9 +623,9 @@ struct WorkoutSessionScreen: View {
       set: { store.setRestSeconds($0, for: exerciseId) })
   }
 
-  /// Qual exercício está aberto. `open` guarda só a escolha explícita, e o resto sai do
-  /// treino a cada pintura: amarrar isso a `onAppear` deixava a lista toda fechada
-  /// quando o painel ainda não tinha chegado na primeira vez que a tela apareceu.
+  /// Qual exercício está aberto. Sem escolha, o primeiro incompleto sai do treino a
+  /// cada pintura e depois fica preso em `open`: amarrar isso a `onAppear` deixava a
+  /// lista toda fechada quando o painel ainda não tinha chegado.
   private func openExercise(in workout: WorkoutSummary) -> String? {
     if let holding, workout.exercises.contains(where: { $0.id == holding }) { return holding }
     if let open, workout.exercises.contains(where: { $0.id == open }) { return open }
