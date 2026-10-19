@@ -18,18 +18,33 @@ struct MuscleMap: View {
   let today: CalendarDate
   let onPlan: () -> Void
 
+  private var heading: some View {
+    SectionHeading(title: "músculos", systemImage: "figure.strengthtraining.traditional")
+  }
+
+  private var periodPicker: some View {
+    Picker("período do mapa", selection: $period) {
+      ForEach(MusclePeriod.allCases, id: \.self) { option in
+        Text(option.label).tag(option).accessibilityIdentifier("musculos.\(option.rawValue)")
+      }
+    }
+    .pickerStyle(.segmented)
+    .frame(width: 136)
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack {
-        SectionHeading(title: "músculos", systemImage: "figure.strengthtraining.traditional")
-        Spacer()
-        Picker("período do mapa", selection: $period) {
-          ForEach(MusclePeriod.allCases, id: \.self) { option in
-            Text(option.label).tag(option).accessibilityIdentifier("musculos.\(option.rawValue)")
-          }
+      // Lado a lado no texto grande, o seletor espremia o título em "mús-culos".
+      ViewThatFits(in: .horizontal) {
+        HStack {
+          heading.fixedSize()
+          Spacer()
+          periodPicker
         }
-        .pickerStyle(.segmented)
-        .frame(width: 136)
+        VStack(alignment: .leading, spacing: Space.s) {
+          heading
+          periodPicker
+        }
       }
       .padding(.bottom, Space.m)
       // As curvas ficam daqui para baixo, e não em volta do cabeçalho. Trocar o

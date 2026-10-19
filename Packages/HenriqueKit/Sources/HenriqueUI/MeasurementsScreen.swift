@@ -103,6 +103,19 @@ struct MeasurementsScreen: View {
     .sheet(item: $editing) { MeasurementEditor(editing: $0) }
   }
 
+  private var chartHeading: some View {
+    SectionHeading(title: charted.title, systemImage: charted.symbol, font: .title2.weight(.medium), tracking: 0)
+  }
+
+  @ViewBuilder private var chartPicker: some View {
+    if recorded.count > 1 {
+      Picker("medida do gráfico", selection: $charted) {
+        ForEach(recorded) { Text($0.title).tag($0) }
+      }
+      .pickerStyle(.menu)
+    }
+  }
+
   @ViewBuilder private var content: some View {
     let columns = textSize.isAccessibilitySize ? 1 : 2
     let recorded = recorded
@@ -119,15 +132,17 @@ struct MeasurementsScreen: View {
       }
     }
     VStack(alignment: .leading, spacing: 16) {
-      HStack(alignment: .firstTextBaseline) {
-        SectionHeading(
-          title: charted.title, systemImage: charted.symbol, font: .title2.weight(.medium), tracking: 0)
-        Spacer(minLength: Space.s)
-        if recorded.count > 1 {
-          Picker("medida do gráfico", selection: $charted) {
-            ForEach(recorded) { Text($0.title).tag($0) }
-          }
-          .pickerStyle(.menu)
+      // Os dois lado a lado espremiam "peso" em "pes/o" no texto grande; sem
+      // espaço, o seletor desce para baixo do título.
+      ViewThatFits(in: .horizontal) {
+        HStack(alignment: .firstTextBaseline) {
+          chartHeading.fixedSize()
+          Spacer(minLength: Space.s)
+          chartPicker.fixedSize()
+        }
+        VStack(alignment: .leading, spacing: Space.xs) {
+          chartHeading
+          chartPicker
         }
       }
       MeasurementChart(metric: charted, points: charted.series(measurements)).frame(height: 220)

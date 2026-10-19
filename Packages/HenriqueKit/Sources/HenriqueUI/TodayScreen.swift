@@ -82,7 +82,7 @@ public struct TodayScreen: View {
               }
               VStack(spacing: Space.m) {
                 HStack {
-                  exercisesHeading
+                  exercisesHeading.fixedSize()
                   Spacer()
                   modePicker
                 }
@@ -90,6 +90,17 @@ public struct TodayScreen: View {
                   progressButton
                   Spacer()
                   editButton(workoutId: workout.id)
+                }
+              }
+              // No maior texto nem o título e o seletor cabem juntos, e o título
+              // quebrava em "exercí-cios".
+              VStack(alignment: .leading, spacing: Space.m) {
+                exercisesHeading
+                HStack {
+                  progressButton
+                  Spacer()
+                  editButton(workoutId: workout.id)
+                  modePicker
                 }
               }
             }
