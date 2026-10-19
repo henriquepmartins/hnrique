@@ -24,6 +24,15 @@ final class AssignmentCalendarSync {
 
   var mappedCount: Int { mapping.count }
 
+  /// Já liberado antes. Só aí a lista pode ressincronizar sozinha, sem o
+  /// pedido de acesso surgir na frente do dono.
+  var hasAccess: Bool {
+    switch EKEventStore.authorizationStatus(for: .event) {
+    case .writeOnly, .fullAccess: true
+    default: false
+    }
+  }
+
   private var mapping: [String: String] {
     get { UserDefaults.standard.dictionary(forKey: mappingKey) as? [String: String] ?? [:] }
     set { UserDefaults.standard.set(newValue, forKey: mappingKey) }
@@ -128,13 +137,13 @@ struct AssignmentAppleCalendarCard: View {
             case .syncing:
               ProgressView().controlSize(.small)
             case .synced(let count):
-              Text(count == 1 ? "1 evento" : "\(count) eventos")
+              Text(events(count))
             case .denied:
-              Text("toque para liberar")
+              Text("abrir ajustes")
             case .failed:
               Text("tentar de novo")
             case .idle:
-              Text(sync.mappedCount > 0 ? "\(sync.mappedCount) eventos" : "sincronizar")
+              Text(sync.mappedCount > 0 ? events(sync.mappedCount) : "sincronizar")
             }
           }
           .font(.caption)
@@ -142,11 +151,26 @@ struct AssignmentAppleCalendarCard: View {
           .foregroundStyle(Color.studyInk40)
         }
       ) {
-        Task { await sync.sync(assignments) }
+        if case .denied = sync.state {
+          sync.openSettings()
+        } else {
+          Task { await sync.sync(assignments) }
+        }
       }
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel("sincronizar entregas com o Apple Calendar")
+    .accessibilityValue(detail ?? "")
+    // Concluir uma entrega tira o evento do calendário na hora, sem esperar
+    // outro toque aqui.
+    .task(id: assignments.map { "\($0.id)\($0.status)\($0.dueAt)" }) {
+      guard sync.mappedCount > 0, sync.hasAccess, sync.state != .syncing else { return }
+      await sync.sync(assignments)
+    }
+  }
+
+  private func events(_ count: Int) -> String {
+    count == 1 ? "1 evento" : "\(count) eventos"
   }
 
   private var detail: String? {
@@ -158,7 +182,7 @@ struct AssignmentAppleCalendarCard: View {
     case .synced:
       return "prazos no calendário do iphone"
     case .denied:
-      return "o acesso ao calendário está negado"
+      return "acesso negado"
     case .failed:
       return "falhou, toque para tentar de novo"
     }
