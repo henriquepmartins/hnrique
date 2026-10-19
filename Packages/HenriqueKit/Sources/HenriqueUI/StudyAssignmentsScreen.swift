@@ -155,11 +155,13 @@ public struct StudyAssignmentsScreen: View {
         icon: "arrow.triangle.2.circlepath", tone: .sky,
         title: "sincronizado \(StudyFormat.relative(sync.completedAt, now: Date()))",
         detail: sync.createdCount == 1 ? "1 nova" : "\(sync.createdCount) novas")
+      .accessibilityIdentifier("entregas.sync")
     } else {
       StudyCallout(
         icon: "arrow.triangle.2.circlepath", tone: .sky, title: "portal a cada 15 min"
       )
       .accessibilityHint("a varredura só cria o que ainda não existe")
+      .accessibilityIdentifier("entregas.sync")
     }
   }
 

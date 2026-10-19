@@ -915,21 +915,22 @@ final class FluxoDrive: XCTestCase {
     app.launch()
     XCTAssert(
       app.staticTexts["entregas"].waitForExistence(timeout: 15), "aba de entregas abriu")
-    XCTAssert(
-      app.buttons["Mês anterior"].waitForExistence(timeout: 8),
-      "calendário de entregas apareceu")
-    let nunca = app.staticTexts["o portal chega sozinho"]
-    let sincronizado = app.staticTexts.matching(
-      NSPredicate(format: "label BEGINSWITH 'sincronizado'")).firstMatch
-    XCTAssert(
-      nunca.waitForExistence(timeout: 3) || sincronizado.waitForExistence(timeout: 3),
-      "status do sync visível")
-    XCTAssert(app.staticTexts["Apple Calendar"].exists, "linha do Apple Calendar visível")
+    let previous = app.buttons["entregas.mes-anterior"]
+    XCTAssert(previous.waitForExistence(timeout: 8), "calendário de entregas apareceu")
+    let month = app.buttons["entregas.mes"]
+    let current = month.label
+    XCTAssertFalse(month.isEnabled, "o título do mês atual não tem para onde voltar")
+    let any = app.descendants(matching: .any)
+    XCTAssert(any["entregas.sync"].waitForExistence(timeout: 3), "status do sync visível")
+    XCTAssert(any["entregas.apple-calendar"].exists, "linha do Apple Calendar visível")
     shot("40-entregas-calendario")
-    app.buttons["Próximo mês"].tap()
+    app.buttons["entregas.proximo-mes"].tap()
+    expectation(for: NSPredicate(format: "label != %@", current), evaluatedWith: month)
+    waitForExpectations(timeout: 3)
     shot("41-entregas-mes-seguinte")
-    app.buttons["Mês anterior"].tap()
-    XCTAssert(app.buttons["Mês anterior"].waitForExistence(timeout: 3), "voltou ao mês atual")
+    previous.tap()
+    expectation(for: NSPredicate(format: "label == %@", current), evaluatedWith: month)
+    waitForExpectations(timeout: 3)
   }
 
   /// A aba de foco em idiomas: começa o alemão, para, vê o resultado e volta

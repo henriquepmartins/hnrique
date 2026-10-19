@@ -64,14 +64,17 @@ struct StudyAssignmentsCalendarCard: View {
       }
       .buttonStyle(StudyPressStyle())
       .disabled(isCurrentMonth)
+      .accessibilityIdentifier("entregas.mes")
       .accessibilityHint(isCurrentMonth ? "" : "volta para este mês")
       Spacer(minLength: 4)
       IconButton(title: "mês anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) {
         month = previousMonth(of: month)
       }
+      .accessibilityIdentifier("entregas.mes-anterior")
       IconButton(title: "próximo mês", systemImage: "chevron.right", glass: true, nudge: CGSize(width: -1, height: 0)) {
         month = nextMonth(of: month)
       }
+      .accessibilityIdentifier("entregas.proximo-mes")
     }
     .padding(.trailing, -6)
   }
