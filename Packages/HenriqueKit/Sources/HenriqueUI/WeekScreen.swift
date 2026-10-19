@@ -5,7 +5,6 @@ struct WeekScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.dynamicTypeSize) private var textSize
   @State private var editor: PlanEditorDestination?
-  @State private var editorStep: EditorStep = .identidade
   @State private var deletions = 0
   var onStart: (Int) -> Void = { _ in }
 
@@ -19,10 +18,7 @@ struct WeekScreen: View {
             swaps: store.dashboard?.daySwaps ?? [],
             week: store.trainingWeek(),
             load: { from, to in await store.loadAttendance(from: from, to: to) })
-          Button("novo treino", systemImage: "plus") {
-            editorStep = .identidade
-            editor = .new(weekdays: [])
-          }
+          Button("novo treino", systemImage: "plus") { editor = .new }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
             .subtleEntrance()
@@ -32,10 +28,7 @@ struct WeekScreen: View {
               WorkoutTile(
                 item: item,
                 showsWave: store.dashboard?.highlightedWorkoutIDs.contains(item.id) == true,
-                onEdit: { step in
-                  editorStep = step
-                  editor = .existing(item)
-                },
+                onEdit: { step in editor = .existing(item, at: step) },
                 onDelete: {
                   store.deleteWorkout(workoutTemplateId: item.id)
                   deletions += 1
@@ -60,7 +53,7 @@ struct WeekScreen: View {
         item: destination.item, weekdays: destination.weekdays,
         tone: destination.item?.tone ?? .unused(among: store.weekPlan.map(\.tone.hex)),
         catalog: store.dashboard?.exerciseCatalog ?? [],
-        startingAt: editorStep)
+        startingAt: destination.step)
     }
   }
 
@@ -100,19 +93,18 @@ private struct FolderSilhouette: View {
   }
 }
 
-private enum PlanEditorDestination: Identifiable {
-  case new(weekdays: Set<Int>)
-  case existing(WeekPlanItem)
+/// O passo de abertura viaja com o destino. Num `@State` à parte, a folha lia
+/// o valor do desenho anterior e abria sempre no nome.
+private struct PlanEditorDestination: Identifiable {
+  let item: WeekPlanItem?
+  let step: EditorStep
   var id: String { item?.id ?? "new" }
-  var item: WeekPlanItem? {
-    if case .existing(let item) = self { return item }
-    return nil
-  }
-  var weekdays: Set<Int> {
-    switch self {
-    case .new(let weekdays): weekdays
-    case .existing(let item): Set(item.weekdays)
-    }
+  var weekdays: Set<Int> { Set(item?.weekdays ?? []) }
+
+  static let new = PlanEditorDestination(item: nil, step: .identidade)
+
+  static func existing(_ item: WeekPlanItem, at step: EditorStep) -> PlanEditorDestination {
+    PlanEditorDestination(item: item, step: step)
   }
 }
 

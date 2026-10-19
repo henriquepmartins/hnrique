@@ -14,6 +14,16 @@ final class FluxoDrive: XCTestCase {
     try? FileManager.default.createDirectory(atPath: shots, withIntermediateDirectories: true)
   }
 
+  /// Falhou, a tela e a árvore de acessibilidade do momento vão para as
+  /// capturas, porque o `shot` seguinte à asserção nunca chega a rodar.
+  override func tearDown() {
+    guard (testRun?.totalFailureCount ?? 0) > 0 else { return }
+    let name = "falha-" + self.name.split(separator: " ").last!.dropLast()
+    shot(name)
+    FileManager.default.createFile(
+      atPath: "\(shots)/\(name).txt", contents: Data(app.debugDescription.utf8))
+  }
+
   func shot(_ name: String) {
     let data = XCUIScreen.main.screenshot().pngRepresentation
     FileManager.default.createFile(atPath: "\(shots)/\(name).png", contents: data)
@@ -156,12 +166,36 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(app.keyboards.firstMatch.waitForNonExistence(timeout: 3), "concluir fecha o teclado")
   }
 
+  /// O nome do treino de hoje, lido no hero: "segunda, 19 de outubro, Pernas e glúteos".
+  func todayWorkoutName() -> String {
+    let today = Self.weekdayNames[Self.saoPaulo.component(.weekday, from: Date()) - 1]
+    let hero = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label BEGINSWITH %@", today + ", ")).firstMatch
+    XCTAssert(hero.waitForExistence(timeout: 5), "hero de hoje apareceu")
+    return hero.label.components(separatedBy: ", ").dropFirst(2).joined(separator: ", ")
+  }
+
+  /// O treino de hoje muda com o dia da semana, então o exercício sai da tela:
+  /// o primeiro cartão aberto e a primeira série valendo dele.
   func testZCargaETeclado() {
     launch()
     ensureWorkoutToday()
-    let weight = app.textFields["set.supino-inclinado.work.1.weight"]
-    XCTAssert(weight.waitForExistence(timeout: 5), "carga da série valendo está disponível")
-    let completion = app.buttons["set.supino-inclinado.work.1.completion"]
+    let workout = todayWorkoutName()
+    let card = app.buttons.matching(NSPredicate(format: "value == 'expandido'")).firstMatch
+    XCTAssert(card.waitForExistence(timeout: 5), "o primeiro exercício de hoje está aberto")
+    let exerciseName = card.label.components(separatedBy: ", ")[0]
+    let firstWork = app.textFields.matching(NSPredicate(format: "identifier ENDSWITH '.work.1.weight'")).firstMatch
+    XCTAssert(firstWork.waitForExistence(timeout: 5), "carga da série valendo está disponível")
+    let weightId = firstWork.identifier
+    let weight = app.textFields[weightId]
+    let completion = app.buttons[weightId.replacingOccurrences(of: ".weight", with: ".completion")]
+    // O plano só segue a carga de série valendo feita, então a série precisa
+    // estar marcada antes da edição.
+    if completion.label.hasPrefix("Concluir") {
+      completion.tap()
+      expectation(for: NSPredicate(format: "label BEGINSWITH 'Desmarcar'"), evaluatedWith: completion)
+      waitForExpectations(timeout: 5)
+    }
     let previousLabel = completion.label
     replaceText(weight, with: "37,5")
     shot("10-teclado-carga")
@@ -169,10 +203,10 @@ final class FluxoDrive: XCTestCase {
     XCTAssertEqual(completion.label, previousLabel, "editar carga preserva conclusão da série")
 
     app.tabBars.buttons["plano"].tap()
-    app.buttons["editar Superiores"].tap()
+    app.buttons["editar \(workout)"].tap()
     app.buttons["editar"].tap()
     goToStep("exercícios")
-    expandPlanExercise("supino inclinado")
+    expandPlanExercise(exerciseName)
     let planWeight = app.textFields["Carga em kg"].firstMatch
     XCTAssert(planWeight.waitForExistence(timeout: 5), "editor mostra carga do plano")
     let updated = NSPredicate(format: "value == %@", "37,5")
@@ -585,7 +619,7 @@ final class FluxoDrive: XCTestCase {
 
     check.tap()
     XCTAssert(app.buttons["pular"].waitForExistence(timeout: 3), "marcar série valendo abre o descanso")
-    app.buttons["+15s"].tap()
+    app.buttons["descanso.mais15"].tap()
     shot("61-sessao-descanso")
 
     close.tap()
@@ -881,21 +915,22 @@ final class FluxoDrive: XCTestCase {
     app.launch()
     XCTAssert(
       app.staticTexts["entregas"].waitForExistence(timeout: 15), "aba de entregas abriu")
-    XCTAssert(
-      app.buttons["Mês anterior"].waitForExistence(timeout: 8),
-      "calendário de entregas apareceu")
-    let nunca = app.staticTexts["o portal chega sozinho"]
-    let sincronizado = app.staticTexts.matching(
-      NSPredicate(format: "label BEGINSWITH 'sincronizado'")).firstMatch
-    XCTAssert(
-      nunca.waitForExistence(timeout: 3) || sincronizado.waitForExistence(timeout: 3),
-      "status do sync visível")
-    XCTAssert(app.staticTexts["Apple Calendar"].exists, "linha do Apple Calendar visível")
+    let previous = app.buttons["entregas.mes-anterior"]
+    XCTAssert(previous.waitForExistence(timeout: 8), "calendário de entregas apareceu")
+    let month = app.buttons["entregas.mes"]
+    let current = month.label
+    XCTAssertFalse(month.isEnabled, "o título do mês atual não tem para onde voltar")
+    let any = app.descendants(matching: .any)
+    XCTAssert(any["entregas.sync"].waitForExistence(timeout: 3), "status do sync visível")
+    XCTAssert(any["entregas.apple-calendar"].exists, "linha do Apple Calendar visível")
     shot("40-entregas-calendario")
-    app.buttons["Próximo mês"].tap()
+    app.buttons["entregas.proximo-mes"].tap()
+    expectation(for: NSPredicate(format: "label != %@", current), evaluatedWith: month)
+    waitForExpectations(timeout: 3)
     shot("41-entregas-mes-seguinte")
-    app.buttons["Mês anterior"].tap()
-    XCTAssert(app.buttons["Mês anterior"].waitForExistence(timeout: 3), "voltou ao mês atual")
+    previous.tap()
+    expectation(for: NSPredicate(format: "label == %@", current), evaluatedWith: month)
+    waitForExpectations(timeout: 3)
   }
 
   /// A aba de foco em idiomas: começa o alemão, para, vê o resultado e volta
@@ -924,8 +959,7 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(clock.waitForExistence(timeout: 3), "relógio do dia visível")
     XCTAssertNotEqual(clock.label, "0 segundos hoje", "a sessão entrou no total de hoje")
     XCTAssert(
-      app.staticTexts.matching(NSPredicate(format: "label CONTAINS '· alemão ·'")).firstMatch
-        .waitForExistence(timeout: 3),
+      app.descendants(matching: .any)["foco.sessao.idiomas:alemao"].firstMatch.waitForExistence(timeout: 3),
       "a sessão aparece na lista de hoje")
     shot("foco-04-depois")
     app.swipeUp()

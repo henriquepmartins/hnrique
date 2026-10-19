@@ -160,6 +160,7 @@ struct AssignmentAppleCalendarCard: View {
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel("sincronizar entregas com o Apple Calendar")
+    .accessibilityIdentifier("entregas.apple-calendar")
     .accessibilityValue(detail ?? "")
     // Concluir uma entrega tira o evento do calendário na hora, sem esperar
     // outro toque aqui.
