@@ -97,7 +97,7 @@ public final class AcademiaStore {
   }
 
   private func projected() -> Dashboard? {
-    guard var value = acceptedDashboard else { return nil }
+    guard var value = acceptedDashboard?.applyingPlannedLoads() else { return nil }
     for pending in pendingSets.values.sorted(by: { $0.revision < $1.revision }) {
       let key = pending.key
       let draft = pending.draft
@@ -1052,6 +1052,20 @@ extension Dashboard {
   func applyingTopWorkWeight(exerciseId: String) -> Dashboard {
     guard let top = workout?.topWorkWeight(exerciseId: exerciseId) else { return self }
     return applyingSharedExerciseWeight(top, exerciseId: exerciseId)
+  }
+
+  /// O servidor antigo preenche as séries pela última vez e ignora a carga
+  /// editada no plano. Carga zero fica de fora: é o exercício posto num treino
+  /// antes de o editor saber a carga, e ela zeraria as séries que vêm da última vez.
+  func applyingPlannedLoads() -> Dashboard {
+    guard var workout else { return self }
+    workout.exercises = workout.exercises.map { exercise in
+      let load = exercise.prescription.startingWeightKg
+      return load > 0 ? exercise.applyingLoad(load) : exercise
+    }
+    var copy = self
+    copy.workout = workout
+    return copy
   }
 
   /// O dia já tem alguma série marcada, de aquecimento ou valendo.
