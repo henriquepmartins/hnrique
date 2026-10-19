@@ -203,7 +203,9 @@ final class FluxoDrive: XCTestCase {
     XCTAssertEqual(completion.label, previousLabel, "editar carga preserva conclusão da série")
 
     app.tabBars.buttons["plano"].tap()
-    app.buttons["editar \(workout)"].tap()
+    // O hero mostra o nome em minúsculas e a pasta guarda a grafia do treino.
+    // O VoiceOver lê os dois igual, então a comparação ignora a caixa.
+    app.buttons.matching(NSPredicate(format: "label ==[c] %@", "editar \(workout)")).firstMatch.tap()
     app.buttons["editar"].tap()
     goToStep("exercícios")
     expandPlanExercise(exerciseName)
@@ -244,7 +246,7 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(search.waitForExistence(timeout: 5), "busca de exercícios abriu")
     search.tap()
     search.typeText("Supino inclinado")
-    app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'supino inclinado'")).firstMatch.tap()
+    app.buttons["Adicionar Supino inclinado"].tap()
     app.buttons["seletor.fechar"].tap()
     let save = app.buttons["concluir"]
     XCTAssert(save.waitForExistence(timeout: 5) && save.isEnabled, "treino sem dia pode ser salvo")
