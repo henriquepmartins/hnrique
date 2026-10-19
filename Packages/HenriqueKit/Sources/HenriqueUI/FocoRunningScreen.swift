@@ -15,10 +15,10 @@ struct FocoRunningScreen: View {
     Group {
       if let result = foco.result {
         FocoResultView(result: result) { foco.closeResult() }
-          .transition(.blurReplace)
+          .transition(.opacity)
       } else if let run = foco.ledger.running {
         FocoTimerView(run: run, minimize: { foco.isShowingRun = false }) { foco.stop() }
-          .transition(.blurReplace)
+          .transition(.opacity)
       } else {
         // A corrida foi parada de outro lugar com a tela fechada.
         Color.clear.onAppear { foco.isShowingRun = false }
@@ -67,7 +67,7 @@ private struct FocoTimerView: View {
       .padding(.leading, 16)
       .padding(.trailing, 3)
       Spacer(minLength: 0)
-      FocoTicker(running: !run.isPaused) { now in
+      FocoTicker(since: run.runningSince) { now in
         let seconds = run.seconds(at: now)
         let today = foco.ledger.seconds(
           on: CalendarDate(now, in: StudyFormat.calendar), now: now,
@@ -81,7 +81,7 @@ private struct FocoTimerView: View {
             .minimumScaleFactor(0.4)
             .offset(x: -1.5)
             .contentTransition(.numericText())
-            .animation(reduceMotion ? nil : Motion.crossfade, value: Int(seconds))
+            .animation(reduceMotion ? nil : Motion.roll, value: Int(seconds))
             .opacity(run.isPaused ? 0.45 : 1)
             .accessibilityLabel("\(FocoFormat.spoken(seconds)) nesta sessão")
           Text(run.isPaused ? "pausado · hoje \(FocoFormat.clock(today))" : "hoje \(FocoFormat.clock(today))")
@@ -92,7 +92,7 @@ private struct FocoTimerView: View {
         }
         .padding(.horizontal, 24)
       }
-      .background { aura }
+      .background { FocoAura(color: color) }
       Spacer(minLength: 0)
       HStack(spacing: 12) {
         Button {
@@ -116,27 +116,36 @@ private struct FocoTimerView: View {
     .padding(.top, 8)
   }
 
-  /// Um círculo borrado na cor da trilha que respira devagar atrás do número.
-  @ViewBuilder private var aura: some View {
-    if reduceMotion {
-      auraCircle(scale: 1, opacity: 0.45)
-    } else {
-      TimelineView(.animation) { context in
-        let angle = context.date.timeIntervalSinceReferenceDate / 4 * 2 * .pi
-        let wave = (sin(angle) + 1) / 2
-        auraCircle(scale: 0.92 + 0.13 * wave, opacity: 0.35 + 0.25 * wave)
-      }
-    }
-  }
+}
 
-  private func auraCircle(scale: Double, opacity: Double) -> some View {
+/// Uma mancha na cor da trilha que respira devagar atrás do número, num ciclo
+/// de 4 s. O degradê radial desenha a borda macia que antes vinha de um
+/// desfoque de 70 pontos, refeito a cada quadro.
+private struct FocoAura: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var inhaled = false
+  let color: Color
+
+  var body: some View {
     Circle()
-      .fill(color)
-      .frame(width: 280, height: 280)
-      .blur(radius: 70)
-      .scaleEffect(scale)
-      .opacity(opacity)
+      .fill(
+        RadialGradient(
+          stops: [
+            .init(color: color, location: 0),
+            .init(color: color.opacity(0.8), location: 0.3),
+            .init(color: color.opacity(0.3), location: 0.62),
+            .init(color: color.opacity(0), location: 1),
+          ], center: .center, startRadius: 0, endRadius: 210)
+      )
+      .frame(width: 420, height: 420)
+      .scaleEffect(reduceMotion ? 1 : inhaled ? 1.05 : 0.92)
+      .opacity(reduceMotion ? 0.45 : inhaled ? 0.6 : 0.35)
+      .animation(
+        reduceMotion ? nil : .easeInOut(duration: 2).repeatForever(autoreverses: true), value: inhaled
+      )
+      .onAppear { inhaled = true }
       .allowsHitTesting(false)
+      .accessibilityHidden(true)
   }
 }
 
@@ -173,7 +182,7 @@ private struct FocoResultView: View {
             .monospacedDigit()
             .tracking(-bigSize * 0.02)
             .contentTransition(.numericText(value: Double(shown)))
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.8), value: shown)
+            .animation(reduceMotion ? nil : Motion.roll, value: shown)
             .accessibilityLabel("mais \(FocoFormat.spoken(result.seconds))")
           HStack(spacing: 8) {
             Circle().fill(Color(hexString: result.track.color)).frame(width: 8, height: 8)
