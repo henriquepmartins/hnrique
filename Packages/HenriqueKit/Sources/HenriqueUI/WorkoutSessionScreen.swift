@@ -429,7 +429,7 @@ struct WorkoutSessionScreen: View {
 
   private func card(exercise: DashboardExercise, date: CalendarDate, templateId: String) -> some View {
     let next = NextSet.next(in: exercise)
-    let records = exercise.recordSets(records: store.dashboard?.records ?? [], on: date)
+    let records = exercise.recordSets()
     return VStack(alignment: .leading, spacing: 0) {
       if exercise.isFromSession {
         onlyTodayChip(exercise: exercise, date: date, templateId: templateId)

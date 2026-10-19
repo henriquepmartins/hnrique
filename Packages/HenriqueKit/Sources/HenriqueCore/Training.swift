@@ -103,13 +103,16 @@ public struct DashboardExercise: Codable, Hashable, Sendable, Identifiable {
   public var prepWeightKg: Double? = nil
   public var restSeconds: Int? = nil
   public var previousPrep: PreviousPrepSets? = nil
+  /// A melhor série de sempre antes do dia, pela regra de recorde do servidor.
+  /// Nula no servidor antigo e no exercício que nunca teve série com carga.
+  public var best: BestSet? = nil
 
   public var isComplete: Bool { sets.completedWorkCount >= prescription.workSets }
   public var isFromSession: Bool { origin == .sessao }
 }
 
 extension DashboardExercise {
-  /// Os campos antigos seguem estritos. Os três novos são aditivos: um formato
+  /// Os campos antigos seguem estritos. Os novos são aditivos: um formato
   /// inesperado em `previousPrep` vira nulo em vez de derrubar o painel inteiro.
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -127,6 +130,7 @@ extension DashboardExercise {
     prepWeightKg = (try? container.decodeIfPresent(Double.self, forKey: .prepWeightKg)) ?? nil
     restSeconds = (try? container.decodeIfPresent(Int.self, forKey: .restSeconds)) ?? nil
     previousPrep = (try? container.decodeIfPresent(PreviousPrepSets.self, forKey: .previousPrep)) ?? nil
+    best = (try? container.decodeIfPresent(BestSet.self, forKey: .best)) ?? nil
   }
 }
 

@@ -93,25 +93,40 @@ extension PreviousWorkSets {
   }
 }
 
+/// A melhor série de sempre de um exercício antes do dia aberto, como o
+/// servidor calcula para o recorde.
+public struct BestSet: Codable, Hashable, Sendable {
+  public var weightKg: Double
+  public var reps: Int
+  public var estimatedOneRepMax: Double
+  public var date: CalendarDate
+
+  public init(weightKg: Double, reps: Int, estimatedOneRepMax: Double, date: CalendarDate) {
+    self.weightKg = weightKg
+    self.reps = reps
+    self.estimatedOneRepMax = estimatedOneRepMax
+    self.date = date
+  }
+
+  public var mark: SetMark { SetMark(weightKg: weightKg, reps: reps) }
+}
+
 extension DashboardExercise {
-  /// As séries valendo de `date` que passaram a melhor marca de antes delas. A
-  /// marca começa no recorde do painel anterior a `date` e no topo da última
-  /// vez, e sobe com cada série feita hoje, na ordem em que foram marcadas. O
-  /// recorde de `date` fica de fora porque o servidor já conta a série que se
-  /// está julgando. Sem marca anterior é a estreia, que não vira recorde aqui:
-  /// toda série da primeira vez passaria.
-  public func recordSets(records: [PersonalRecord], on date: CalendarDate) -> Set<Int> {
-    let earlier = records.filter { $0.exerciseId == id && $0.date < date }
-      .map { SetMark(weightKg: $0.weightKg, reps: $0.reps) }
-    guard var best = (earlier + [previous?.top].compactMap { $0 }).max() else { return [] }
+  /// As séries valendo de hoje que passaram o melhor de sempre e as feitas
+  /// antes delas hoje, na ordem em que foram marcadas, pela comparação do
+  /// servidor. Sem `best` não há o que bater: é o servidor antigo, a estreia
+  /// ou o peso corporal, que o servidor não conta. A última vez sozinha
+  /// comemorava o que o servidor não chama de recorde.
+  public func recordSets() -> Set<Int> {
+    guard var bar = best?.mark else { return [] }
     var beaten: Set<Int> = []
     let done = sets.work.compactMap { set in set.completedAt.map { (set, $0) } }
       .sorted { ($0.1, $0.0.index) < ($1.1, $1.0.index) }
     for (set, _) in done {
       let mark = SetMark(weightKg: set.weightKg, reps: set.reps)
-      if mark > best {
+      if mark > bar {
         beaten.insert(set.index)
-        best = mark
+        bar = mark
       }
     }
     return beaten
