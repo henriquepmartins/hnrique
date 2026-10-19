@@ -1,3 +1,4 @@
+import HenriqueCore
 import SwiftUI
 
 public enum EstudosTab: String, Hashable, Sendable, CaseIterable {
@@ -50,9 +51,11 @@ struct EstudosTabs: View {
       Tab("entregas", systemImage: "calendar", value: EstudosTab.entregas) {
         shell { StudyAssignmentsScreen() }
       }
+      .badge(overdueCount)
       Tab("revisar", systemImage: "rectangle.on.rectangle", value: EstudosTab.revisar) {
         shell { StudyReviewScreen(onWrite: { showingWrite = true }) }
       }
+      .badge(store.overview.value?.reviewCount ?? 0)
       // A bolha é o botão do painel, então ela mostra o x enquanto o painel
       // está aberto.
       Tab(
@@ -76,6 +79,13 @@ struct EstudosTabs: View {
     .task { await store.prefetchAll() }
   }
 
+  private var overdueCount: Int {
+    let now = Date()
+    return (store.assignments.value ?? []).reduce(0) { total, group in
+      total + group.items.count { $0.isOverdue(at: now) }
+    }
+  }
+
   private func shell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
     NavigationStack {
       content()
@@ -86,12 +96,19 @@ struct EstudosTabs: View {
         .toolbarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .primaryAction) {
+            Button("escrever", systemImage: "square.and.pencil") { showingWrite = true }
+          }
+          ToolbarItem(placement: .primaryAction) {
             Menu {
-              Button("escrever", systemImage: "square.and.pencil") { showingWrite = true }
-              Picker("cor", selection: $accent) {
-                ForEach(Accent.allCases) { color in Text(color.label).tag(color) }
+              Picker(selection: $accent) {
+                ForEach(Accent.allCases) { color in
+                  Label(color.label, systemImage: "circle.fill").tint(color.base).tag(color)
+                }
+              } label: {
+                Label("cor", systemImage: "paintpalette")
               }
-              Button("sessão", systemImage: "play.fill") { showingSession = true }
+              .pickerStyle(.menu)
+              Button("sessão", systemImage: "timer") { showingSession = true }
             } label: { Label("configurar", systemImage: "gearshape") }
           }
           ToolbarItem(placement: .primaryAction) {
