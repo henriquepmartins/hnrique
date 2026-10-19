@@ -68,7 +68,7 @@ public struct TodayScreen: View {
         if let data = store.dashboard, let workout = data.workout {
           VStack(spacing: Space.m) {
             HStack {
-              Text("exercícios").font(.title2.weight(.medium)).tracking(-0.8)
+              SectionHeading(title: "exercícios", systemImage: "dumbbell", font: .title2.weight(.medium), tracking: -0.8)
               Spacer()
               Picker("Modo de exibição", selection: $compact) {
                 Image(systemName: "list.bullet").tag(true).accessibilityLabel("lista")
@@ -104,7 +104,7 @@ public struct TodayScreen: View {
     }
     .scrollBounceBehavior(.basedOnSize)
     .refreshable { await store.load() }
-    .overlay { TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil) }
+    .overlay { TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil, showsDayStrip: true) }
     .onChange(of: store.dashboard?.workout?.id, initial: true) {
       openIds = defaultOpenIds()
     }
@@ -166,18 +166,20 @@ public struct TodayScreen: View {
 /// O aviso cobre a tela enquanto não há painel. A troca para o conteúdo é só
 /// opacidade, então ele mesmo guarda o `isEmpty` que a anima nos dois usos.
 struct TodayPlaceholder: View {
+  @Environment(AcademiaStore.self) private var store
   let phase: AcademiaStore.Phase
   let isEmpty: Bool
+  /// A aba treino abre pela fita de dias; a home, não.
+  var showsDayStrip = false
 
   var body: some View {
     ZStack {
       if isEmpty {
         switch phase {
         case .loading:
-          TodaySkeleton().transition(.opacity)
+          TodaySkeleton(showsDayStrip: showsDayStrip).transition(.opacity)
         case .failed(let message):
-          ContentUnavailableView(
-            "não carregou", systemImage: "wifi.exclamationmark", description: Text(message))
+          LoadFailure(message: message) { await store.load() }
             .transition(.opacity)
         case .idle, .ready:
           EmptyView()
@@ -188,21 +190,77 @@ struct TodayPlaceholder: View {
   }
 }
 
-/// Esqueleto da primeira pintura: hero e fileiras no formato do conteúdo. O
-/// spinner era a primeira coisa que o dono via; o esqueleto ocupa o mesmo
-/// espaço do que vai entrar, então a troca é só opacidade.
-struct TodaySkeleton: View {
+/// O painel que não chegou, com a nova tentativa ali mesmo. Puxar para
+/// atualizar continua valendo, mas ninguém adivinha o gesto numa tela vazia.
+struct LoadFailure: View {
+  let message: String
+  let retry: () async -> Void
+  @State private var retrying = false
+
   var body: some View {
-    // Os mesmos raios do hero e do ExerciseCard que vão ocupar o lugar.
+    ContentUnavailableView {
+      Label("não carregou", systemImage: "wifi.exclamationmark")
+    } description: {
+      Text(message)
+    } actions: {
+      Button("tentar de novo", systemImage: "arrow.clockwise") {
+        retrying = true
+        Task {
+          await retry()
+          retrying = false
+        }
+      }
+      .buttonStyle(.glassProminent)
+      .disabled(retrying)
+    }
+  }
+}
+
+/// Esqueleto da primeira pintura: fita de dias, hero e fileiras no formato do
+/// conteúdo. O spinner era a primeira coisa que o dono via; o esqueleto ocupa o
+/// mesmo espaço do que vai entrar, então a troca é só opacidade.
+struct TodaySkeleton: View {
+  var showsDayStrip = false
+
+  var body: some View {
+    // Os mesmos raios e alturas da fita, do hero e do ExerciseCard que vão
+    // ocupar o lugar: 44 dos botões da fita, 12 de vão e 76 dos dias.
     VStack(spacing: Space.m) {
-      RoundedRectangle(cornerRadius: 32).fill(Color.surfaceMuted).frame(height: 408)
+      if showsDayStrip {
+        VStack(spacing: 12) {
+          HStack {
+            Circle().frame(width: 44, height: 44)
+            Spacer()
+            Capsule().frame(width: 140, height: 20)
+            Spacer()
+            Circle().frame(width: 44, height: 44)
+          }
+          RoundedRectangle(cornerRadius: Radius.tile).frame(height: 76)
+        }
+      }
+      RoundedRectangle(cornerRadius: 32).frame(height: 408)
       ForEach(0..<3) { _ in
-        RoundedRectangle(cornerRadius: 30).fill(Color.surfaceMuted).frame(height: 92)
+        RoundedRectangle(cornerRadius: 30).frame(height: 92)
       }
     }
+    .foregroundStyle(Color.surfaceMuted)
+    .modifier(SkeletonPulse())
     .padding(.horizontal, 16).padding(.top, 12)
-    .redacted(reason: .placeholder)
     .accessibilityHidden(true)
+  }
+}
+
+/// O mesmo pulso de opacidade das casas do mapa de frequência. Parado com
+/// Reduzir Movimento.
+struct SkeletonPulse: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var dim = false
+
+  func body(content: Content) -> some View {
+    content
+      .opacity(dim ? 0.5 : 1)
+      .animation(dim ? .easeInOut(duration: 1).repeatForever(autoreverses: true) : nil, value: dim)
+      .onAppear { if !reduceMotion { dim = true } }
   }
 }
 
