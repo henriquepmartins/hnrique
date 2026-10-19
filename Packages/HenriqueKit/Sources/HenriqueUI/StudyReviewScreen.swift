@@ -120,7 +120,7 @@ public struct StudyReviewScreen: View {
           detail: "os cartões nascem das notas. escreva uma aula e marque o trecho que quer lembrar.",
           action: onWrite.map { (label: "escrever", perform: $0) })
       case .done:
-        StudyEmptyState(icon: "checkmark.circle", title: "fila limpa")
+        StudyEmptyState(icon: "checkmark.circle", title: "fila limpa", celebrate: true)
       case .card(let index, let phase, let hints, let failed):
         if deck.cards.indices.contains(index) {
           let card = deck.cards[index]
