@@ -2,8 +2,8 @@ import HenriqueCore
 import SwiftUI
 
 /// O calendário da tela de entregas: um mês por vez, com a marca de cada dia.
-/// Tocar num dia filtra a lista para ele. Recebe a lista inteira e o relógio
-/// do overview, para "atrasada" contar igual na grade e nos cartões.
+/// Tocar num dia filtra a lista para ele. Recebe a lista inteira e o mesmo
+/// instante dos cartões, para "atrasada" contar igual na grade e na lista.
 struct StudyAssignmentsCalendarCard: View {
   @Environment(\.locale) private var locale
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -50,29 +50,42 @@ struct StudyAssignmentsCalendarCard: View {
     }
     .padding(Space.l)
     .paperCard(radius: StudyRadius.card)
+    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     .onChange(of: month) { rebuild() }
     .onChange(of: assignments) { rebuild() }
   }
 
   private var header: some View {
     HStack(spacing: 8) {
-      Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Color.studyInk)
-        .lineLimit(1).minimumScaleFactor(0.8)
+      Button { month = currentMonth } label: {
+        Text(title).font(.subheadline.weight(.medium)).foregroundStyle(Color.studyInk)
+          .lineLimit(1).minimumScaleFactor(0.8)
+          .frame(minHeight: 44)
+      }
+      .buttonStyle(StudyPressStyle())
+      .disabled(isCurrentMonth)
+      .accessibilityHint(isCurrentMonth ? "" : "volta para este mês")
       Spacer(minLength: 4)
-      IconButton(title: "Mês anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) {
+      IconButton(title: "mês anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) {
         month = previousMonth(of: month)
       }
-      IconButton(title: "Próximo mês", systemImage: "chevron.right", glass: true, nudge: CGSize(width: -1, height: 0)) {
+      IconButton(title: "próximo mês", systemImage: "chevron.right", glass: true, nudge: CGSize(width: -1, height: 0)) {
         month = nextMonth(of: month)
       }
     }
     .padding(.trailing, -6)
   }
 
+  private var currentMonth: CalendarDate { CalendarDate(Date(), in: StudyFormat.calendar) }
+
+  private var isCurrentMonth: Bool {
+    month.year == currentMonth.year && month.month == currentMonth.month
+  }
+
   private var title: String {
     let date = CalendarDate(year: month.year, month: month.month, day: 1)!
       .date(in: StudyFormat.calendar)
-    var style = Date.FormatStyle(locale: locale, calendar: StudyFormat.calendar)
+    let style = Date.FormatStyle(locale: locale, calendar: StudyFormat.calendar)
     return date.formatted(style.month(.wide).year())
   }
 
@@ -154,6 +167,8 @@ private struct StudyDayCell: View {
   let cell: AssignmentCalendar.Cell
   let isToday: Bool
   let isSelected: Bool
+  @ScaledMetric(relativeTo: .caption2) private var daySize = 10.0
+  @ScaledMetric(relativeTo: .caption2) private var countSize = 8.5
 
   var body: some View {
     if cell.date != nil {
@@ -194,10 +209,10 @@ private struct StudyDayCell: View {
   private var content: some View {
     VStack(spacing: 1) {
       Text("\(cell.slot.day)")
-        .font(.system(size: 10, weight: .medium)).monospacedDigit()
+        .font(.system(size: daySize, weight: .medium)).monospacedDigit()
       if let mark = cell.mark {
         Text("\(mark.pending > 0 ? mark.pending : mark.total)")
-          .font(.system(size: 8.5, weight: .semibold)).monospacedDigit()
+          .font(.system(size: countSize, weight: .semibold)).monospacedDigit()
           .lineLimit(1).minimumScaleFactor(0.7).padding(.horizontal, 2)
       }
     }
@@ -218,8 +233,8 @@ private struct StudyDayCell: View {
         .day().month(.wide))
     guard let mark = cell.mark else { return "\(day), sem entregas" }
     let total = mark.total == 1 ? "1 entrega" : "\(mark.total) entregas"
-    if mark.hasOverdue { return "\(day), \(total), atrasada" }
     if mark.isComplete { return "\(day), \(total), feitas" }
-    return "\(day), \(total)"
+    let pending = "\(mark.pending) de \(mark.total) pendentes"
+    return mark.hasOverdue ? "\(day), \(pending), atrasada" : "\(day), \(pending)"
   }
 }
