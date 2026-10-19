@@ -270,9 +270,10 @@ enum Motion {
   /// deslizando.
   static let subtleEntrance = Animation.easeOut(duration: 0.3)
   /// Conteúdo que chega e se acomoda: cascata de lista, cartão que nasce.
-  static let entrance = Animation.smooth(duration: 0.4)
-  /// A mesma entrada para quem cresce no lugar, com o repique quase no fim.
-  static let grow = Animation.spring(duration: 0.45, bounce: 0.18)
+  static let entrance = Animation.smooth(duration: 0.3)
+  /// Número ou anel que cresce no lugar. Sem repique, como todo o app: o dono
+  /// quer molas que param no alvo.
+  static let grow = Animation.spring(duration: 0.4, bounce: 0)
   /// Resposta ao dedo, onde qualquer atraso aparece.
   static let tap = Animation.snappy(duration: 0.22)
   /// Troca de uma tela inteira por outra.
@@ -284,11 +285,7 @@ enum Motion {
   /// um pulo no fim deixa dúvida se a marcação pegou ou voltou.
   static let confirm = Animation.spring(duration: 0.3, bounce: 0)
   /// Seção que abre ou fecha crescendo em altura, empurrando o resto.
-  static let expand = Animation.spring(duration: 0.38, bounce: 0.1)
-  /// O cartão crescendo até virar a tela da sessão, sem repique, e a tela
-  /// encolhendo de volta para ele mais rápido do que cresceu.
-  static let open = Animation.smooth(duration: 0.5)
-  static let close = Animation.smooth(duration: 0.32)
+  static let expand = Animation.spring(duration: 0.3, bounce: 0)
   /// Com movimento reduzido só a opacidade muda, e rápido.
   static let plain = Animation.easeOut(duration: 0.15)
   /// O rolo de dígito, a mola do board convertida. Os K 280, C 18 e M 0.3 dele
@@ -307,6 +304,12 @@ enum Motion {
   /// O passo entre um item e o seguinte. O atraso para de crescer no sétimo
   /// para a última linha de uma lista longa não esperar a lista inteira.
   static func delay(index: Int) -> Double { 0.05 * Double(min(index, 6)) }
+
+  /// Com movimento reduzido nada desliza nem cresce; só a opacidade troca, em
+  /// `plain`.
+  static func resolve(_ animation: Animation, _ reduceMotion: Bool) -> Animation {
+    reduceMotion ? plain : animation
+  }
 }
 
 /// Um ícone que entra. Opacidade, escala e desfoque ao mesmo tempo. Sem o
