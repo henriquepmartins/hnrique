@@ -639,7 +639,7 @@ struct MetricDetailScreen: View {
         }.pickerStyle(.segmented)
         VStack(spacing: Space.l) {
           if let latest = shown {
-            Text(latest.date.date(), format: .dateTime.day().month(.wide).year()).font(.caption)
+            Text(Formatting.shortDate(latest.date)).font(.caption)
             Text(weightLabel(latest.value)).font(.system(size: 64, weight: .medium)).tracking(-3).monospacedDigit()
               .minimumScaleFactor(0.6).lineLimit(1)
               .contentTransition(.numericText(value: latest.value))
