@@ -53,10 +53,34 @@ struct ExerciseLoadTests {
 
   @Test("série marcada e série digitada sem marcar ficam como estão")
   func markedAndTypedSetsStay() {
-    let opened = exercise(plan: 50, previous: [50, 50, 50], rows: [50, 50, 70], done: [1: 47.5])
-      .applyingLoad(55)
+    let opened = exercise(
+      plan: 50, previous: [50, 50, 50], rows: [50, 50, 70], done: [1: 47.5, 2: 55]
+    ).applyingLoad(55)
     #expect(opened.sets.work.map(\.weightKg) == [47.5, 55, 70])
     #expect(opened.sets.work[0].isDone)
+  }
+
+  @Test(
+    "pirâmide crescente 50/55/60: a série marcada hoje guia as abertas",
+    arguments: zip([50.0, 52.5], [[50.0, 55, 60], [52.5, 57.5, 62.5]]))
+  func ascendingPyramidFollowsTheMarkedSet(marked: Double, expected: [Double]) {
+    let opened = exercise(plan: 60, previous: [50, 55, 60], done: [1: marked]).applyingLoad(marked)
+    #expect(opened.sets.work.map(\.weightKg) == expected)
+  }
+
+  @Test("marcar a primeira série depois de editar a carga move as abertas que a carga preencheu")
+  func markingAfterEditedLoad() {
+    let opened = exercise(plan: 65, previous: [50, 55, 60], rows: [55, 60, 65], done: [1: 57.5])
+      .applyingLoad(57.5)
+    #expect(opened.sets.work.map(\.weightKg) == [57.5, 62.5, 67.5])
+  }
+
+  @Test("a segunda série marcada move a aberta que a primeira tinha preenchido")
+  func secondMarkedSetMovesWhatTheFirstFilled() {
+    let opened = exercise(
+      plan: 52.5, previous: [50, 55, 60], rows: [52.5, 57.5, 62.5], done: [1: 52.5, 2: 60]
+    ).applyingLoad(60)
+    #expect(opened.sets.work.map(\.weightKg) == [52.5, 60, 65])
   }
 
   @Test("aplicar de novo, ou depois de outra carga, chega no mesmo lugar")

@@ -132,22 +132,30 @@ extension DashboardExercise {
 
 extension DashboardExercise {
   /// As séries não marcadas com a carga do exercício, pela mesma regra do
-  /// servidor. A valendo repete a última vez deslocada pela diferença entre a
-  /// carga e o topo de lá, então uma pirâmide volta como pirâmide. O
+  /// servidor. A valendo repete a última vez deslocada. Com uma valendo feita
+  /// hoje num índice que a última vez tem, o deslocamento é o quanto a de maior
+  /// índice ficou acima daquela vez, e numa pirâmide crescente marcar a
+  /// primeira série não puxa as de cima para baixo. Sem ela, é a diferença
+  /// entre a carga e o topo de lá, então uma pirâmide volta como pirâmide. O
   /// aquecimento fixado no plano vence a última vez.
   ///
   /// O aparelho não sabe qual linha o servidor preencheu e qual o dono digitou
   /// sem marcar. Só muda a linha que ainda tem o número que o servidor antigo
-  /// ou esta regra, com a carga anterior, poriam ali.
+  /// ou esta regra poriam ali, com a carga anterior ou com qualquer série feita
+  /// hoje que já guiou as abertas.
   public func applyingLoad(_ kilograms: Double) -> DashboardExercise {
     let current = prescription.startingWeightKg
+    let doneShifts = doneTodayShifts
+    let fillShifts = [previousTop.map { current - $0 }] + doneShifts.map(Optional.some)
+    let shift = doneShifts.first ?? previousTop.map { kilograms - $0 }
     var copy = self
     copy.prescription.startingWeightKg = kilograms
     for row in copy.sets.work.indices where !copy.sets.work[row].isDone {
       let index = copy.sets.work[row].index
-      let filled = [previousWorkWeight(index) ?? current, workWeight(index, load: current)]
+      let filled = [previousWorkWeight(index) ?? current]
+        + fillShifts.map { workWeight(index, shift: $0, load: current) }
       if filled.contains(copy.sets.work[row].weightKg) {
-        copy.sets.work[row].weightKg = workWeight(index, load: kilograms)
+        copy.sets.work[row].weightKg = workWeight(index, shift: shift, load: kilograms)
       }
     }
     for row in copy.sets.prep.indices where !copy.sets.prep[row].isDone {
@@ -170,9 +178,17 @@ extension DashboardExercise {
 
   private var previousTop: Double? { previous?.sets?.map(\.weightKg).max() ?? previous?.weightKg }
 
-  private func workWeight(_ index: Int, load: Double) -> Double {
-    guard let top = previousTop, let last = previousWorkWeight(index) else { return max(0, load) }
-    return max(0, ((last + load - top) * 100).rounded() / 100)
+  /// Para cada valendo feita hoje num índice que a última vez tem, do maior
+  /// índice para o menor, o quanto ela ficou acima daquela vez.
+  private var doneTodayShifts: [Double] {
+    sets.work.filter(\.isDone).sorted { $0.index > $1.index }.compactMap { done in
+      previousWorkWeight(done.index).map { done.weightKg - $0 }
+    }
+  }
+
+  private func workWeight(_ index: Int, shift: Double?, load: Double) -> Double {
+    guard let shift, let last = previousWorkWeight(index) else { return max(0, load) }
+    return max(0, ((last + shift) * 100).rounded() / 100)
   }
 
   private func prepWeight(_ index: Int, load: Double) -> Double {

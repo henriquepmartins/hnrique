@@ -149,7 +149,7 @@ struct ContractTests {
     #expect(updated.weekPlan.map { $0.exercises[0].startingWeightKg } == [50, 50])
     #expect(updated.workout?.exercises.first?.prescription.startingWeightKg == 50)
     let sets = try #require(updated.workout?.exercises.first?.sets)
-    #expect(sets.work.map(\.weightKg) == [42.5, 50])
+    #expect(sets.work.map(\.weightKg) == [42.5, 42.5])
     #expect(sets.prep.map(\.weightKg) == [20, 37.5])
   }
 
