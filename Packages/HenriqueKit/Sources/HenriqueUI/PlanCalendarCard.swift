@@ -143,8 +143,9 @@ struct PlanCalendarCard: View {
 
   private var header: some View {
     HStack(spacing: 8) {
+      // Duas linhas, porque numa só o texto grande cortava o ano em "202…".
       Text(period.title(locale: locale)).font(.subheadline).foregroundStyle(Color.ink)
-        .lineLimit(1).minimumScaleFactor(0.6)
+        .lineLimit(2).minimumScaleFactor(0.6)
       Spacer(minLength: 4)
       IconButton(title: "Mês anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) { period = period.previous }
       IconButton(title: "Próximo mês", systemImage: "chevron.right", glass: true, nudge: CGSize(width: -1, height: 0)) { period = period.next }
