@@ -116,6 +116,8 @@ struct WorkoutSessionScreen: View {
       if let data = store.dashboard, let workout = data.workout {
         let progress = SessionProgress(workout)
         let openId = openExercise(in: workout)
+        // Cada leitura de `tint` refaz o contraste; o corpo inteiro usa esta.
+        let tint = self.tint
         ScrollViewReader { proxy in
           ScrollView {
             LazyVStack(spacing: Space.m) {
@@ -127,7 +129,7 @@ struct WorkoutSessionScreen: View {
                       lastOpenSet: progress.total - progress.done == 1)
                       .transition(.opacity)
                   } else {
-                    collapsed(exercise: exercise)
+                    collapsed(exercise: exercise, tint: tint)
                       .transition(.opacity)
                   }
                 }
@@ -144,7 +146,7 @@ struct WorkoutSessionScreen: View {
           // teclado; sem a folga, a série em edição ficava atrás da barra.
           .safeAreaPadding(.bottom, keyboardUp ? 48 : 0)
           .safeAreaInset(edge: .top, spacing: 0) {
-            top(workout: workout, progress: progress, date: data.date)
+            top(workout: workout, progress: progress, date: data.date, tint: tint)
               .revealEntrance(index: 0, shown: entered)
           }
           // Inset, e não overlay: a lista encolhe junto com a barra e a última
@@ -267,7 +269,9 @@ struct WorkoutSessionScreen: View {
     .exerciseHistorySheet(item: $history)
   }
 
-  private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
+  private func top(
+    workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate, tint: SessionTint
+  ) -> some View {
     let closedAt = store.finishedAt(workout.id, on: date)
     let complete = progress.total > 0 && progress.done >= progress.total
     return VStack(spacing: 14) {
@@ -361,7 +365,7 @@ struct WorkoutSessionScreen: View {
 
   /// O exercício fechado. Diz o que falta nele sem abrir, que é o que decide se o
   /// próximo aparelho vale a caminhada.
-  private func collapsed(exercise: DashboardExercise) -> some View {
+  private func collapsed(exercise: DashboardExercise, tint: SessionTint) -> some View {
     Button {
       holding = nil
       open = exercise.id
