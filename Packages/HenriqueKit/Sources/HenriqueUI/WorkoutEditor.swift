@@ -70,6 +70,8 @@ struct WorkoutEditor: View {
   @State private var step: EditorStep
   @State private var forward = true
   @State private var isSaving = false
+  @State private var saves = 0
+  @State private var deletions = 0
   @State private var appliedRestOverrides = false
   /// O rascunho como abriu. Diferente do atual, fechar pede confirmação.
   @State private var original: WorkoutDraft?
@@ -128,6 +130,8 @@ struct WorkoutEditor: View {
     .disabled(isSaving)
     .interactiveDismissDisabled(isSaving || isDirty)
     .sensoryFeedback(.error, trigger: blocked)
+    .sensoryFeedback(.success, trigger: saves)
+    .sensoryFeedback(.impact(weight: .medium), trigger: deletions)
     .onAppear(perform: applyRestOverrides)
   }
 
@@ -346,6 +350,7 @@ struct WorkoutEditor: View {
       let saved = await store.saveWorkout(input)
       isSaving = false
       if saved {
+        saves += 1
         dismiss()
         return
       }
@@ -362,6 +367,7 @@ struct WorkoutEditor: View {
   private func remove() {
     guard let workoutId else { return }
     store.deleteWorkout(workoutTemplateId: workoutId)
+    deletions += 1
     dismiss()
   }
 }

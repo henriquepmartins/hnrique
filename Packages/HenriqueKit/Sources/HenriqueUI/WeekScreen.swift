@@ -6,6 +6,7 @@ struct WeekScreen: View {
   @Environment(\.dynamicTypeSize) private var textSize
   @State private var editor: PlanEditorDestination?
   @State private var editorStep: EditorStep = .identidade
+  @State private var deletions = 0
   var onStart: (Int) -> Void = { _ in }
 
   var body: some View {
@@ -35,7 +36,10 @@ struct WeekScreen: View {
                   editorStep = step
                   editor = .existing(item)
                 },
-                onDelete: { store.deleteWorkout(workoutTemplateId: item.id) },
+                onDelete: {
+                  store.deleteWorkout(workoutTemplateId: item.id)
+                  deletions += 1
+                },
                 onStart: { if let day = item.nextWeekday(from: store.selectedDate.weekday()) { onStart(day) } })
                 .subtleEntrance()
             }
@@ -47,6 +51,7 @@ struct WeekScreen: View {
     }
     .background(Color.canvas)
     .refreshable { await store.load() }
+    .sensoryFeedback(.impact(weight: .medium), trigger: deletions)
     .overlay {
       TodayPlaceholder(phase: store.phase, isEmpty: store.dashboard == nil) { WeekSkeleton() }
     }

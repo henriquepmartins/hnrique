@@ -425,6 +425,7 @@ struct GoalEditor: View {
   @State private var targetValue: Double
   @State private var streakTargets: [StreakKind: Int]
   @State private var isSaving = false
+  @State private var saves = 0
 
   private let catalog: [ExerciseCatalogItem]
   private let streaks: [StreakKind: Int]
@@ -484,6 +485,7 @@ struct GoalEditor: View {
         }
       }
       .interactiveDismissDisabled(isSaving)
+      .sensoryFeedback(.success, trigger: saves)
       .navigationTitle("meta")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
@@ -512,7 +514,10 @@ struct GoalEditor: View {
             date: store.selectedDate, exerciseId: exerciseId, targetValue: targetValue))
       }
       isSaving = false
-      if saved { dismiss() }
+      if saved {
+        saves += 1
+        dismiss()
+      }
     }
   }
 }
