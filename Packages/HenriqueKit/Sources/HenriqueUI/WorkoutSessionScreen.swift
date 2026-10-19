@@ -180,14 +180,14 @@ struct WorkoutSessionScreen: View {
               }
             }
           }
-          .onChange(of: focusedRow) { _, id in
-            guard let id else { return }
-            Task {
-              // Espera o teclado subir, senão o centro é o da tela inteira.
-              try? await Task.sleep(for: .milliseconds(320))
-              withAnimation(glide) { proxy.scrollTo(id, anchor: .center) }
-              focusedRow = nil
-            }
+          // Trocar de linha antes da espera cancela a rolagem até a anterior.
+          .task(id: focusedRow) {
+            guard let id = focusedRow else { return }
+            // Espera o teclado subir, senão o centro é o da tela inteira.
+            try? await Task.sleep(for: .milliseconds(320))
+            guard !Task.isCancelled else { return }
+            withAnimation(glide) { proxy.scrollTo(id, anchor: .center) }
+            focusedRow = nil
           }
           // O exercício derivado vira escolha fixa assim que aparece. Sem isso, a
           // última série dele levava o derivado direto ao próximo no mesmo desenho,
