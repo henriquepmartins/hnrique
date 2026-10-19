@@ -18,7 +18,7 @@ func restAlarmBody(_ next: NextSet?) -> String {
 /// anterior, então ±15 s não empilha avisos.
 @MainActor
 final class AcademiaRestAlarm: RestAlarm {
-  static let identifier = "academia.descanso.fim"
+  nonisolated static let identifier = "academia.descanso.fim"
   /// Pedir, agendar e cancelar são assíncronos na central. Encadear evita que um
   /// cancelar chegue antes do agendar que ele deveria desfazer.
   private var tail: Task<Void, Never>?
@@ -26,6 +26,10 @@ final class AcademiaRestAlarm: RestAlarm {
   /// O executável de teste não é um app, e a central derruba o processo sem
   /// identificador de pacote.
   private var isApp: Bool { Bundle.main.bundleURL.pathExtension == "app" }
+
+  init() {
+    if isApp { UNUserNotificationCenter.current().delegate = RestAlarmPresenter.shared }
+  }
 
   func schedule(at date: Date, next: NextSet?) {
     guard isApp else { return }
@@ -63,5 +67,21 @@ final class AcademiaRestAlarm: RestAlarm {
       UNUserNotificationCenter.current()
         .removePendingNotificationRequests(withIdentifiers: [Self.identifier])
     }
+  }
+}
+
+/// Sem um delegado, o iOS descarta o aviso com o app na frente, e o fim do
+/// descanso passava em silêncio com o celular em cima do banco.
+@MainActor
+final class RestAlarmPresenter: NSObject, UNUserNotificationCenterDelegate {
+  static let shared = RestAlarmPresenter()
+  /// Com a sessão na tela a barra já diz "vai", então o aviso só toca.
+  var sessionOnScreen = false
+
+  nonisolated func userNotificationCenter(
+    _ center: UNUserNotificationCenter, willPresent notification: UNNotification
+  ) async -> UNNotificationPresentationOptions {
+    guard notification.request.identifier == AcademiaRestAlarm.identifier else { return [] }
+    return await sessionOnScreen ? [.sound, .list] : [.banner, .sound, .list]
   }
 }

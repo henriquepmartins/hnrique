@@ -205,6 +205,8 @@ struct WorkoutSessionScreen: View {
   private func top(workout: WorkoutSummary, progress: SessionProgress, date: CalendarDate) -> some View {
     let closedAt = store.finishedAt(workout.id, on: date)
     let complete = progress.total > 0 && progress.done >= progress.total
+    .onAppear { RestAlarmPresenter.shared.sessionOnScreen = true }
+    .onDisappear { RestAlarmPresenter.shared.sessionOnScreen = false }
     return VStack(spacing: 14) {
       HStack(spacing: Space.m) {
         Button(action: onClose) {

@@ -165,6 +165,7 @@ struct RestChip: View {
         .font(.subheadline.weight(.medium)).foregroundStyle(.white)
         .padding(.horizontal, 14).padding(.vertical, 9)
         .background(remaining > 0 ? accent.deep : accent.base, in: .capsule)
+        .sensoryFeedback(.success, trigger: remaining <= 0) { _, over in over }
       }
     }
     .buttonStyle(PressScaleStyle())
