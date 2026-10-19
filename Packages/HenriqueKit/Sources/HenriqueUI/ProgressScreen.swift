@@ -91,13 +91,15 @@ struct ProgressScreen: View {
             NavigationLink { MetricDetailScreen(onWorkout: onWorkout) } label: {
               OneRepMaxChart(
                 title: series.exerciseName, points: series.points,
-                target: dashboard.strengthGoal?.targetValue,
-                choices: dashboard.historyTargets) { history = $0 }
+                target: dashboard.strengthGoal?.targetValue
+              ) {
+                history = ExerciseHistoryTarget(id: series.exerciseId, name: series.exerciseName)
+              }
             }
             .buttonStyle(StudyPressStyle())
             .foregroundStyle(Color.ink)
             .subtleEntrance()
-            VolumeChart(points: series.points)
+            VolumeChart(exerciseName: series.exerciseName, points: series.points)
               .subtleEntrance()
           } else {
             ContentUnavailableView {
@@ -118,7 +120,7 @@ struct ProgressScreen: View {
       .padding(.bottom, 40)
     }
     .refreshable { await store.load() }
-    .exerciseHistorySheet(item: $history)
+    .exerciseHistorySheet(item: $history, choices: store.dashboard?.historyTargets ?? [])
     .sheet(item: $editing) { kind in
       if let dashboard = store.dashboard {
         GoalEditor(kind: kind, dashboard: dashboard)
@@ -166,17 +168,42 @@ private struct ProgressPlaceholder: View {
 struct StreakGoalCard: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .headline) private var iconWidth = 24.0
   let kind: GoalKind
   let current: Int
   let target: Int
   let action: () -> Void
 
   private var progress: Double { min(1, Double(current) / Double(max(target, 1))) }
+  private var reached: Bool { current >= target }
+
+  /// A sequência tem cor própria em toda tela: a chama da presença no degradê
+  /// dela e o selo dos completos na tinta do selo da folha da sequência.
+  private var iconStyle: AnyShapeStyle {
+    switch kind {
+    case .attendance: AnyShapeStyle(streakGradient)
+    case .complete: AnyShapeStyle(streakTone.ink)
+    case .strength: AnyShapeStyle(Color.ink)
+    }
+  }
+
+  private var barTint: Color {
+    if reached { return accent.deep }
+    switch kind {
+    case .attendance: return streakTone.top
+    case .complete: return streakTone.ink
+    case .strength: return accent.signal
+    }
+  }
 
   var body: some View {
     Button(action: action) {
       VStack(alignment: .leading, spacing: Space.m) {
-        Label { Text(kind.face.label) } icon: { Image(systemName: kind.face.systemImage).frame(width: 24) }
+        Label {
+          Text(kind.face.label)
+        } icon: {
+          Image(systemName: kind.face.systemImage).foregroundStyle(iconStyle).frame(width: iconWidth)
+        }
           .font(.headline)
         HStack(alignment: .firstTextBaseline, spacing: 6) {
           Text("\(current)")
@@ -190,11 +217,9 @@ struct StreakGoalCard: View {
         }
         .monospacedDigit()
         ProgressView(value: progress)
-          .tint(accent.signal)
+          .tint(barTint)
           .animation(reduceMotion ? nil : Motion.crossfade, value: progress)
-        if current >= target {
-          Text("meta batida").font(.footnote).foregroundStyle(.secondary)
-        }
+        if reached { GoalReachedSeal(reached: reached) }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(Space.xl)
@@ -205,17 +230,36 @@ struct StreakGoalCard: View {
     .foregroundStyle(Color.ink)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("meta de \(kind.face.label), \(current) de \(target)")
+    .accessibilityValue(reached ? "meta batida" : "")
     .accessibilityAddTraits(.isButton)
+    .sensoryFeedback(.success, trigger: reached) { old, new in !old && new }
+  }
+}
+
+/// A meta batida é a conquista mais rara da aba. Selo no tom do acento, um
+/// pulo do símbolo quando ela chega e nada de confete; com Reduzir Movimento
+/// fica só a cor.
+struct GoalReachedSeal: View {
+  @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let reached: Bool
+
+  var body: some View {
+    Label("meta batida", systemImage: "checkmark.seal.fill")
+      .font(.footnote.weight(.semibold))
+      .foregroundStyle(accent.deep)
+      .symbolEffect(.bounce, options: .nonRepeating, value: reduceMotion ? false : reached)
+      .accessibilityHidden(true)
   }
 }
 
 extension Dashboard {
   /// A série de força da tela: a da meta quando existe, senão a do exercício
   /// que o servidor destaca. Nula quando nenhuma das duas tem ponto.
-  fileprivate var strengthSeries: (exerciseName: String, points: [ProgressPoint])? {
-    if let goal = strengthGoal, !progress.isEmpty { return (goal.exerciseName, progress) }
+  fileprivate var strengthSeries: (exerciseId: String, exerciseName: String, points: [ProgressPoint])? {
+    if let goal = strengthGoal, !progress.isEmpty { return (goal.exerciseId, goal.exerciseName, progress) }
     if let featured = featuredProgress, !featured.points.isEmpty {
-      return (featured.exerciseName, featured.points)
+      return (featured.exerciseId, featured.exerciseName, featured.points)
     }
     return nil
   }
@@ -230,6 +274,7 @@ private func latest(in dashboard: Dashboard) -> BodyMeasurement? {
 struct GoalCard: View {
   @Environment(\.accent) private var accent
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .headline) private var iconWidth = 24.0
   let exerciseName: String
   let targetValue: Double
   let projection: Projection?
@@ -239,11 +284,14 @@ struct GoalCard: View {
     Button(action: action) { card }
       .buttonStyle(StudyPressStyle())
       .foregroundStyle(Color.ink)
+      .sensoryFeedback(.success, trigger: reached) { old, new in !old && new }
   }
+
+  private var reached: Bool { projection?.weeksRemaining == 0 }
 
   private var card: some View {
     VStack(alignment: .leading, spacing: Space.m) {
-      Label { Text(exerciseName) } icon: { Image(systemName: "target").frame(width: 24) }
+      Label { Text(exerciseName.lowercased()) } icon: { Image(systemName: "target").frame(width: iconWidth) }
         .font(.headline)
       HStack(alignment: .firstTextBaseline, spacing: 6) {
         // Sem projeção ainda não há carga para mostrar, e um "0 kg" leria como dado.
@@ -259,8 +307,10 @@ struct GoalCard: View {
       }
       if let projection {
         ProgressView(value: min(projection.current / max(projection.target, 1), 1))
-          .tint(accent.signal)
-        if let sentence = projectionSentence(projection) {
+          .tint(reached ? accent.deep : accent.signal)
+        if reached {
+          GoalReachedSeal(reached: reached)
+        } else if let sentence = projectionSentence(projection) {
           Text(sentence).font(.footnote).foregroundStyle(.secondary)
         }
       }
@@ -272,8 +322,7 @@ struct GoalCard: View {
   }
 
   private func projectionSentence(_ projection: Projection) -> String? {
-    guard let weeks = projection.weeksRemaining else { return nil }
-    if weeks == 0 { return "meta batida" }
+    guard let weeks = projection.weeksRemaining, weeks > 0 else { return nil }
     return "em \(weeks) \(weeks == 1 ? "semana" : "semanas")"
   }
 }
@@ -283,11 +332,10 @@ struct OneRepMaxChart: View {
   let title: String
   let points: [ProgressPoint]
   let target: Double?
-  var choices: [ExerciseHistoryTarget] = []
-  var onChoose: (ExerciseHistoryTarget) -> Void = { _ in }
+  let onHistory: () -> Void
 
   var body: some View {
-    ChartCard(title: title.lowercased(), opens: true, choices: choices, onChoose: onChoose) {
+    ChartCard(title: title.lowercased(), opens: true, onHistory: onHistory) {
       Chart {
         ForEach(points) { point in
           LineMark(
@@ -318,6 +366,7 @@ struct OneRepMaxChart: View {
 struct VolumeChart: View {
   @Environment(\.accent) private var accent
   @State private var selectedDate: Date?
+  let exerciseName: String
   let points: [ProgressPoint]
 
   private var selected: ProgressPoint? {
@@ -328,7 +377,7 @@ struct VolumeChart: View {
   }
 
   var body: some View {
-    ChartCard(title: "volume") {
+    ChartCard(title: "volume · \(exerciseName.lowercased())") {
       Chart {
         ForEach(points) { point in
           AreaMark(x: .value("dia", point.date.date()), y: .value("volume", point.volumeKg))
@@ -361,7 +410,7 @@ struct ChartReadout: View {
   let date: CalendarDate
 
   var body: some View {
-    Text("\(weightLabel(value)) · \(date.date().formatted(.dateTime.day().month(.abbreviated)))")
+    Text("\(weightLabel(value)) · \(Formatting.shortDate(date))")
       .font(.caption.weight(.medium)).monospacedDigit()
       .foregroundStyle(Color.ink)
       .padding(.horizontal, 8).padding(.vertical, 4)
@@ -373,34 +422,24 @@ struct ChartCard<Content: View>: View {
   let title: String
   /// O cartão é o link para os detalhes, e o chevron é o que diz isso.
   var opens = false
-  /// Com escolhas, o título é um menu que abre o histórico do exercício escolhido.
-  var choices: [ExerciseHistoryTarget] = []
-  var onChoose: (ExerciseHistoryTarget) -> Void = { _ in }
+  /// Abre o histórico do exercício do cartão. O desenho de seletor no título
+  /// prometia trocar o gráfico, e abria outra coisa por cima.
+  var onHistory: (() -> Void)?
   @ViewBuilder let content: Content
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
       HStack {
-        if choices.isEmpty {
-          Text(title).font(.headline)
-        } else {
-          Menu {
-            ForEach(choices) { choice in
-              Button(choice.name.lowercased(), systemImage: "chart.line.uptrend.xyaxis") { onChoose(choice) }
-            }
-          } label: {
-            HStack(spacing: 4) {
-              Text(title).font(.headline)
-              Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold))
-                .foregroundStyle(Color.mutedInk)
-            }
-            .frame(minHeight: 44).contentShape(.rect)
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel(title)
-          .accessibilityHint("escolher exercício para ver o histórico")
-        }
+        Text(title).font(.headline)
+          .lineLimit(2).minimumScaleFactor(0.7)
         Spacer(minLength: 8)
+        if let onHistory {
+          Button("histórico", systemImage: "clock.arrow.circlepath", action: onHistory)
+            .labelStyle(.iconOnly)
+            .font(.subheadline.weight(.semibold)).foregroundStyle(.tint)
+            .frame(width: 44, height: 44).contentShape(.rect)
+            .buttonStyle(.plain)
+        }
         if opens {
           Image(systemName: "chevron.right")
             .font(.subheadline.weight(.semibold)).foregroundStyle(Color.mutedInk)
@@ -408,6 +447,9 @@ struct ChartCard<Content: View>: View {
       }
       content
         .frame(height: 220)
+        // O VoiceOver lê o gráfico pelo descritor; acima disso os rótulos dos
+        // eixos encostavam uns nos outros e a área de desenho ficava pela metade.
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(Space.xl)
@@ -486,6 +528,10 @@ struct GoalEditor: View {
       }
       .interactiveDismissDisabled(isSaving)
       .sensoryFeedback(.success, trigger: saves)
+      // Na altura média a folha de vidro deixava o cartão verde de trás vazar
+      // pela lista de exercícios.
+      .scrollContentBackground(.hidden)
+      .background(Color.canvas)
       .navigationTitle("meta")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
@@ -498,6 +544,7 @@ struct GoalEditor: View {
         }
       }
     }
+    .presentationBackground(Color.canvas)
   }
 
   private func save() {
@@ -601,8 +648,15 @@ struct MetricDetailScreen: View {
               .accessibilityValue(weightLabel(latest.value))
             if let first = window.first, first.date != latest.date {
               let weeks = max(1, Int((latest.date.date().timeIntervalSince(first.date.date()) / 604800).rounded()))
-              Text("\((latest.value - first.value).formatted(.number.sign(strategy: .always()).precision(.fractionLength(1)))) kg em \(weeks) sem")
-                .font(.subheadline).monospacedDigit().foregroundStyle(accent.base)
+              let delta = latest.value - first.value
+              // "+0,0" no verde de ganho dizia que algo subiu.
+              if abs(delta) < 0.05 {
+                Text("igual há \(weeks) sem")
+                  .font(.subheadline).foregroundStyle(Color.mutedInk)
+              } else {
+                Text("\(delta.formatted(.number.sign(strategy: .always()).precision(.fractionLength(1)))) kg em \(weeks) sem")
+                  .font(.subheadline).monospacedDigit().foregroundStyle(accent.base)
+              }
             }
           } else {
             Text(bodyTrack ? "sem % de gordura" : "sem séries").font(.title2)
@@ -647,7 +701,7 @@ struct MetricDetailScreen: View {
             HStack {
               Text("última sessão").font(.headline)
               Spacer()
-              Text(last.date.date(), format: .dateTime.day().month(.abbreviated)).font(.caption)
+              Text(Formatting.shortDate(last.date)).font(.caption)
             }
             HStack(alignment: .top) {
               sessionValue("reps", value: last.reps.map(String.init).joined(separator: ", "))
