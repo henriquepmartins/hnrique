@@ -88,7 +88,7 @@ public struct IdiomasRevisarScreen: View {
       case .empty:
         StudyEmptyState(icon: "rectangle.on.rectangle", title: "sem revisões")
       case .done:
-        StudyEmptyState(icon: "checkmark.circle", title: "fila limpa")
+        StudyEmptyState(icon: "checkmark.circle", title: "fila limpa", celebrate: true)
       case .card(let index, let phase, let hints, let failed):
         if deck.drills.indices.contains(index) {
           let drill = deck.drills[index]
@@ -124,32 +124,48 @@ public struct IdiomasRevisarScreen: View {
             .font(.footnote)
             .monospacedDigit()
             .foregroundStyle(Color.studyInk40)
+            .contentTransition(reduceMotion ? .identity : .numericText(value: Double(index + 1)))
+            .animation(reduceMotion ? nil : Motion.roll, value: index)
         }
-        Text(drill.promptDE)
-          .font(.system(size: 26, weight: .semibold).leading(.tight))
-          .fixedSize(horizontal: false, vertical: true)
-          .padding(.top, 12)
-        Text(drill.glossPT)
-          .font(.system(size: 16))
-          .foregroundStyle(Color.studyGraphite)
-          .fixedSize(horizontal: false, vertical: true)
-        if phase == .back {
-          Text(drill.expectedDE ?? drill.glossPT)
-            .font(.system(size: 16).weight(.medium))
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 8)
-        } else {
-          Text("toque para virar")
-            .font(.system(size: 13))
-            .foregroundStyle(Color.studyInk40)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 8)
-        }
+        // O cartão fica e só o miolo troca, para o contador rolar no lugar em
+        // vez de sumir junto com o treino que saiu.
+        prompt(drill: drill, phase: phase)
+          .id(drill.id)
+          .transition(.opacity)
       }
     }
     .contentShape(.rect)
     .onTapGesture { state = state.reduce(.flip) }
     .accessibilityAddTraits(.isButton)
+  }
+
+  private func prompt(drill: LanguageDrill, phase: IdiomasReviewPhase) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text(drill.promptDE)
+        .font(.system(size: 26, weight: .semibold).leading(.tight))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, 12)
+      Text(drill.glossPT)
+        .font(.system(size: 16))
+        .foregroundStyle(Color.studyGraphite)
+        .fixedSize(horizontal: false, vertical: true)
+      if phase == .back {
+        Text(drill.expectedDE ?? drill.glossPT)
+          .font(.system(size: 16).weight(.medium))
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.top, 8)
+          .transition(.opacity)
+      } else {
+        Text("toque para virar")
+          .font(.system(size: 13))
+          .foregroundStyle(Color.studyInk40)
+          .frame(maxWidth: .infinity, alignment: .center)
+          .padding(.top, 8)
+          .transition(.opacity)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .animation(Motion.resolve(Motion.swap, reduceMotion), value: phase)
   }
 
   private func grades(
@@ -190,8 +206,10 @@ public struct IdiomasRevisarScreen: View {
     grading = true
     defer { grading = false }
     if let result = await store.gradeReview(drill: drill, rating: rating) {
-      state = state.reduce(.hint(rating: rating, interval: result.interval))
-      state = state.reduce(.advance(total: deck.drills.count))
+      withAnimation(Motion.resolve(Motion.crossfade, reduceMotion)) {
+        state = state.reduce(.hint(rating: rating, interval: result.interval))
+        state = state.reduce(.advance(total: deck.drills.count))
+      }
     } else if !store.conflictDrillIds.contains(drill.id) {
       state = state.reduce(.failed)
     }
