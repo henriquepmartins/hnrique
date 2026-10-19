@@ -13,21 +13,45 @@ struct PlanCalendarCard: View {
   @State private var period: AttendancePeriod = .month(containing: .today)
   @State private var failed = false
   @State private var attempt = 0
+  /// Os meses já pintados nesta tela. Voltar à aba ou salvar um treino não
+  /// pinta de novo o que o dono já viu entrar.
+  @State private var paintedPeriods: Set<AttendancePeriod> = []
+  @State private var swapCount = 0
   let attendance: [CalendarDate: AttendanceDay]
   let weekPlan: [WeekPlanItem]
   let swaps: [DaySwap]
   let week: TrainingWeek?
+  /// As datas que aceitam troca pelo toque. Nula esconde o menu.
+  let swapWindow: ClosedRange<CalendarDate>?
   let load: (CalendarDate, CalendarDate) async -> Bool
+  let onSwap: (CalendarDate, String?) async -> Bool
 
   init(
     attendance: [CalendarDate: AttendanceDay], weekPlan: [WeekPlanItem], swaps: [DaySwap] = [],
-    week: TrainingWeek? = nil, load: @escaping (CalendarDate, CalendarDate) async -> Bool
+    week: TrainingWeek? = nil, swapWindow: ClosedRange<CalendarDate>? = nil,
+    load: @escaping (CalendarDate, CalendarDate) async -> Bool,
+    onSwap: @escaping (CalendarDate, String?) async -> Bool = { _, _ in false }
   ) {
     self.attendance = attendance
     self.weekPlan = weekPlan
     self.swaps = swaps
     self.week = week
+    self.swapWindow = swapWindow
     self.load = load
+    self.onSwap = onSwap
+  }
+
+  private var swapContext: PlanSwapContext? {
+    swapWindow.map { window in
+      PlanSwapContext(
+        window: window, plan: weekPlan.inTrainingWeekOrder(),
+        schedule: PlanSchedule(plan: weekPlan, swaps: swaps, calendar: .trainingWeek)
+      ) { date, workoutId in
+        Task {
+          if await onSwap(date, workoutId) { swapCount += 1 }
+        }
+      }
+    }
   }
 
   private var calendarGrid: PlanCalendar {
@@ -40,8 +64,10 @@ struct PlanCalendarCard: View {
     Dictionary(weekPlan.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
   }
 
+  /// Um mês adiante fica aberto: no fim do mês a semana seguinte já cai nele,
+  /// e o que o plano pede ali é o que o calendário existe para mostrar.
   private var nextIsFuture: Bool {
-    period.next.range().lowerBound > .today
+    period.next.range().lowerBound > CalendarDate.today.adding(days: 31)
   }
 
   var body: some View {
@@ -52,21 +78,22 @@ struct PlanCalendarCard: View {
       if failed { AttendanceFailure { attempt += 1 } }
       TimelineView(.animation(paused: !painting.isDrawing || reduceMotion)) { timeline in
         PlanMonthGrid(
-          grid: grid, workoutsById: workouts,
+          grid: grid, workoutsById: workouts, swap: swapContext,
           paintProgress: reduceMotion ? 1 : painting.progress(at: timeline.date))
       }
       .transaction { $0.animation = nil }
       PlanLegend()
     }
     .padding(Space.xl).paperCard()
+    .sensoryFeedback(.selection, trigger: swapCount)
     .onAppear {
       isVisible = true
       hasLoadedAttendance = false
-      painting.reset()
+      resetPainting()
     }
     .onChange(of: period) {
       hasLoadedAttendance = false
-      painting.reset()
+      resetPainting()
     }
     .onChange(of: attendance) {
       if hasLoadedAttendance { startPainting() }
@@ -100,19 +127,24 @@ struct PlanCalendarCard: View {
     }
   }
 
+  private func resetPainting() {
+    if paintedPeriods.contains(period) { painting.finish() } else { painting.reset() }
+  }
+
   private func startPainting() {
     guard isVisible else { return }
-    guard !reduceMotion else {
+    guard !reduceMotion, !paintedPeriods.contains(period) else {
       painting.finish()
       return
     }
+    paintedPeriods.insert(period)
     painting.start(at: .now)
   }
 
   private var header: some View {
     HStack(spacing: 8) {
       Text(period.title(locale: locale)).font(.subheadline).foregroundStyle(Color.ink)
-        .lineLimit(1).minimumScaleFactor(0.8)
+        .lineLimit(1).minimumScaleFactor(0.6)
       Spacer(minLength: 4)
       IconButton(title: "Mês anterior", systemImage: "chevron.left", glass: true, nudge: CGSize(width: 1, height: 0)) { period = period.previous }
       IconButton(title: "Próximo mês", systemImage: "chevron.right", glass: true, nudge: CGSize(width: -1, height: 0)) { period = period.next }
@@ -150,16 +182,29 @@ struct PlanMarkerPlayback {
   }
 }
 
+/// O que o menu de uma casa precisa para trocar o treino daquela data.
+struct PlanSwapContext {
+  let window: ClosedRange<CalendarDate>
+  let plan: [WeekPlanItem]
+  let schedule: PlanSchedule
+  let swap: (CalendarDate, String?) -> Void
+}
+
 private struct PlanMonthGrid: View {
   @Environment(\.locale) private var locale
+  @Environment(\.dynamicTypeSize) private var textSize
   let grid: PlanCalendar
   let workoutsById: [String: WeekPlanItem]
+  let swap: PlanSwapContext?
   let paintProgress: Double
 
+  /// Nos tamanhos de acessibilidade "ter." já não cabe na coluna; fica a
+  /// inicial.
   private var weekdayInitials: [(weekday: Int, initial: String)] {
     var calendar = Calendar.trainingWeek
     calendar.locale = locale
-    let symbols = calendar.shortStandaloneWeekdaySymbols
+    let symbols = textSize.isAccessibilitySize
+      ? calendar.veryShortStandaloneWeekdaySymbols : calendar.shortStandaloneWeekdaySymbols
     let first = calendar.firstWeekday - 1
     return (0..<7).map { weekday in ((first + weekday) % 7, symbols[(first + weekday) % 7]) }
   }
@@ -177,7 +222,7 @@ private struct PlanMonthGrid: View {
       ForEach(grid.weeks) { week in
         HStack(spacing: 4) {
           ForEach(week.cells) { cell in
-            DayCell(cell: cell, workoutsById: workoutsById, paintProgress: paintProgress)
+            DayCell(cell: cell, workoutsById: workoutsById, swap: swap, paintProgress: paintProgress)
               .aspectRatio(1, contentMode: .fit).frame(maxWidth: .infinity)
           }
         }
@@ -190,7 +235,9 @@ private struct DayCell: View {
   @Environment(\.locale) private var locale
   let cell: PlanCalendar.Cell
   let workoutsById: [String: WeekPlanItem]
+  let swap: PlanSwapContext?
   let paintProgress: Double
+  @ScaledMetric(relativeTo: .caption2) private var daySize = 12.0
   @State private var showsName = false
   private let radius: CGFloat = 8
 
@@ -207,9 +254,33 @@ private struct DayCell: View {
     }
   }
 
+  /// Hoje e os dias à frente dentro da janela trocam de treino pelo toque. Dia
+  /// já feito não troca.
+  private func swapping(_ date: CalendarDate) -> PlanSwapContext? {
+    guard let swap, swap.window.contains(date) else { return nil }
+    if case .done = cell.mark { return nil }
+    return swap
+  }
+
   var body: some View {
     if let date = cell.date {
-      if let workout {
+      if let swap = swapping(date) {
+        Menu {
+          Section(workout?.name.lowercased() ?? "descanso") {
+            ForEach(swap.plan.filter { $0.id != workout?.id }) { item in
+              Button(item.name.lowercased()) { swap.swap(date, item.id) }
+            }
+          }
+          if swap.schedule.isSwapped(date) {
+            Button("voltar ao plano", systemImage: "arrow.uturn.backward") { swap.swap(date, nil) }
+          }
+        } label: {
+          square
+        }
+        .buttonStyle(StudyPressStyle())
+        .accessibilityLabel(label(for: date))
+        .accessibilityHint("trocar o treino do dia")
+      } else if let workout {
         Button { showsName = true } label: { square }
           .buttonStyle(StudyPressStyle())
           .popover(isPresented: $showsName) {
@@ -267,7 +338,10 @@ private struct DayCell: View {
   }
 
   private var content: some View {
-    Text("\(cell.slot.day)").font(.system(size: 12, weight: .medium)).monospacedDigit()
+    // A casa é quadrada e não cresce com o texto; o número cresce até caber.
+    Text("\(cell.slot.day)").font(.system(size: daySize, weight: .medium)).monospacedDigit()
+      .lineLimit(1).minimumScaleFactor(0.6)
+      .padding(2)
       .foregroundStyle(textColor)
   }
 
@@ -302,7 +376,7 @@ struct PlanMarkerMask: Shape {
     let local = max(0, min(1, (progress - delay) / 0.36))
     guard local > 0 else { return Path() }
     guard local < 1 else { return Path(rect) }
-    let eased = 1 - pow(1 - local, 3)
+    let eased = Motion.paintEase(local)
     let slant = day.isMultiple(of: 2) ? 0.035 : -0.035
     var stroke = Path()
     for pass in 0..<5 {
@@ -338,34 +412,52 @@ private struct Hachura: Shape {
 }
 
 private struct PlanLegend: View {
-  private let side: CGFloat = 11
+  @ScaledMetric(relativeTo: .caption2) private var side = 11.0
   private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 3) }
 
+  /// Numa linha quando cabe; senão uma marca por linha, sem quebrar palavra.
   var body: some View {
-    HStack(spacing: 4) {
-      shape.fill(Color.mutedInk).frame(width: side, height: side)
-      Text("feito")
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: 10) { entries }.fixedSize()
+      VStack(alignment: .trailing, spacing: 4) { entries }
+    }
+    .font(.caption2).foregroundStyle(Color.mutedInk)
+    .lineLimit(1)
+    .frame(maxWidth: .infinity, alignment: .trailing)
+    .accessibilityHidden(true)
+  }
+
+  @ViewBuilder private var entries: some View {
+    entry("feito") { shape.fill(Color.mutedInk) }
+    entry("planejado") {
       shape.fill(.white)
         .overlay { Hachura(espaco: 3).stroke(Color.mutedInk.opacity(0.45), lineWidth: 1).clipShape(.rect(cornerRadius: 3)) }
         .overlay { shape.strokeBorder(Color.mutedInk, lineWidth: 1) }
-        .frame(width: side, height: side)
-        .padding(.leading, 6)
-      Text("planejado")
-      shape.strokeBorder(Color.mutedInk.opacity(0.28), lineWidth: 1)
-        .frame(width: side, height: side)
-        .padding(.leading, 6)
-      Text("furou")
     }
-    .font(.caption2).foregroundStyle(Color.mutedInk)
-    .frame(maxWidth: .infinity, alignment: .trailing)
-    .accessibilityHidden(true)
+    entry("furou") { shape.strokeBorder(Color.mutedInk.opacity(0.28), lineWidth: 1) }
+  }
+
+  private func entry(_ title: String, @ViewBuilder mark: () -> some View) -> some View {
+    HStack(spacing: 4) {
+      mark().frame(width: side, height: side)
+      Text(title)
+    }
+  }
+}
+
+extension Motion {
+  /// A pena que desacelera no fim do traço do calendário, cúbica de saída.
+  static func paintEase(_ progress: Double) -> Double {
+    1 - pow(1 - progress, 3)
   }
 }
 
 #if DEBUG
   #Preview("Calendário do plano") {
     ScrollView {
-      PlanCalendarCard(attendance: PlanCalendarPreview.attendance, weekPlan: PlanCalendarPreview.plan) { _, _ in true }
+      PlanCalendarCard(
+        attendance: PlanCalendarPreview.attendance, weekPlan: PlanCalendarPreview.plan,
+        load: { _, _ in true })
         .padding(16)
     }
     .background(Color.canvas)

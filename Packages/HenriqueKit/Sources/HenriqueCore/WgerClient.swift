@@ -2,9 +2,13 @@ import Foundation
 
 /// A cauda longa do catálogo. A wger tem mais de 800 exercícios com imagem e
 /// não pede chave, então quando a busca local devolve pouco, o seletor bate
-/// aqui. Baixa a lista uma vez por sessão, guarda só quem tem imagem e
-/// filtra no aparelho.
+/// aqui. Baixa a lista uma vez por execução do app, guarda só quem tem imagem
+/// e filtra no aparelho.
 public actor WgerClient {
+  /// O cliente de todas as folhas. Um por folha baixava a lista de novo a
+  /// cada abertura do seletor.
+  public static let shared = WgerClient()
+
   private static let base = URL(string: "https://wger.de/api/v2/exerciseinfo/")!
   private let session: URLSession
   private var items: [ExerciseCatalogItem]?
@@ -21,10 +25,11 @@ public actor WgerClient {
   }
 
   /// Devolve os exercícios da base pública que casam com o termo, já sem os
-  /// que o catálogo local cobre. Lista vazia é resposta válida, não erro.
-  public func search(_ term: String, excluding local: [ExerciseCatalogItem]) async throws
-    -> [ExerciseCatalogItem]
-  {
+  /// que o catálogo local cobre. Com `muscle`, só os desse grupo, como a busca
+  /// local. Lista vazia é resposta válida, não erro.
+  public func search(
+    _ term: String, muscle: String? = nil, excluding local: [ExerciseCatalogItem]
+  ) async throws -> [ExerciseCatalogItem] {
     let folded = ExerciseLibrary.fold(term)
     guard folded.count >= 2 else { return [] }
     let all = try await catalog()
@@ -32,6 +37,7 @@ public actor WgerClient {
     let localImages = Set(local.compactMap(\.imageUrl))
     return Array(
       all.filter { item in
+        if let muscle, item.muscleGroup != muscle { return false }
         guard !localNames.contains(ExerciseLibrary.fold(item.name)) else { return false }
         if let image = item.imageUrl, localImages.contains(image) { return false }
         return ExerciseLibrary.fold(item.name).contains(folded)

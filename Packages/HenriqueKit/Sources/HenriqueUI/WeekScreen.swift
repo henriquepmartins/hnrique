@@ -4,6 +4,7 @@ import SwiftUI
 struct WeekScreen: View {
   @Environment(AcademiaStore.self) private var store
   @Environment(\.dynamicTypeSize) private var textSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var editor: PlanEditorDestination?
   @State private var deletions = 0
   var onStart: (Int) -> Void = { _ in }
@@ -17,7 +18,9 @@ struct WeekScreen: View {
             weekPlan: store.weekPlan,
             swaps: store.dashboard?.daySwaps ?? [],
             week: store.trainingWeek(),
-            load: { from, to in await store.loadAttendance(from: from, to: to) })
+            swapWindow: swapWindow,
+            load: { from, to in await store.loadAttendance(from: from, to: to) },
+            onSwap: { date, workoutId in await store.swapDay(on: date, workoutTemplateId: workoutId) })
           Button("novo treino", systemImage: "plus") { editor = .new }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
@@ -30,11 +33,15 @@ struct WeekScreen: View {
                 showsWave: store.dashboard?.highlightedWorkoutIDs.contains(item.id) == true,
                 onEdit: { step in editor = .existing(item, at: step) },
                 onDelete: {
-                  store.deleteWorkout(workoutTemplateId: item.id)
+                  withAnimation(Motion.resolve(Motion.confirm, reduceMotion)) {
+                    store.deleteWorkout(workoutTemplateId: item.id)
+                  }
                   deletions += 1
                 },
-                onStart: { if let day = item.nextWeekday(from: store.selectedDate.weekday()) { onStart(day) } })
+                onStart: { if let day = item.nextWeekday(from: store.selectedDate.weekday()) { onStart(day) } },
+                onTrainToday: canTrainToday(item) ? { Task { await trainToday(item) } } : nil)
                 .subtleEntrance()
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92)))
             }
           }
         }
@@ -57,7 +64,35 @@ struct WeekScreen: View {
     }
   }
 
+  /// As datas cujas trocas o painel aberto traz: de hoje até seis dias depois
+  /// do dia aberto. Fora dela uma troca salvaria sem aparecer no calendário.
+  /// Nula no servidor que ainda não troca dia. Hoje com série marcada fica de
+  /// fora, como no menu de troca da home.
+  private var swapWindow: ClosedRange<CalendarDate>? {
+    guard let dashboard = store.dashboard, dashboard.daySwaps != nil else { return nil }
+    let today = CalendarDate.today
+    let start = dashboard.date == today && dashboard.hasMarkedSets ? today.adding(days: 1) : today
+    let end = dashboard.date.adding(days: 6)
+    return start <= end ? start...end : nil
+  }
 
+  /// Some quando o treino já é o de hoje ou quando hoje já tem série marcada,
+  /// que a troca não pode levar para outro treino.
+  private func canTrainToday(_ item: WeekPlanItem) -> Bool {
+    guard let dashboard = store.dashboard, dashboard.daySwaps != nil else { return false }
+    if dashboard.date == .today, dashboard.hasMarkedSets { return false }
+    return dashboard.schedule.workout(on: .today)?.id != item.id
+  }
+
+  /// Abre hoje, troca o treino do dia por este e leva à aba treino.
+  private func trainToday(_ item: WeekPlanItem) async {
+    let today = CalendarDate.today
+    await store.select(date: today)
+    if store.dashboard?.schedule.workout(on: today)?.id != item.id {
+      guard await store.swapDay(workoutTemplateId: item.id) else { return }
+    }
+    onStart(today.weekday())
+  }
 }
 
 /// A forma do plano sem dados: o calendário, o botão de novo treino e as
@@ -133,10 +168,17 @@ extension [WeekPlanItem] {
 }
 
 extension WeekPlanItem {
-  /// Sem cor escolhida, a cor vem do dia e não da posição na grade. Pela
-  /// posição, apagar um card repintava todos os que vinham depois.
+  /// Sem cor salva, a cor sai do id. Pela posição, apagar um card repintava os
+  /// seguintes; pelo dia, dar o dia a outro treino repintava a pasta e todos os
+  /// dias feitos dela no calendário. O id nunca muda, e o próximo salvar grava
+  /// essa cor no servidor.
   var tone: WorkoutTone {
-    color.flatMap(WorkoutTone.from(hex:)) ?? .at(weekdays.first ?? 0)
+    color.flatMap(WorkoutTone.from(hex:)) ?? .at(Int(Self.stableHash(id) % UInt64(WorkoutTone.all.count)))
+  }
+
+  /// FNV-1a sobre os bytes. `hashValue` muda a cada execução do app.
+  static func stableHash(_ text: String) -> UInt64 {
+    text.utf8.reduce(0xcbf2_9ce4_8422_2325) { ($0 ^ UInt64($1)) &* 0x100_0000_01b3 }
   }
 }
 
@@ -146,15 +188,21 @@ private struct WorkoutTile: View {
   let onEdit: (EditorStep) -> Void
   let onDelete: () -> Void
   let onStart: () -> Void
+  let onTrainToday: (() -> Void)?
   @State private var confirmDelete = false
 
   var body: some View {
     // Sem dia, o que falta é o dia, então a pasta abre direto nesse passo.
     Button(action: item.weekdays.isEmpty ? { onEdit(.dias) } : onStart) {
-      WorkoutFolderCard(name: item.name, tone: item.tone, hasDays: !item.weekdays.isEmpty, showsWave: showsWave)
+      WorkoutFolderCard(
+        name: item.name, tone: item.tone, weekdays: item.weekdays,
+        exerciseCount: item.exerciseCount, showsWave: showsWave)
     }
     .buttonStyle(StudyPressStyle())
-    .accessibilityLabel(item.weekdays.isEmpty ? "editar \(item.name), sem dia" : "iniciar \(item.name), \(spokenWeekdays(item.weekdays))")
+    .accessibilityLabel(item.weekdays.isEmpty ? "editar \(item.name), sem dia" : "\(item.name), \(spokenWeekdays(item.weekdays))")
+    .accessibilityHint(item.weekdays.isEmpty ? "" : "abre o próximo dia deste treino")
+    .accessibilityIdentifier("plano.pasta")
+    .contextMenu { menuItems }
     // Menu dentro do label de um Button nunca chega a receber o dedo. Por isso
     // ele vem numa camada por cima, com área de toque só no disco dos três pontos.
     .overlay {
@@ -165,13 +213,21 @@ private struct WorkoutTile: View {
     }
   }
 
+  @ViewBuilder private var menuItems: some View {
+    if let onTrainToday {
+      Button("treinar hoje", systemImage: "play.fill", action: onTrainToday)
+      Divider()
+    }
+    Button("editar", systemImage: "pencil") { onEdit(.identidade) }
+    Button("cor", systemImage: "paintpalette") { onEdit(.cor) }
+    Button("dias", systemImage: "calendar") { onEdit(.dias) }
+    Button("exercícios", systemImage: "dumbbell") { onEdit(.exercicios) }
+    Button("apagar", systemImage: "trash", role: .destructive) { confirmDelete = true }
+  }
+
   private var menuLayer: some View {
     Menu {
-      Button("editar", systemImage: "pencil") { onEdit(.identidade) }
-      Button("cor", systemImage: "paintpalette") { onEdit(.cor) }
-      Button("dias", systemImage: "calendar") { onEdit(.dias) }
-      Button("exercícios", systemImage: "dumbbell") { onEdit(.exercicios) }
-      Button("apagar", systemImage: "trash", role: .destructive) { confirmDelete = true }
+      menuItems
     } label: {
       Color.clear
         .frame(width: 44, height: 44)
@@ -190,8 +246,19 @@ struct WorkoutFolderCard: View {
   @ScaledMetric(relativeTo: .subheadline) private var footerSize = 35.0
   let name: String
   let tone: WorkoutTone
-  let hasDays: Bool
+  let weekdays: [Int]
+  var exerciseCount: Int?
   var showsWave = false
+
+  private var hasDays: Bool { !weekdays.isEmpty }
+
+  /// "seg · qui", na ordem da semana de treino.
+  private var shortDays: String {
+    let start = Calendar.trainingWeek.firstWeekday - 1
+    return weekdays.sorted { ($0 - start + 7) % 7 < ($1 - start + 7) % 7 }
+      .map { planWeekdaysShort[$0] }
+      .joined(separator: " · ")
+  }
 
   private var extraTitleHeight: CGFloat { textSize.isAccessibilitySize ? 0 : max(0, titleSize - 44) * 2.4 }
   private var extraFooterHeight: CGFloat { textSize.isAccessibilitySize ? 60 : max(0, footerSize - 35) * 2.6 }
@@ -290,11 +357,28 @@ struct WorkoutFolderCard: View {
         .accessibilityHidden(true)
       VStack(spacing: 0) {
         if hasDays {
-          Image(systemName: "play.fill")
-            .font(.system(size: footerSize * textScale * 0.85, weight: .semibold))
-            .foregroundStyle(tone.ink)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityHidden(true)
+          // Com dias e exercícios na mesma linha quando cabem; senão só os
+          // dias, encolhendo até caber.
+          ViewThatFits(in: .horizontal) {
+            HStack(spacing: 14 * scale) {
+              Text(shortDays)
+              if let exerciseCount, exerciseCount > 0 {
+                HStack(spacing: 5 * scale) {
+                  Image(systemName: "dumbbell.fill").imageScale(.small)
+                  Text("\(exerciseCount)").monospacedDigit()
+                }
+                .foregroundStyle(tone.ink.opacity(0.6))
+              }
+            }
+            .fixedSize()
+            Text(shortDays).minimumScaleFactor(0.5)
+          }
+          .font(.system(size: footerSize * textScale, weight: .semibold))
+          .lineLimit(1)
+          .foregroundStyle(tone.ink)
+          .padding(.horizontal, 24 * scale)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityHidden(true)
         } else {
           Text("sem dia")
             .font(.system(size: footerSize * textScale, weight: .semibold))
@@ -343,6 +427,7 @@ private struct WorkoutWave: Shape {
 /// toque abre os controles. Sem `onToggle` fica sempre aberto.
 struct PlanExerciseRow: View {
   @Environment(\.accent) private var accent
+  @Environment(\.dynamicTypeSize) private var textSize
   @Binding var exercise: PlanExercise
   let name: String
   let subtitle: String?
@@ -351,12 +436,16 @@ struct PlanExerciseRow: View {
   let isExpanded: Bool
   let onToggle: (() -> Void)?
   let onRemove: (() -> Void)?
+  /// Um campo de carga ganhou o foco. Quem mostra a linha rola para ela ficar
+  /// acima do teclado.
+  let onFieldFocus: () -> Void
   @State private var history: ExerciseHistoryTarget?
 
   init(
     exercise: Binding<PlanExercise>, name: String, subtitle: String? = nil,
     imageUrl: String? = nil, isOrganizing: Bool = false, isExpanded: Bool = true,
-    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil
+    onToggle: (() -> Void)? = nil, onRemove: (() -> Void)? = nil,
+    onFieldFocus: @escaping () -> Void = {}
   ) {
     _exercise = exercise
     self.name = name
@@ -366,6 +455,7 @@ struct PlanExerciseRow: View {
     self.isExpanded = isExpanded
     self.onToggle = onToggle
     self.onRemove = onRemove
+    self.onFieldFocus = onFieldFocus
   }
 
   private var showsControls: Bool { !isOrganizing && (isExpanded || onToggle == nil) }
@@ -408,9 +498,9 @@ struct PlanExerciseRow: View {
         Divider()
         ExerciseStepperRow(label: "reps máx.", value: $exercise.repsMax, range: Limits.planReps)
         Divider()
-        WeightStepper(weightKg: $exercise.startingWeightKg)
+        WeightStepper(weightKg: $exercise.startingWeightKg, onFocus: onFieldFocus)
         Divider()
-        PrepWeightRow(weightKg: $exercise.prepWeightKg)
+        PrepWeightRow(weightKg: $exercise.prepWeightKg, onFocus: onFieldFocus)
         Divider()
         RestStepperRow(seconds: $exercise.restSeconds)
         Divider()
@@ -443,35 +533,61 @@ struct PlanExerciseRow: View {
     .exerciseHistorySheet(item: $history)
   }
 
-  private var header: some View {
-    HStack(spacing: Space.m) {
-      // Organizando, a linha encolhe para caberem muitas na tela: foto menor,
-      // nome numa linha e sem o resumo.
-      ExerciseThumb(imageUrl: imageUrl, size: isOrganizing ? 36 : 48)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(name.lowercased()).font(.headline.weight(.semibold)).foregroundStyle(Color.ink)
-          .lineLimit(isOrganizing ? 1 : nil)
-        if onToggle != nil, !isOrganizing {
-          HStack(spacing: Space.xs) {
-            Text(exercise.summary).monospacedDigit()
-            if exercise.workToFailure {
-              Image(systemName: "bolt.fill").imageScale(.small).foregroundStyle(accent.base)
-            }
-          }
-          .font(.caption).foregroundStyle(Color.mutedInk)
-        } else if !isOrganizing, let subtitle {
-          Text(subtitle).font(.caption).foregroundStyle(Color.mutedInk)
+  /// Nos tamanhos de acessibilidade a foto sobe para cima do nome, e o nome e
+  /// o resumo ficam com a largura toda em vez de quebrar sílaba ao lado dela.
+  @ViewBuilder private var header: some View {
+    if textSize.isAccessibilitySize, !isOrganizing {
+      VStack(alignment: .leading, spacing: Space.s) {
+        HStack {
+          ExerciseThumb(imageUrl: imageUrl, size: 48)
+          Spacer(minLength: 0)
+          chevron
         }
+        titles
       }
-      Spacer(minLength: 0)
-      if onToggle != nil, !isOrganizing {
-        Image(systemName: "chevron.down")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(Color.mutedInk)
-          .rotationEffect(.degrees(isExpanded ? 180 : 0))
-          .frame(width: 44, height: 44)
+    } else {
+      HStack(spacing: Space.m) {
+        // Organizando, a linha encolhe para caberem muitas na tela: foto menor,
+        // nome numa linha e sem o resumo.
+        ExerciseThumb(imageUrl: imageUrl, size: isOrganizing ? 36 : 48)
+        titles
+        Spacer(minLength: 0)
+        chevron
       }
     }
+  }
+
+  private var titles: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(name.lowercased()).font(.headline.weight(.semibold)).foregroundStyle(Color.ink)
+        .lineLimit(isOrganizing ? 1 : nil)
+      if onToggle != nil, !isOrganizing {
+        summaryText.font(.caption).foregroundStyle(Color.mutedInk)
+      } else if !isOrganizing, let subtitle {
+        Text(subtitle).font(.caption).foregroundStyle(Color.mutedInk)
+      }
+    }
+  }
+
+  @ViewBuilder private var chevron: some View {
+    if onToggle != nil, !isOrganizing {
+      Image(systemName: "chevron.down")
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(Color.mutedInk)
+        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+        .frame(width: 44, height: 44)
+    }
+  }
+
+  /// O raio vem logo depois das repetições, no mesmo lugar do resumo da
+  /// sessão: "2 + 2 × 6–8 ⚡ · 1:30 · 37,5 kg". Um `Text` só, para quebrar
+  /// entre palavras quando o texto cresce.
+  private var summaryText: Text {
+    let parts = exercise.summaryParts
+    let bolt = exercise.workToFailure
+      ? Text(" \(Image(systemName: "bolt.fill"))").font(.caption2).foregroundStyle(accent.base) : Text("")
+    let tail = parts.tail.map { " · \($0)" }.joined()
+    return Text("\(parts.setsAndReps)\(bolt)\(tail)").monospacedDigit()
   }
 
   private var spokenSummary: String {
@@ -492,10 +608,17 @@ extension PlanExercise {
   /// repetições, o descanso e a carga inicial quando tem. Sem aquecimento,
   /// "2 × 6–10 · 1:30".
   var summary: String {
+    let parts = summaryParts
+    return ([parts.setsAndReps] + parts.tail).joined(separator: " · ")
+  }
+
+  /// As séries e a faixa, e depois o descanso e a carga quando tem.
+  var summaryParts: (setsAndReps: String, tail: [String]) {
     let sets = prepSets > 0 ? "\(prepSets) + \(workSets)" : "\(workSets)"
     let reps = repsMin == repsMax ? "\(repsMin)" : "\(repsMin)–\(repsMax)"
-    let base = "\(sets) × \(reps) · \(restClock(TimeInterval(restSeconds ?? defaultRestSeconds)))"
-    return startingWeightKg > 0 ? "\(base) · \(formatPrepWeight(startingWeightKg)) kg" : base
+    var tail = [restClock(TimeInterval(restSeconds ?? defaultRestSeconds))]
+    if startingWeightKg > 0 { tail.append("\(formatPrepWeight(startingWeightKg)) kg") }
+    return ("\(sets) × \(reps)", tail)
   }
 }
 
@@ -507,31 +630,58 @@ extension PlanExercise {
 /// "concluir" com o teclado aberto salvava sem ele.
 private struct PrepWeightRow: View {
   @Binding var weightKg: Double?
+  var onFocus: () -> Void = {}
   @State private var text = ""
   @FocusState private var focused: Bool
 
   var body: some View {
-    HStack(spacing: Space.s) {
-      Text("carga do aquecimento").font(.body)
-      Spacer(minLength: 8)
+    AdjustRow(label: "carga do aquecimento") {
       TextField("auto", text: $text)
         .focused($focused)
         .submitLabel(.done)
         .decimalInput()
         .multilineTextAlignment(.trailing)
         .font(.body.weight(.semibold)).monospacedDigit()
-        .frame(minWidth: 64)
+        .frame(width: 72)
         .accessibilityLabel("Carga do aquecimento em kg, vazio calcula sozinho")
         .accessibilityIdentifier("plano.carga-aquecimento")
       Text("kg").font(.callout).foregroundStyle(Color.mutedInk)
     }
-    .frame(minHeight: 48)
     .onChange(of: weightKg, initial: true) { _, new in
       if !focused { text = new.map(formatPrepWeight) ?? "" }
     }
     .onChange(of: text) { _, new in weightKg = parsePrepWeight(new) }
     .onChange(of: focused) { _, isFocused in
-      if !isFocused { text = weightKg.map(formatPrepWeight) ?? "" }
+      if isFocused { onFocus() } else { text = weightKg.map(formatPrepWeight) ?? "" }
+    }
+  }
+}
+
+/// Etiqueta de um lado e controle do outro, em 48 pt de altura. Nos tamanhos
+/// de acessibilidade a etiqueta vai para cima e o controle para baixo, para
+/// nenhuma palavra quebrar no meio.
+struct AdjustRow<Control: View>: View {
+  @Environment(\.dynamicTypeSize) private var textSize
+  let label: String
+  @ViewBuilder let control: Control
+
+  var body: some View {
+    if textSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: Space.xs) {
+        Text(label).font(.body)
+        HStack(spacing: Space.s) {
+          Spacer(minLength: 0)
+          control
+        }
+      }
+      .padding(.vertical, Space.xs)
+    } else {
+      HStack(spacing: Space.s) {
+        Text(label).font(.body).lineLimit(1)
+        Spacer(minLength: 8)
+        control
+      }
+      .frame(minHeight: 48)
     }
   }
 }
@@ -549,14 +699,15 @@ func parsePrepWeight(_ text: String) -> Double? {
 
 /// O descanso entre séries desse exercício, de 15 em 15 segundos.
 private struct RestStepperRow: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var seconds: Int?
 
   var body: some View {
     let value = seconds ?? defaultRestSeconds
-    HStack(spacing: Space.m) {
-      Text("descanso").font(.body)
-      Spacer(minLength: 8)
+    AdjustRow(label: "descanso") {
       Text(restClock(TimeInterval(value))).font(.body.weight(.semibold)).monospacedDigit()
+        .contentTransition(.numericText(value: Double(value)))
+        .animation(Motion.resolve(Motion.tap, reduceMotion), value: value)
         .frame(minWidth: 44, alignment: .trailing)
       Stepper(
         "", value: Binding(get: { value }, set: { seconds = $0 }), in: Limits.restSeconds, step: 15
@@ -565,7 +716,7 @@ private struct RestStepperRow: View {
       .accessibilityLabel("descanso")
       .accessibilityValue(restClock(TimeInterval(value)))
     }
-    .frame(minHeight: 48)
+    .sensoryFeedback(.selection, trigger: value)
   }
 }
 
@@ -573,15 +724,16 @@ private struct RestStepperRow: View {
 /// tem 48 de altura para o dedo acertar sem mirar, e o número em tabular não
 /// empurra o stepper quando vai de 9 para 10.
 struct ExerciseStepperRow: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let label: String
   @Binding var value: Int
   let range: ClosedRange<Int>
 
   var body: some View {
-    HStack(spacing: Space.m) {
-      Text(label).font(.body)
-      Spacer(minLength: 8)
+    AdjustRow(label: label) {
       Text("\(value)").font(.body.weight(.semibold)).monospacedDigit()
+        .contentTransition(.numericText(value: Double(value)))
+        .animation(Motion.resolve(Motion.tap, reduceMotion), value: value)
         .frame(minWidth: 32, alignment: .trailing)
         .accessibilityHidden(true)
       Stepper("", value: $value, in: range)
@@ -589,7 +741,7 @@ struct ExerciseStepperRow: View {
         .accessibilityLabel(label)
         .accessibilityValue("\(value)")
     }
-    .frame(minHeight: 48)
+    .sensoryFeedback(.selection, trigger: value)
   }
 }
 
@@ -635,6 +787,10 @@ struct ExercisePicker: View {
   @State private var remotePhase: RemotePhase = .idle
   @State private var lookup: Task<Void, Never>?
   @State private var pickedHere = 0
+  /// Os escolhidos nesta abertura. Só eles saem com um toque; os que já
+  /// estavam no treino ficam travados para não apagar ajuste sem querer.
+  @State private var pickedIds: Set<String> = []
+  @State private var refusals = 0
   /// Liga na primeira tecla. Daí em diante as linhas que voltam à lista
   /// aparecem sem a cascata, que a cada letra fazia a lista piscar.
   @State private var settled = false
@@ -642,7 +798,10 @@ struct ExercisePicker: View {
   let catalog: [ExerciseCatalogItem]
   let chosen: Set<String>
   let onPick: (ExerciseCatalogItem) -> Void
-  @State private var wger = WgerClient()
+  var onUnpick: ((String) -> Void)?
+  private let wger = WgerClient.shared
+
+  private var isFull: Bool { chosen.count >= Limits.exerciseCount.upperBound }
 
   private enum RemotePhase: Equatable {
     case idle, loading, done, failed
@@ -672,14 +831,16 @@ struct ExercisePicker: View {
         LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
           Section {
             if local.isEmpty, remote.isEmpty, remotePhase == .idle || remotePhase == .done, !search.isEmpty {
-              ContentUnavailableView.search(text: search)
+              // Sem resultado, a ação que resolve vem primeiro, acima do
+              // teclado.
+              if canCreate { createRow }
+              ContentUnavailableView(
+                "sem \"\(search.trimmingCharacters(in: .whitespaces))\" no catálogo",
+                systemImage: "magnifyingglass")
             } else {
               ForEach(Array(local.enumerated()), id: \.element.id) { index, item in
-                ExercisePickerRow(
-                  item: item, picked: chosen.contains(item.id),
-                  action: { pick(item) }
-                )
-                .firstEntrance(index: index, settled: settled)
+                row(item)
+                  .firstEntrance(index: index, settled: settled)
                 Divider().padding(.leading, 76).opacity(0.6)
               }
               if !remote.isEmpty {
@@ -690,11 +851,8 @@ struct ExercisePicker: View {
                 }
                 .padding(.horizontal, Space.l).padding(.top, 18).padding(.bottom, Space.xs)
                 ForEach(Array(remote.enumerated()), id: \.element.id) { index, item in
-                  ExercisePickerRow(
-                    item: item, picked: chosen.contains(item.id),
-                    action: { pick(item) }
-                  )
-                  .staggeredEntrance(index: index, isReady: remotePhase == .done)
+                  row(item)
+                    .staggeredEntrance(index: index, isReady: remotePhase == .done)
                   Divider().padding(.leading, 76).opacity(0.6)
                 }
                 Text("fotos wger.de, CC-BY-SA")
@@ -718,25 +876,9 @@ struct ExercisePicker: View {
                 .font(.subheadline).foregroundStyle(Color.mutedInk)
                 .padding(.horizontal, Space.l).padding(.vertical, Space.xs)
               }
-            }
-            // Fora do vazio, porque é justo quando a busca não acha nada que
-            // dá vontade de criar.
-            if canCreate {
-              Button { createCustom() } label: {
-                HStack(spacing: Space.m) {
-                  RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
-                    .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
-                  VStack(alignment: .leading, spacing: 2) {
-                    Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
-                      .font(.body.weight(.medium)).foregroundStyle(Color.ink)
-                    Text(muscle ?? "geral")
-                      .font(.caption).foregroundStyle(Color.mutedInk)
-                  }
-                  Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Space.l).padding(.vertical, Space.s)
-                .contentShape(.rect)
-              }.buttonStyle(StudyPressStyle())
+              // Fora do vazio também, porque achar parecido não quer dizer
+              // achar o que se procura.
+              if canCreate { createRow }
             }
           } header: {
             VStack(spacing: 10) {
@@ -772,6 +914,13 @@ struct ExercisePicker: View {
                   }
                 }.padding(.horizontal, Space.l).padding(.vertical, 2)
               }
+              if isFull {
+                Label("limite de \(Limits.exerciseCount.upperBound) exercícios", systemImage: "exclamationmark.circle")
+                  .font(.footnote).foregroundStyle(Color.mutedInk)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .padding(.horizontal, Space.l)
+                  .transition(.opacity)
+              }
             }
             .padding(.top, Space.s).padding(.bottom, 6)
             .background(Color.canvas)
@@ -779,7 +928,8 @@ struct ExercisePicker: View {
         }
       }
       .background(Color.canvas)
-      .navigationTitle("exercícios")
+      .animation(Motion.resolve(Motion.subtleEntrance, reduceMotion), value: isFull)
+      .navigationTitle(isFull ? "\(chosen.count) de \(Limits.exerciseCount.upperBound)" : "exercícios")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -797,6 +947,7 @@ struct ExercisePicker: View {
       .onAppear { searchFocused = true }
       .task { await wger.prefetch() }
       .sensoryFeedback(.success, trigger: pickedHere)
+      .sensoryFeedback(.warning, trigger: refusals)
       .onChange(of: search) {
         settled = true
         scheduleRemote()
@@ -808,12 +959,59 @@ struct ExercisePicker: View {
     }
   }
 
+  private var createRow: some View {
+    Button { createCustom() } label: {
+      HStack(spacing: Space.m) {
+        RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
+          .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
+        VStack(alignment: .leading, spacing: 2) {
+          Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
+            .font(.body.weight(.medium)).foregroundStyle(Color.ink)
+          Text(muscle?.lowercased() ?? "geral")
+            .font(.caption).foregroundStyle(Color.mutedInk)
+        }
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, Space.l).padding(.vertical, Space.s)
+      .contentShape(.rect)
+      .opacity(isFull ? 0.55 : 1)
+    }.buttonStyle(StudyPressStyle())
+  }
+
+  private func row(_ item: ExerciseCatalogItem) -> ExercisePickerRow {
+    let picked = chosen.contains(item.id)
+    let canUnpick = picked && onUnpick != nil && pickedIds.contains(item.id)
+    return ExercisePickerRow(
+      item: item, picked: picked, isFull: isFull,
+      action: { pick(item) },
+      onUnpick: canUnpick ? { unpick(item.id) } : nil)
+  }
+
   /// A folha fica aberta para montar o treino de uma vez. A linha passa a "no
-  /// treino" porque `chosen` chega de novo de quem abriu.
+  /// treino" porque `chosen` chega de novo de quem abriu. Cheio, o toque não
+  /// entra e avisa na hora, em vez de deixar o editor reclamar no "concluir".
   private func pick(_ item: ExerciseCatalogItem) {
     guard !chosen.contains(item.id) else { return }
+    guard !isFull else { return refuse() }
     onPick(item)
+    pickedIds.insert(item.id)
     pickedHere += 1
+    if chosen.count + 1 >= Limits.exerciseCount.upperBound { announceLimit() }
+  }
+
+  private func unpick(_ id: String) {
+    onUnpick?(id)
+    pickedIds.remove(id)
+    pickedHere -= 1
+  }
+
+  private func refuse() {
+    refusals += 1
+    announceLimit()
+  }
+
+  private func announceLimit() {
+    AccessibilityNotification.Announcement("limite de \(Limits.exerciseCount.upperBound) exercícios").post()
   }
 
   private func createCustom() {
@@ -823,7 +1021,9 @@ struct ExercisePicker: View {
       id: ExerciseLibrary.slug(name), name: name,
       muscleGroup: muscle ?? "Geral", equipment: "Livre", imageUrl: nil)
     guard !chosen.contains(item.id) else { return }
+    guard !isFull else { return refuse() }
     onPick(item)
+    pickedIds.insert(item.id)
     pickedHere += 1
     search = ""
   }
@@ -834,6 +1034,7 @@ struct ExercisePicker: View {
     remotePhase = .idle
     let term = search.trimmingCharacters(in: .whitespaces)
     let scope = library
+    let group = muscle
     let client = wger
     let animated = !reduceMotion
     guard term.count >= 3, local.count < 8 else { return }
@@ -842,7 +1043,7 @@ struct ExercisePicker: View {
       try? await Task.sleep(for: .milliseconds(500))
       guard !Task.isCancelled else { return }
       do {
-        let found = try await client.search(term, excluding: scope)
+        let found = try await client.search(term, muscle: group, excluding: scope)
         guard !Task.isCancelled else { return }
         withAnimation(animated ? Motion.subtleEntrance : nil) {
           remote = found
@@ -878,12 +1079,18 @@ private struct MuscleChip: View {
 }
 
 struct ExercisePickerRow: View {
+  @Environment(\.accent) private var accent
   let item: ExerciseCatalogItem
   let picked: Bool
+  /// O treino chegou ao limite: o "+" apaga, mas o toque continua chegando
+  /// para o seletor avisar.
+  var isFull = false
   let action: () -> Void
+  /// Presente só nos escolhidos nesta abertura do seletor: tocar de novo tira.
+  var onUnpick: (() -> Void)?
 
   var body: some View {
-    Button(action: action) {
+    Button(action: onUnpick ?? action) {
       HStack(spacing: Space.m) {
         ExerciseThumb(imageUrl: item.imageUrl, size: 56)
         VStack(alignment: .leading, spacing: 3) {
@@ -896,25 +1103,38 @@ struct ExercisePickerRow: View {
         }
         Spacer(minLength: 8)
         if picked {
-          Text("no treino").font(.caption2.weight(.medium))
-            .foregroundStyle(Color.mutedInk)
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(Color.surfaceMuted, in: .capsule)
-            .accessibilityLabel("\(item.name) já está no treino")
+          HStack(spacing: 4) {
+            if onUnpick != nil {
+              Image(systemName: "checkmark.circle.fill").foregroundStyle(accent.base)
+            }
+            Text("no treino")
+          }
+          .font(.caption2.weight(.medium))
+          .foregroundStyle(Color.mutedInk)
+          .padding(.horizontal, 10).padding(.vertical, 6)
+          .background(Color.surfaceMuted, in: .capsule)
         } else {
           Image(systemName: "plus.circle.fill")
-            .font(.title2).foregroundStyle(Color.ink.opacity(0.75))
+            .font(.title2).foregroundStyle(Color.ink.opacity(isFull ? 0.25 : 0.75))
             .frame(width: 44, height: 44)
             .contentShape(.rect)
-            .accessibilityLabel("Adicionar \(item.name)")
         }
       }
       .padding(.horizontal, Space.l).padding(.vertical, Space.s)
       .contentShape(.rect)
-      .opacity(picked ? 0.55 : 1)
+      .opacity(picked && onUnpick == nil ? 0.55 : 1)
     }
     .buttonStyle(StudyPressStyle())
-    .disabled(picked)
+    .disabled(picked && onUnpick == nil)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(accessibilityLabel)
+  }
+
+  private var accessibilityLabel: String {
+    if picked {
+      return onUnpick == nil ? "\(item.name) já está no treino" : "Tirar \(item.name) do treino"
+    }
+    return "Adicionar \(item.name)"
   }
 }
 

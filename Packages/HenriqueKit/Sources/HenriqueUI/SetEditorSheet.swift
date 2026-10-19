@@ -4,25 +4,30 @@ import SwiftUI
 struct WeightStepper: View {
   @Binding var weightKg: Double
   var range: ClosedRange<Double> = Limits.setWeightKg
+  var onFocus: () -> Void = {}
+  /// Sobe só pelo stepper. O campo digitado não vibra a cada tecla.
+  @State private var steps = 0
 
   var body: some View {
-    HStack(spacing: 8) {
-      Text("carga").font(.body)
-      Spacer(minLength: 8)
+    AdjustRow(label: "carga") {
       DecimalField(
         placeholder: "0",
-        value: Binding(get: { weightKg }, set: { weightKg = ($0 ?? 0).clamped(to: range) }))
+        value: Binding(get: { weightKg }, set: { weightKg = ($0 ?? 0).clamped(to: range) }),
+        onFocus: onFocus)
         .submitLabel(.done)
         .multilineTextAlignment(.trailing)
         .font(.body.weight(.semibold)).monospacedDigit()
-        .frame(minWidth: 64)
+        .frame(width: 72)
         .accessibilityLabel("Carga em kg")
       Text("kg").font(.callout).foregroundStyle(Color.mutedInk)
-      Stepper("Ajustar carga", value: $weightKg, in: range, step: 2.5)
+      Stepper(
+        "Ajustar carga",
+        value: Binding(get: { weightKg }, set: { weightKg = $0; steps += 1 }),
+        in: range, step: 2.5)
         .labelsHidden()
         .accessibilityLabel("Ajustar carga em kg")
     }
-    .frame(minHeight: 48)
+    .sensoryFeedback(.selection, trigger: steps)
     .onChange(of: weightKg) { _, new in
       let clamped = new.isFinite ? new.clamped(to: range) : range.lowerBound
       if clamped != new { weightKg = clamped }
@@ -34,6 +39,7 @@ struct WeightStepper: View {
 struct DecimalField: View {
   let placeholder: String
   @Binding var value: Double?
+  var onFocus: () -> Void = {}
   @FocusState private var focused: Bool?
 
   var body: some View {
@@ -42,6 +48,9 @@ struct DecimalField: View {
       parse: parseDecimal, format: formatPrepWeight
     )
     .decimalInput()
+    .onChange(of: focused) { _, new in
+      if new == true { onFocus() }
+    }
   }
 }
 

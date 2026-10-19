@@ -767,11 +767,21 @@ public final class AcademiaStore {
   /// Troca o treino do dia aberto. Nulo volta o dia para o plano.
   @discardableResult
   public func swapDay(workoutTemplateId: String?) async -> Bool {
+    await swapDay(on: selectedDate, workoutTemplateId: workoutTemplateId)
+  }
+
+  /// Troca o treino de uma data qualquer, sem mudar o dia aberto. O calendário
+  /// do plano troca dias futuros por aqui. Fora do dia aberto o painel volta a
+  /// ser lido, porque é ele que traz as trocas da semana.
+  @discardableResult
+  public func swapDay(on date: CalendarDate, workoutTemplateId: String?) async -> Bool {
     // Trocar com série marcada deixaria as séries num treino que não é mais o
     // do dia. O menu já some nesse caso; aqui é a mesma regra na borda.
-    guard dashboard?.hasMarkedSets != true else { return false }
-    let input = SwapDayInput(date: selectedDate, workoutTemplateId: workoutTemplateId)
-    return await apply { try await self.client.swapDay(input) }
+    if date == selectedDate, dashboard?.hasMarkedSets == true { return false }
+    let input = SwapDayInput(date: date, workoutTemplateId: workoutTemplateId)
+    guard await apply({ try await self.client.swapDay(input) }) else { return false }
+    if date != selectedDate { await load() }
+    return true
   }
 
   @discardableResult

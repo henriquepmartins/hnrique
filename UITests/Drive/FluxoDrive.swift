@@ -232,7 +232,7 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(name.waitForExistence(timeout: 5), "editor de treino abriu")
     name.tap()
     name.typeText("Treino futuro de teste")
-    let focus = app.textFields["foco"]
+    let focus = app.descendants(matching: .any).matching(identifier: "editor.foco").firstMatch
     focus.tap()
     focus.typeText("Adaptação")
     dismissKeyboard()
@@ -263,7 +263,7 @@ final class FluxoDrive: XCTestCase {
     app.buttons["sábado"].tap()
     app.buttons["concluir"].tap()
     XCTAssert(app.buttons["concluir"].waitForNonExistence(timeout: 10), "treino futuro recebeu um dia")
-    XCTAssert(app.buttons["iniciar Treino futuro de teste, sábado"].waitForExistence(timeout: 5), "treino agendado pode ser iniciado")
+    XCTAssert(app.buttons["Treino futuro de teste, sábado"].waitForExistence(timeout: 5), "treino agendado mostra o dia")
     shot("15-treino-agendado")
   }
 
@@ -901,7 +901,7 @@ final class FluxoDrive: XCTestCase {
     shot("pasta-editor")
     app.buttons["fechar"].tap()
     XCTAssert(menu.waitForExistence(timeout: 3))
-    app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'iniciar '")).firstMatch.tap()
+    app.buttons.matching(identifier: "plano.pasta").firstMatch.tap()
     XCTAssert(app.tabBars.buttons["treino"].isSelected)
   }
 
@@ -1018,7 +1018,7 @@ final class FluxoDrive: XCTestCase {
     shot("05-meta-reaberta")
 
     app.tabBars.buttons["plano"].tap()
-    XCTAssert(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'iniciar '")).firstMatch.waitForExistence(timeout: 5), "plano listou treinos")
+    XCTAssert(app.buttons.matching(identifier: "plano.pasta").firstMatch.waitForExistence(timeout: 5), "plano listou treinos")
     shot("06-plano")
 
     app.tabBars.buttons["apps"].tap()

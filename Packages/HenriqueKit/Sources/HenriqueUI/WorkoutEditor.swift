@@ -66,6 +66,7 @@ struct WorkoutEditor: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accent) private var accent
+  @Environment(\.dynamicTypeSize) private var textSize
   @State private var draft: WorkoutDraft
   @State private var step: EditorStep
   @State private var forward = true
@@ -173,18 +174,16 @@ struct WorkoutEditor: View {
       .padding(.horizontal, Space.l)
       .padding(.top, Space.m)
 
+      // No passo do nome o campo já mostra o nome sendo digitado; a prévia só
+      // repetia. Nos tamanhos de acessibilidade a pasta desce para dentro da
+      // rolagem do passo da cor, senão empurrava a barra para fora da folha.
       if step == .cor {
-        WorkoutFolderCard(
-          name: displayName, tone: draft.color.tone, hasDays: !draft.weekdays.isEmpty
-        )
-        .dynamicTypeSize(.large)
-        // A 62% a pasta, o seletor e o título passavam da altura da folha e
-        // empurravam o "fechar" para cima só neste passo.
-        .containerRelativeFrame(.horizontal) { width, _ in width * 0.54 }
-        .padding(.top, Space.s)
-        .accessibilityHidden(true)
-        .transition(.opacity)
-      } else {
+        if !textSize.isAccessibilitySize {
+          folderPreview
+            .padding(.top, Space.s)
+            .transition(.opacity)
+        }
+      } else if step != .identidade {
         WorkoutPreviewRow(name: displayName, tone: draft.color.tone)
           .padding(.horizontal, Space.l)
           .padding(.top, Space.m)
@@ -198,12 +197,9 @@ struct WorkoutEditor: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .opacity(step.previous == nil ? 0 : 1)
         .disabled(step.previous == nil || isSaving)
-        Text(step.title)
-          .font(.headline.weight(.semibold))
-          .foregroundStyle(Color.ink)
-          .accessibilityAddTraits(.isHeader)
+        StepDots(current: step, go: go(to:))
         #if os(iOS)
-        if step == .exercicios, !draft.exercises.isEmpty || isOrganizing {
+        if step == .exercicios, draft.exercises.count > 1 || isOrganizing {
           RoundButton(
             systemImage: isOrganizing ? "checkmark" : "arrow.up.arrow.down",
             fill: isOrganizing ? Color.ink : Color.surfaceMuted,
@@ -249,7 +245,17 @@ struct WorkoutEditor: View {
         case .identidade:
           IdentityStep(draft: $draft).transition(stepTransition)
         case .cor:
-          WorkoutColorPicker(color: $draft.color).padding(Space.l).transition(stepTransition)
+          ScrollView {
+            VStack(spacing: Space.l) {
+              if textSize.isAccessibilitySize { folderPreview }
+              WorkoutColorPicker(color: $draft.color)
+            }
+            .padding(Space.l)
+          }
+          // Só rola quando o texto grande não deixa caber; no tamanho padrão o
+          // arraste vertical do quadro de cor não disputa com a rolagem.
+          .scrollDisabled(!textSize.isAccessibilitySize)
+          .transition(stepTransition)
         case .dias:
           WorkoutDaysSection(selection: $draft.weekdays, workoutId: workoutId)
             .padding(Space.l).transition(stepTransition)
@@ -283,6 +289,18 @@ struct WorkoutEditor: View {
           .disabled(isSaving)
       }
     }
+  }
+
+  private var folderPreview: some View {
+    WorkoutFolderCard(
+      name: displayName, tone: draft.color.tone, weekdays: draft.weekdays.sorted(),
+      exerciseCount: draft.exercises.count
+    )
+    .dynamicTypeSize(.large)
+    // A 62% a pasta, o seletor e o título passavam da altura da folha e
+    // empurravam o "fechar" para cima só neste passo.
+    .containerRelativeFrame(.horizontal) { width, _ in width * 0.54 }
+    .accessibilityHidden(true)
   }
 
   private var isOrganizing: Bool {
@@ -366,13 +384,18 @@ struct WorkoutEditor: View {
 
   private func remove() {
     guard let workoutId else { return }
-    store.deleteWorkout(workoutTemplateId: workoutId)
+    withAnimation(Motion.resolve(Motion.confirm, reduceMotion)) {
+      store.deleteWorkout(workoutTemplateId: workoutId)
+    }
     deletions += 1
     dismiss()
   }
 }
 
 private struct RoundButton: View {
+  /// O círculo cresce com o texto, e o ícone cresce junto dentro dele. Os dois
+  /// param no primeiro tamanho de acessibilidade, que já é o dobro do padrão.
+  @ScaledMetric(relativeTo: .body) private var side = 44.0
   let systemImage: String
   let fill: Color
   let ink: Color
@@ -384,7 +407,7 @@ private struct RoundButton: View {
     Button(action: action) {
       Circle()
         .fill(fill)
-        .frame(width: 44, height: 44)
+        .frame(width: side, height: side)
         .overlay {
           Image(systemName: systemImage)
             .font(.system(.body, weight: .semibold))
@@ -394,7 +417,47 @@ private struct RoundButton: View {
         }
     }
     .buttonStyle(StudyPressStyle())
+    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     .accessibilityLabel(label)
+  }
+}
+
+/// Um ponto por passo, e o passo atual numa cápsula com o nome. Mostra quantos
+/// faltam, e tocar num ponto pula direto para aquele passo.
+private struct StepDots: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let current: EditorStep
+  let go: (EditorStep) -> Void
+
+  var body: some View {
+    HStack(spacing: 2) {
+      ForEach(EditorStep.allCases, id: \.self) { step in
+        if step == current {
+          Text(step.title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .padding(.horizontal, Space.m)
+            .frame(minHeight: 28)
+            .background(Color.ink, in: .capsule)
+            .accessibilityAddTraits(.isHeader)
+            .transition(.opacity)
+        } else {
+          Button { go(step) } label: {
+            Circle()
+              .fill(Color.mutedInk.opacity(0.3))
+              .frame(width: 8, height: 8)
+              .frame(width: 22, height: 44)
+              .contentShape(.rect)
+          }
+          .buttonStyle(StudyPressStyle())
+          .accessibilityLabel(step.title)
+          .accessibilityHint("ir para o passo")
+        }
+      }
+    }
+    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+    .animation(Motion.resolve(Motion.tap, reduceMotion), value: current)
   }
 }
 
@@ -436,7 +499,10 @@ private struct IdentityStep: View {
           .onSubmit { focused = .focus }
       }
       EditorField(label: "foco", isFilled: !draft.focus.isEmpty) {
-        TextField("foco", text: $draft.focus)
+        // Cabem 140 letras; numa linha só o começo rolava para fora da vista.
+        TextField("foco", text: $draft.focus, axis: .vertical)
+          .lineLimit(1...3)
+          .accessibilityIdentifier("editor.foco")
           .focused($focused, equals: .focus)
           .submitLabel(.done)
       }
@@ -447,17 +513,21 @@ private struct IdentityStep: View {
       if cut != new { draft.name = cut }
     }
     .onChange(of: draft.focus) { _, new in
-      let cut = new.cut(to: Limits.workoutFocusLength)
+      // No campo de várias linhas o "concluído" do teclado vira quebra de
+      // linha. Ela sai do texto e fecha o teclado, como no campo de uma linha.
+      let typedReturn = new.contains("\n")
+      let cut = new.replacingOccurrences(of: "\n", with: "").cut(to: Limits.workoutFocusLength)
       if cut != new { draft.focus = cut }
+      if typedReturn { focused = nil }
     }
     .task { if draft.name.isEmpty { focused = .name } }
   }
 }
 
-/// O campo branco de canto redondo que o resto do app usa fora do `Form`.
+/// O campo branco de canto redondo que o editor e o setup usam fora do `Form`.
 /// Preenchido, o placeholder some, e o rótulo pequeno em cima diz qual é o
 /// campo.
-private struct EditorField<Content: View>: View {
+struct EditorField<Content: View>: View {
   let label: String
   let isFilled: Bool
   @ViewBuilder let content: Content
@@ -535,7 +605,8 @@ private struct ExercisesStep: View {
               withAnimation(editAnimation) {
                 exercises.removeAll { $0.exerciseId == exerciseId }
               }
-            })
+            },
+            onFieldFocus: { reveal(exerciseId) })
             // Sem o modo organizar, a linha aberta levantada pelo toque longo
             // tem uns 500 pt e cobre as vizinhas. Só as fechadas arrastam.
             .deleteDisabled(isSaving || isOrganizing)
@@ -572,16 +643,23 @@ private struct ExercisesStep: View {
           Button("apagar treino", systemImage: "trash", role: .destructive) {
             confirmDelete = true
           }
+          // O papel pinta o texto, e o ícone pegava o tint verde da lista.
+          .tint(Color.danger)
           .disabled(isSaving)
           .deleteWorkoutConfirmation(isPresented: $confirmDelete, name: workoutName, onDelete: onDelete)
         }
       }
     }
     .scrollContentBackground(.hidden)
+    // O recuo padrão da primeira seção deixava uns 45 pt vazios sob o título.
+    .listSectionSpacing(.compact)
+    .contentMargins(.top, Space.s, for: .scrollContent)
     .sensoryFeedback(.impact(weight: .light), trigger: drops)
     .sensoryFeedback(.impact(weight: .light), trigger: exercises.count) { old, new in new < old }
     .sheet(isPresented: $isPickingExercise, onDismiss: revealPicked) {
-      ExercisePicker(catalog: catalog, chosen: Set(exercises.map(\.exerciseId))) { item in
+      ExercisePicker(
+        catalog: catalog, chosen: Set(exercises.map(\.exerciseId)),
+        onPick: { item in
         let known = catalog.contains(where: { $0.id == item.id })
         exerciseInfo[item.id] = item
         exercises.append(
@@ -592,6 +670,19 @@ private struct ExercisesStep: View {
             muscleGroup: known ? nil : item.muscleGroup,
             equipment: known ? nil : item.equipment,
             imageUrl: known ? nil : item.imageUrl))
+        },
+        onUnpick: { id in exercises.removeAll { $0.exerciseId == id } })
+    }
+  }
+
+  /// O teclado sobe e a barra dele ainda tira 48 pt do fim da lista depois
+  /// que a lista já rolou até o campo. Rolar de novo, com tudo assentado, põe o
+  /// fim da linha aberta rente à barra, e o campo de carga fica acima dela.
+  private func reveal(_ exerciseId: String) {
+    Task {
+      try? await Task.sleep(for: .milliseconds(350))
+      withAnimation(Motion.resolve(Motion.expand, reduceMotion)) {
+        scroll.scrollTo(exerciseId, anchor: .bottom)
       }
     }
   }
@@ -604,10 +695,14 @@ private struct ExercisesStep: View {
   /// O seletor fica aberto para escolher vários. Quando fecha, o primeiro da
   /// leva abre e a lista rola até ele, porque com cinco ou mais ele nasce fora
   /// da tela.
+  ///
+  /// Com mais de dois de uma vez, abrir e rolar animados passava por um quadro
+  /// com a lista quase em branco, então a leva grande chega sem animação.
   private func revealPicked() {
     guard exercises.indices.contains(countBeforePick) else { return }
     let first = exercises[countBeforePick].exerciseId
-    withAnimation(Motion.resolve(Motion.expand, reduceMotion)) {
+    let isBatch = exercises.count - countBeforePick > 2
+    withAnimation(isBatch ? nil : Motion.resolve(Motion.expand, reduceMotion)) {
       openExercise = first
       scroll.scrollTo(first, anchor: .top)
     }
@@ -628,7 +723,8 @@ struct WorkoutDaysSection: View {
   }
 
   var body: some View {
-    let handoffs = WeekdayOwners(plan: store.weekPlan, excluding: workoutId).handoffs(to: selection)
+    let owners = WeekdayOwners(plan: store.weekPlan, excluding: workoutId)
+    let handoffs = owners.handoffs(to: selection)
     VStack(alignment: .leading, spacing: Space.m) {
       // Nos tamanhos de acessibilidade sete círculos não cabem numa linha. Em
       // quatro colunas cada círculo cresce com o texto e a semana quebra em duas.
@@ -640,7 +736,7 @@ struct WorkoutDaysSection: View {
         ForEach(orderedWeekdays, id: \.self) { day in
           WeekdayToggle(
             shortName: planWeekdaysShort[day], fullName: planWeekdays[day],
-            isOn: selection.contains(day)
+            isOn: selection.contains(day), owner: owners[day]
           ) {
             if selection.contains(day) { selection.remove(day) } else { selection.insert(day) }
           }
@@ -664,33 +760,54 @@ struct WorkoutDaysSection: View {
 }
 
 /// A troca de cor é imediata. Marcar dia é toque repetido, e esperar uma
-/// animação a cada toque deixa a fileira lenta.
+/// animação a cada toque deixa a fileira lenta. O ponto embaixo do dia livre
+/// tem a cor do treino que já usa aquele dia.
 private struct WeekdayToggle: View {
+  @Environment(\.dynamicTypeSize) private var textSize
   let shortName: String
   let fullName: String
   let isOn: Bool
+  let owner: WeekPlanItem?
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
-      Circle()
-        .fill(isOn ? Color.ink : Color.surfaceMuted)
-        .overlay {
-          Text(shortName)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(isOn ? .white : Color.ink)
-            .lineLimit(1)
-            .minimumScaleFactor(0.5)
-            .offset(y: -1)
-            .padding(Space.xs)
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .contentShape(.rect)
+      VStack(spacing: 4) {
+        mark
+        Circle()
+          .fill(owner.map { $0.tone.top } ?? .clear)
+          .frame(width: 6, height: 6)
+          .opacity(isOn ? 0 : 1)
+      }
+      .contentShape(.rect)
     }
     .buttonStyle(StudyPressStyle())
     .accessibilityLabel(fullName)
+    .accessibilityValue(owner.map { "de \($0.name)" } ?? "")
     .accessibilityAddTraits(isOn ? .isSelected : [])
+  }
+
+  /// Círculo no tamanho padrão. Nos de acessibilidade o texto não cabe num
+  /// círculo da largura da coluna, e a marca vira cápsula.
+  @ViewBuilder private var mark: some View {
+    let label = Text(shortName)
+      .font(.subheadline.weight(.semibold))
+      .foregroundStyle(isOn ? .white : Color.ink)
+      .lineLimit(1)
+      .minimumScaleFactor(0.5)
+    if textSize.isAccessibilitySize {
+      label
+        .padding(.horizontal, Space.s)
+        .padding(.vertical, Space.s)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(isOn ? Color.ink : Color.surfaceMuted, in: .capsule)
+    } else {
+      Circle()
+        .fill(isOn ? Color.ink : Color.surfaceMuted)
+        .overlay { label.offset(y: -1).padding(Space.xs) }
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: .infinity, minHeight: 44)
+    }
   }
 }
 
@@ -716,8 +833,8 @@ extension View {
   #Preview("Editor, exercícios") { WorkoutEditorPreview(step: .exercicios) }
   #Preview("Card de pasta") {
     HStack(spacing: Space.m) {
-      WorkoutFolderCard(name: "peito e tríceps", tone: .at(0), hasDays: true)
-      WorkoutFolderCard(name: "pernas", tone: .at(1), hasDays: false)
+      WorkoutFolderCard(name: "peito e tríceps", tone: .at(0), weekdays: [1, 4], exerciseCount: 6)
+      WorkoutFolderCard(name: "pernas", tone: .at(1), weekdays: [])
     }
     .padding(Space.l)
     .background(Color.canvas)
