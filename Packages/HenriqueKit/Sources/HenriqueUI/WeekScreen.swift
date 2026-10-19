@@ -114,7 +114,8 @@ private struct WorkoutTile: View {
   @State private var confirmDelete = false
 
   var body: some View {
-    Button(action: item.weekdays.isEmpty ? { onEdit(.identidade) } : onStart) {
+    // Sem dia, o que falta é o dia, então a pasta abre direto nesse passo.
+    Button(action: item.weekdays.isEmpty ? { onEdit(.dias) } : onStart) {
       WorkoutFolderCard(name: item.name, tone: item.tone, hasDays: !item.weekdays.isEmpty, showsWave: showsWave)
     }
     .buttonStyle(StudyPressStyle())
@@ -133,6 +134,8 @@ private struct WorkoutTile: View {
     Menu {
       Button("editar", systemImage: "pencil") { onEdit(.identidade) }
       Button("cor", systemImage: "paintpalette") { onEdit(.cor) }
+      Button("dias", systemImage: "calendar") { onEdit(.dias) }
+      Button("exercícios", systemImage: "dumbbell") { onEdit(.exercicios) }
       Button("apagar", systemImage: "trash", role: .destructive) { confirmDelete = true }
     } label: {
       Color.clear
