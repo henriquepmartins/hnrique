@@ -236,12 +236,12 @@ struct WorkoutSessionScreen: View {
         Button(action: onClose) {
           Image(systemName: "chevron.down")
             .font(.system(size: 15, weight: .semibold)).foregroundStyle(Color.ink)
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .background(.white, in: .circle)
             .overlay(Circle().strokeBorder(hairline))
         }
         .buttonStyle(PressScaleStyle())
-        .accessibilityLabel("fechar")
+        .accessibilityLabel("minimizar treino")
         .accessibilityIdentifier("sessao.fechar")
         SessionClock(
           timing: WorkoutSessionTiming(
@@ -255,10 +255,14 @@ struct WorkoutSessionScreen: View {
             confirmingFinish = true
           }
         } label: {
-          Text(closedAt == nil ? "encerrar" : "resumo")
+          Label(
+            closedAt == nil ? "encerrar" : "resumo",
+            systemImage: closedAt == nil ? "flag.checkered" : "list.bullet.rectangle"
+          )
+            .labelStyle(.titleAndIcon)
             .font(.system(size: actionSize, weight: .medium))
             .foregroundStyle(complete ? Color.white : Color.ink)
-            .padding(.top, 10).padding(.bottom, 12).padding(.horizontal, 16)
+            .padding(.horizontal, 16).frame(minHeight: 44)
             .background(complete ? accent.base : .white, in: .capsule)
             .overlay(Capsule().strokeBorder(complete ? .clear : hairline))
             .animation(glide, value: complete)
@@ -414,6 +418,7 @@ struct WorkoutSessionScreen: View {
       .font(.system(size: metaSize)).monospacedDigit().foregroundStyle(Color.ink)
       .padding(.horizontal, 11).padding(.vertical, 5)
       .background(Color.surfaceMuted, in: .capsule)
+      .touchTarget()
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier("sessao.descanso.\(exercise.id)")
@@ -562,6 +567,7 @@ struct WorkoutSessionScreen: View {
         .font(.caption.weight(.medium)).foregroundStyle(Color.mutedInk)
         .padding(.horizontal, 11).padding(.vertical, 5)
         .background(Color.surfaceMuted, in: .capsule)
+        .touchTarget()
     }
     .buttonStyle(.plain)
     .accessibilityIdentifier("sessao.so-hoje.\(exercise.id)")
@@ -647,6 +653,14 @@ private struct OpenExerciseState: Equatable {
   init(_ id: String?, in workout: WorkoutSummary) {
     self.id = id
     complete = workout.exercises.first { $0.id == id }?.isComplete ?? false
+  }
+}
+
+extension View {
+  /// Alvo de toque de 44 pontos em volta de uma pílula baixa, sem empurrar o
+  /// que está em volta.
+  func touchTarget() -> some View {
+    padding(.vertical, 10).contentShape(.rect).padding(.vertical, -10)
   }
 }
 

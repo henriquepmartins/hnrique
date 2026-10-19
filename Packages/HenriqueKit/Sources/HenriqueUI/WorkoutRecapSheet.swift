@@ -185,7 +185,14 @@ struct SyncStatusLine: View {
         Label(notice, systemImage: "exclamationmark.triangle.fill")
           .foregroundStyle(Color.orange).lineLimit(2)
         Spacer(minLength: 4)
-        Button("ok") { store.notice = nil }.font(.caption.weight(.semibold))
+        Button {
+          store.notice = nil
+        } label: {
+          Image(systemName: "xmark").font(.caption.weight(.semibold)).foregroundStyle(Color.mutedInk)
+            .frame(width: 44, height: 44).contentShape(.rect)
+            .padding(.vertical, -14)
+        }
+        .accessibilityLabel("dispensar aviso")
       }
       .font(.caption)
       .accessibilityIdentifier("fila.aviso")
