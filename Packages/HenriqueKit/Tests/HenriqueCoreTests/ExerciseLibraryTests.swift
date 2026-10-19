@@ -150,4 +150,11 @@ struct WgerMappingTests {
     #expect(WgerClient.equipmentName("SZ-Bar") == "Barra W")
     #expect(WgerClient.equipmentName("none (bodyweight exercise)") == "Peso corporal")
   }
+
+  @Test("toda categoria da wger cai num chip de grupo muscular")
+  func wgerCategoriesHaveChips() {
+    for category in ["chest", "back", "legs", "shoulders", "arms", "abs", "calves", "cardio", "outra"] {
+      #expect(ExerciseLibrary.muscleGroups.contains(WgerClient.categoryName(category)))
+    }
+  }
 }

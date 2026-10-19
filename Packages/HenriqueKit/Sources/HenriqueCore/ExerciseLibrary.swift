@@ -8,7 +8,7 @@ public enum ExerciseLibrary {
   public static let muscleGroups = [
     "Peito", "Costas", "Quadríceps", "Posterior", "Glúteos", "Ombros",
     "Bíceps", "Tríceps", "Abdômen", "Panturrilha", "Trapézio", "Antebraço",
-    "Lombar",
+    "Lombar", "Geral",
   ]
 
   private static let bundled: [ExerciseCatalogItem] = BundledExercises.items

@@ -582,6 +582,9 @@ struct ExercisePicker: View {
   @State private var remotePhase: RemotePhase = .idle
   @State private var lookup: Task<Void, Never>?
   @State private var pickedHere = 0
+  /// Liga na primeira tecla. Daí em diante as linhas que voltam à lista
+  /// aparecem sem a cascata, que a cada letra fazia a lista piscar.
+  @State private var settled = false
 
   let catalog: [ExerciseCatalogItem]
   let chosen: Set<String>
@@ -606,12 +609,16 @@ struct ExercisePicker: View {
     return library.contains { ExerciseLibrary.fold($0.name) == folded }
   }
 
+  private var canCreate: Bool {
+    Limits.exerciseNameLength.contains(search.trimmingCharacters(in: .whitespaces).count) && !exactMatch
+  }
+
   var body: some View {
     NavigationStack {
       ScrollView {
         LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
           Section {
-            if local.isEmpty, remote.isEmpty, remotePhase != .loading, !search.isEmpty {
+            if local.isEmpty, remote.isEmpty, remotePhase == .idle || remotePhase == .done, !search.isEmpty {
               ContentUnavailableView.search(text: search)
             } else {
               ForEach(Array(local.enumerated()), id: \.element.id) { index, item in
@@ -619,7 +626,7 @@ struct ExercisePicker: View {
                   item: item, picked: chosen.contains(item.id),
                   action: { pick(item) }
                 )
-                .staggeredEntrance(index: index, isReady: true)
+                .firstEntrance(index: index, settled: settled)
                 Divider().padding(.leading, 76).opacity(0.6)
               }
               if !remote.isEmpty {
@@ -642,26 +649,41 @@ struct ExercisePicker: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
                   .padding(.horizontal, 16).padding(.vertical, 10)
               } else if remotePhase == .loading {
-                ProgressView().controlSize(.small)
-                  .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                HStack(spacing: 8) {
+                  ProgressView().controlSize(.small)
+                  Text("buscando na wger").font(.caption).foregroundStyle(Color.mutedInk)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+              } else if remotePhase == .failed {
+                HStack(spacing: 8) {
+                  Image(systemName: "wifi.exclamationmark")
+                    .accessibilityLabel("a wger não respondeu")
+                  Spacer(minLength: 8)
+                  Button("tentar de novo", systemImage: "arrow.clockwise") { scheduleRemote() }
+                    .frame(minHeight: 44)
+                }
+                .font(.subheadline).foregroundStyle(Color.mutedInk)
+                .padding(.horizontal, 16).padding(.vertical, 4)
               }
-              if !search.trimmingCharacters(in: .whitespaces).isEmpty, !exactMatch {
-                Button { createCustom() } label: {
-                  HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
-                      .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
-                    VStack(alignment: .leading, spacing: 2) {
-                      Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
-                        .font(.body.weight(.medium)).foregroundStyle(Color.ink)
-                      Text(muscle ?? "geral")
-                        .font(.caption).foregroundStyle(Color.mutedInk)
-                    }
-                    Spacer(minLength: 0)
+            }
+            // Fora do vazio, porque é justo quando a busca não acha nada que
+            // dá vontade de criar.
+            if canCreate {
+              Button { createCustom() } label: {
+                HStack(spacing: 12) {
+                  RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
+                    .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
+                      .font(.body.weight(.medium)).foregroundStyle(Color.ink)
+                    Text(muscle ?? "geral")
+                      .font(.caption).foregroundStyle(Color.mutedInk)
                   }
-                  .padding(.horizontal, 16).padding(.vertical, 8)
-                  .contentShape(.rect)
-                }.buttonStyle(StudyPressStyle())
-              }
+                  Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .contentShape(.rect)
+              }.buttonStyle(StudyPressStyle())
             }
           } header: {
             VStack(spacing: 10) {
@@ -687,6 +709,7 @@ struct ExercisePicker: View {
               .padding(.horizontal, 12).padding(.vertical, 6)
               .background(.white, in: .rect(cornerRadius: 18))
               .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+              .padding(.horizontal, Space.l)
               ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                   MuscleChip(title: "todos", selected: muscle == nil) { muscle = nil }
@@ -708,14 +731,28 @@ struct ExercisePicker: View {
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("fechar") { dismiss() }
+          Group {
+            if pickedHere > 0 {
+              Button(role: .confirm) { dismiss() }
+            } else {
+              Button(role: .close) { dismiss() }.accessibilityLabel("fechar")
+            }
+          }
+          .accessibilityIdentifier("seletor.fechar")
         }
       }
       .keyboardDone()
       .onAppear { searchFocused = true }
+      .task { await wger.prefetch() }
       .sensoryFeedback(.success, trigger: pickedHere)
-      .onChange(of: search) { scheduleRemote() }
-      .onChange(of: muscle) { scheduleRemote() }
+      .onChange(of: search) {
+        settled = true
+        scheduleRemote()
+      }
+      .onChange(of: muscle) {
+        settled = true
+        scheduleRemote()
+      }
     }
   }
 
@@ -729,7 +766,7 @@ struct ExercisePicker: View {
 
   private func createCustom() {
     let name = search.trimmingCharacters(in: .whitespaces)
-    guard name.count >= 2 else { return }
+    guard Limits.exerciseNameLength.contains(name.count) else { return }
     let item = ExerciseCatalogItem(
       id: ExerciseLibrary.slug(name), name: name,
       muscleGroup: muscle ?? "Geral", equipment: "Livre", imageUrl: nil)

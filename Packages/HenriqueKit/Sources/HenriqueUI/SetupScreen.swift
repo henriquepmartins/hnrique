@@ -81,7 +81,7 @@ struct SetupScreen: View {
       .navigationTitle("h&")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("fechar") { dismiss() }.disabled(saving) }
+        ToolbarItem(placement: .cancellationAction) { Button(role: .close) { dismiss() }.accessibilityLabel("fechar").disabled(saving) }
       }
       .keyboardDone()
       .interactiveDismissDisabled(saving)

@@ -211,6 +211,7 @@ final class FluxoDrive: XCTestCase {
     search.tap()
     search.typeText("Supino inclinado")
     app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'supino inclinado'")).firstMatch.tap()
+    app.buttons["seletor.fechar"].tap()
     let save = app.buttons["concluir"]
     XCTAssert(save.waitForExistence(timeout: 5) && save.isEnabled, "treino sem dia pode ser salvo")
     shot("13-treino-sem-dia-editor")
