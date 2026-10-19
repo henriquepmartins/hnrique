@@ -64,7 +64,11 @@ struct RestTimerBar: View {
     return "a seguir, \(next.exerciseName.lowercased()), \(kind), \(Formatting.trim(next.weightKg)) quilos"
   }
 
-  @State private var over: Bool
+  /// O fim de descanso que já passou. Guardar o fim, e não um "acabou", impede
+  /// que um descanso novo na mesma barra herde o estado do anterior por um quadro.
+  @State private var finished: Date?
+
+  private var over: Bool { finished == rest.endsAt }
 
   init(
     rest: RestState, next: NextSet?, onAdjust: @escaping (TimeInterval) -> Void,
@@ -74,7 +78,7 @@ struct RestTimerBar: View {
     self.next = next
     self.onAdjust = onAdjust
     self.onDismiss = onDismiss
-    _over = State(initialValue: rest.remaining(at: .now) <= 0)
+    _finished = State(initialValue: rest.remaining(at: .now) <= 0 ? rest.endsAt : nil)
   }
 
   /// Compacto de propósito: o cartão encolhe a lista por baixo, e alto ele
@@ -118,9 +122,10 @@ struct RestTimerBar: View {
     .accessibilityIdentifier("descanso.cartao")
     .task(id: rest.endsAt) {
       let left = rest.remaining(at: .now)
-      over = left <= 0
-      guard !over, (try? await Task.sleep(for: .seconds(left))) != nil else { return }
-      over = true
+      if left > 0 {
+        guard (try? await Task.sleep(for: .seconds(left))) != nil else { return }
+      }
+      finished = rest.endsAt
     }
   }
 
@@ -160,15 +165,17 @@ struct RestTimerBar: View {
   }
 }
 
-/// O anel do descanso, desenhado a cada quadro para esvaziar liso. É o único
-/// pedaço do cartão que precisa disso, e para quando o descanso acaba.
+/// O anel do descanso, redesenhado a 30 quadros por segundo para esvaziar liso.
+/// Num anel de 36 pontos que leva um minuto ou mais, 120 não se distinguem e só
+/// gastam bateria. É o único pedaço do cartão que precisa disso, e para quando o
+/// descanso acaba.
 private struct RestRing: View {
   let rest: RestState
   let color: Color
   let paused: Bool
 
   var body: some View {
-    TimelineView(.animation(minimumInterval: nil, paused: paused)) { context in
+    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused)) { context in
       ZStack {
         Circle().stroke(Color.white.opacity(0.18), lineWidth: 4)
         Circle().trim(from: 0, to: paused ? 0 : rest.fraction(at: context.date))
