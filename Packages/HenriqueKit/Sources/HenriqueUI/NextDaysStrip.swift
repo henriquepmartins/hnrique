@@ -37,8 +37,7 @@ struct NextDaysStrip: View {
   @ScaledMetric(relativeTo: .caption) private var cardHeight = 96.0
   let days: [PlannedDay]
   let onPlan: () -> Void
-  /// Abre o dia tocado. Sem ela, os cartões são só leitura.
-  var onDay: ((CalendarDate) -> Void)?
+  let onDay: (CalendarDate) -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
@@ -55,12 +54,8 @@ struct NextDaysStrip: View {
       ScrollView(.horizontal) {
         HStack(spacing: Space.s) {
           ForEach(days) { day in
-            if let onDay {
-              Button { onDay(day.date) } label: { card(day) }
-                .buttonStyle(StudyPressStyle())
-            } else {
-              card(day)
-            }
+            Button { onDay(day.date) } label: { card(day) }
+              .buttonStyle(StudyPressStyle())
           }
         }
         .scrollTargetLayout()

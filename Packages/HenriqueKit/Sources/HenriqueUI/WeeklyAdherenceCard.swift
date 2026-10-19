@@ -12,20 +12,14 @@ struct WeeklyAdherenceCard: View {
   @ScaledMetric(relativeTo: .caption2) private var daySize = 11.0
   let week: TrainingWeek
   let today: CalendarDate
-  /// Abre o plano. Sem ela, o cartão é só leitura.
-  var onPlan: (() -> Void)?
+  let onPlan: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
       SectionHeading(title: "esta semana", systemImage: "calendar.badge.checkmark")
-      Group {
-        if let onPlan {
-          Button(action: onPlan) { summary }.buttonStyle(StudyPressStyle())
-        } else {
-          summary
-        }
-      }
-      .accessibilityIdentifier("hoje.aderencia")
+      Button(action: onPlan) { summary }
+        .buttonStyle(StudyPressStyle())
+        .accessibilityIdentifier("hoje.aderencia")
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
