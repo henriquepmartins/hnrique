@@ -16,11 +16,13 @@ struct MuscleMap: View {
   @AppStorage("academia.musculos.tocou") private var touched = false
   let load: [MuscleLoad]
   let today: CalendarDate
+  /// Abre o plano a partir do aviso de grupo parado. Sem ela, o aviso só avisa.
+  var onPlan: (() -> Void)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack {
-        Text("músculos").font(.title3.weight(.medium)).tracking(-0.6)
+        SectionHeading(title: "músculos", systemImage: "figure.strengthtraining.traditional")
         Spacer()
         Picker("período do mapa", selection: $period) {
           ForEach(MusclePeriod.allCases, id: \.self) { option in
@@ -36,17 +38,22 @@ struct MuscleMap: View {
       // deve se mexer junto com o que ele mandou mudar.
       VStack(alignment: .leading, spacing: 0) {
         VStack(alignment: .leading, spacing: 0) {
-          HStack(spacing: 10) {
+          HStack(alignment: .top, spacing: 10) {
             figure(BodyChart.anterior, side: "frente")
             figure(BodyChart.posterior, side: "costas")
           }
+          // O toque fora de qualquer músculo limpa a escolha. O de cada músculo
+          // é mais interno e ganha deste.
+          .contentShape(.rect)
+          .onTapGesture { picked = nil }
           if picked != nil || !touched { readout }
           legend
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Space.xl).padding(.top, Space.xl).padding(.bottom, Space.l)
         .paperCard(radius: Radius.tile)
-        if let gap { GapNote(text: gap).padding(.top, 10) }
+        .sensoryFeedback(.selection, trigger: picked)
+        if let gap { GapNote(text: gap, onPlan: onPlan).padding(.top, 10) }
       }
       .animation(reduceMotion ? Motion.plain : Motion.crossfade, value: period)
       .animation(reduceMotion ? Motion.plain : Motion.tap, value: picked)
@@ -62,11 +69,12 @@ struct MuscleMap: View {
     load.map { $0.sets(in: period) }.max() ?? 0
   }
 
-  private func figure(_ polygons: [BodyPolygon], side: String) -> some View {
-    ZStack {
-      BodyShape(polygons.filter { $0.group == nil }).fill(Color.ink.opacity(0.14))
+  private func figure(_ figure: BodyFigure, side: String) -> some View {
+    let polygons = figure.polygons
+    return ZStack {
+      BodyShape(polygons.filter { $0.group == nil }, frame: figure.frame).fill(Color.ink.opacity(0.14))
       ForEach(MuscleSlug.allCases, id: \.self) { group in
-        let shape = BodyShape(polygons.filter { $0.group == group })
+        let shape = BodyShape(polygons.filter { $0.group == group }, frame: figure.frame)
         shape
           .fill(heat(for: group))
           .opacity(picked == nil || picked == group ? 1 : 0.5)
@@ -85,7 +93,7 @@ struct MuscleMap: View {
           .accessibilityAction { pick(group) }
       }
     }
-    .aspectRatio(BodyChart.frame.width / BodyChart.frame.height, contentMode: .fit)
+    .aspectRatio(figure.frame.width / figure.frame.height, contentMode: .fit)
     .frame(maxWidth: 136)
     .frame(maxWidth: .infinity)
     .accessibilityElement(children: .contain)
@@ -196,12 +204,21 @@ struct MuscleMap: View {
 /// do mapa que pede uma mudança no plano.
 struct GapNote: View {
   let text: String
+  var onPlan: (() -> Void)?
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Space.s) {
       Image(systemName: "exclamationmark.circle")
         .font(.footnote.weight(.medium))
       Text(text).font(.footnote).fixedSize(horizontal: false, vertical: true)
+      if let onPlan {
+        Spacer(minLength: Space.s)
+        Button("plano", systemImage: "calendar", action: onPlan)
+          .font(.footnote.weight(.semibold))
+          .labelStyle(.titleAndIcon)
+          .buttonStyle(.plain)
+          .frame(minHeight: 44).contentShape(.rect)
+      }
     }
     .foregroundStyle(Color(red: 0.54, green: 0.18, blue: 0.18))
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -211,19 +228,21 @@ struct GapNote: View {
   }
 }
 
-/// Um grupo muscular como uma forma só. O desenho vem num quadro de 100 por 200 e
-/// é reescalado para o retângulo que a tela deu.
+/// Um grupo muscular como uma forma só. O desenho vem no quadro da figura e é
+/// reescalado para o retângulo que a tela deu.
 struct BodyShape: Shape {
   let polygons: [BodyPolygon]
+  let frame: CGSize
 
-  init(_ polygons: [BodyPolygon]) {
+  init(_ polygons: [BodyPolygon], frame: CGSize) {
     self.polygons = polygons
+    self.frame = frame
   }
 
   func path(in rect: CGRect) -> Path {
-    let scale = min(rect.width / BodyChart.frame.width, rect.height / BodyChart.frame.height)
-    let originX = rect.midX - BodyChart.frame.width * scale / 2
-    let originY = rect.midY - BodyChart.frame.height * scale / 2
+    let scale = min(rect.width / frame.width, rect.height / frame.height)
+    let originX = rect.midX - frame.width * scale / 2
+    let originY = rect.midY - frame.height * scale / 2
     var path = Path()
     for polygon in polygons where polygon.points.count > 2 {
       let points = polygon.points.map {

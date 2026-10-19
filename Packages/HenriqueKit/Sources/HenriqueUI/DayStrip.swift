@@ -40,8 +40,16 @@ struct DayStrip: View {
       || store.dashboard?.hasAttended(on: day) == true
   }
 
-  private var selectionAnimation: Animation {
-    .interpolatingSpring(mass: 1, stiffness: 900, damping: 48)
+  private var selectionAnimation: Animation { Motion.tap }
+
+  /// A semana na tela, pela quinta: numa semana que vira o mês, o rótulo fica
+  /// com o mês que tem mais dias nela.
+  private var shownMonth: CalendarDate {
+    (visible ?? selected.trainingWeekStart()).adding(days: 3)
+  }
+
+  private var awayFromToday: Bool {
+    selected != .today || (visible ?? selected.trainingWeekStart()) != CalendarDate.today.trainingWeekStart()
   }
 
   var body: some View {
@@ -51,10 +59,15 @@ struct DayStrip: View {
           .accessibilityLabel("Voltar uma semana").buttonStyle(.glass).controlSize(.large)
         Spacer()
         Button { moveTo(.today) } label: {
-          Label(selected.date().formatted(.dateTime.month(.wide).year()), systemImage: "calendar")
-            .font(.subheadline).foregroundStyle(Color.ink)
-            .frame(minHeight: 44).contentShape(.rect)
+          Label(
+            shownMonth.date().formatted(.dateTime.month(.wide).year()),
+            systemImage: awayFromToday ? "arrow.uturn.backward" : "calendar"
+          )
+          .font(.subheadline).foregroundStyle(Color.ink)
+          .contentTransition(.symbolEffect(.replace))
+          .frame(minHeight: 44).contentShape(.rect)
         }.buttonStyle(StudyPressStyle()).accessibilityLabel("Ir para hoje")
+          .accessibilityValue(shownMonth.date().formatted(.dateTime.month(.wide).year()))
         Spacer()
         Button { move(7) } label: { Image(systemName: "chevron.right").offset(x: -1) }
           .accessibilityLabel("Avançar uma semana").buttonStyle(.glass).controlSize(.large)
@@ -94,6 +107,10 @@ struct DayStrip: View {
       .scrollPosition(id: $visible)
       .scrollTargetBehavior(.viewAligned)
       .frame(height: 76)
+      // A altura da fita é fixa para as páginas de semana caberem lado a lado. O
+      // VoiceOver lê a data inteira de cada dia, então o texto para de crescer
+      // antes de estourar o círculo.
+      .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
       .onChange(of: selected) {
         let week = selected.trainingWeekStart()
         if !weeks.contains(week) { resetWindow(around: selected) }
@@ -166,8 +183,7 @@ struct DayChip: View {
       }.frame(maxWidth: .infinity).contentShape(.rect)
     }.buttonStyle(StudyPressStyle())
       .accessibilityLabel(
-        Text(day.date(), format: .dateTime.weekday(.wide).day().month(.wide))
-          + Text(day == .today ? ", hoje" : "") + Text(trained ? ", treinou" : ""))
+        Text("\(day.date(), format: .dateTime.weekday(.wide).day().month(.wide))\(day == .today ? ", hoje" : "")\(trained ? ", treinou" : "")"))
       .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }

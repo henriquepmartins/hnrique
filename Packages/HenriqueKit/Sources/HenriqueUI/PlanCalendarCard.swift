@@ -11,15 +11,17 @@ struct PlanCalendarCard: View {
   @State private var isVisible = false
   @State private var hasLoadedAttendance = false
   @State private var period: AttendancePeriod = .month(containing: .today)
+  @State private var failed = false
+  @State private var attempt = 0
   let attendance: [CalendarDate: AttendanceDay]
   let weekPlan: [WeekPlanItem]
   let swaps: [DaySwap]
   let week: TrainingWeek?
-  let load: (CalendarDate, CalendarDate) async -> Void
+  let load: (CalendarDate, CalendarDate) async -> Bool
 
   init(
     attendance: [CalendarDate: AttendanceDay], weekPlan: [WeekPlanItem], swaps: [DaySwap] = [],
-    week: TrainingWeek? = nil, load: @escaping (CalendarDate, CalendarDate) async -> Void
+    week: TrainingWeek? = nil, load: @escaping (CalendarDate, CalendarDate) async -> Bool
   ) {
     self.attendance = attendance
     self.weekPlan = weekPlan
@@ -47,6 +49,7 @@ struct PlanCalendarCard: View {
     let workouts = workoutsById
     VStack(alignment: .leading, spacing: 16) {
       header
+      if failed { AttendanceFailure { attempt += 1 } }
       TimelineView(.animation(paused: !painting.isDrawing || reduceMotion)) { timeline in
         PlanMonthGrid(
           grid: grid, workoutsById: workouts,
@@ -76,10 +79,14 @@ struct PlanCalendarCard: View {
       painting.finish()
     }
     .onChange(of: reduceMotion) { if reduceMotion { painting.finish() } }
-    .task(id: period) {
+    .task(id: AttendanceRequest(period: period, attempt: attempt)) {
+      failed = false
       let range = period.range()
-      await load(range.lowerBound, range.upperBound)
+      let ok = await load(range.lowerBound, range.upperBound)
       guard !Task.isCancelled else { return }
+      // Sem a resposta, o mês pintado sem nenhum feito diria que ninguém treinou.
+      failed = !ok
+      guard ok else { return }
       hasLoadedAttendance = true
       startPainting()
     }
@@ -358,7 +365,7 @@ private struct PlanLegend: View {
 #if DEBUG
   #Preview("Calendário do plano") {
     ScrollView {
-      PlanCalendarCard(attendance: PlanCalendarPreview.attendance, weekPlan: PlanCalendarPreview.plan) { _, _ in }
+      PlanCalendarCard(attendance: PlanCalendarPreview.attendance, weekPlan: PlanCalendarPreview.plan) { _, _ in true }
         .padding(16)
     }
     .background(Color.canvas)

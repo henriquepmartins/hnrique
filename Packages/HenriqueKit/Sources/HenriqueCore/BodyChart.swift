@@ -2,7 +2,8 @@ import CoreGraphics
 import Foundation
 
 /// Os polígonos vêm da react-body-highlighter (MIT, © 2020 GV79), convertidos do
-/// pacote para dados estáticos. As coordenadas são as de lá, num quadro de 100 por 200.
+/// pacote para dados estáticos. As coordenadas são as de lá: a frente num quadro de
+/// 100 por 200 e as costas num de 100 por 220, porque os pés de trás descem mais.
 /// Um polígono sem grupo é cabeça, pescoço ou joelho, que não recebem carga.
 public struct BodyPolygon: Sendable {
   public let group: MuscleSlug?
@@ -25,10 +26,13 @@ public struct BodyPolygon: Sendable {
   }
 }
 
-public enum BodyChart {
-  public static let frame = CGSize(width: 100, height: 200)
+public struct BodyFigure: Sendable {
+  public let frame: CGSize
+  public let polygons: [BodyPolygon]
+}
 
-  public static let anterior: [BodyPolygon] = [
+public enum BodyChart {
+  public static let anterior = BodyFigure(frame: CGSize(width: 100, height: 200), polygons: [
     BodyPolygon(.peito, "51.84 41.63 51.02 55.1 57.96 57.96 67.76 55.51 70.61 47.35 62.04 41.63"),
     BodyPolygon(.peito, "29.8 46.53 31.43 55.51 40.82 57.96 48.16 55.1 47.76 42.04 37.55 42.04"),
     BodyPolygon(.obliquos, "68.57 63.27 67.35 57.14 58.78 59.59 60 64.08 60.41 83.27 65.71 78.78 66.53 69.8"),
@@ -62,9 +66,9 @@ public enum BodyChart {
     BodyPolygon(.antebraco, "84.49 69.8 83.27 73.47 80 73.06 95.1 98.37 100 100.41 93.47 89.39 89.8 76.33"),
     BodyPolygon(.antebraco, "77.55 72.24 77.55 77.55 80.41 84.08 85.31 89.8 92.24 101.22 94.69 99.59"),
     BodyPolygon(.antebraco, "6.94 101.22 13.47 90.61 18.78 84.08 21.63 77.14 21.22 71.84 4.9 98.78"),
-  ]
+  ])
 
-  public static let posterior: [BodyPolygon] = [
+  public static let posterior = BodyFigure(frame: CGSize(width: 100, height: 220), polygons: [
     BodyPolygon(nil, "50.64 0 45.96 0.85 40.85 5.53 40.43 12.77 45.11 20 55.74 20 59.15 13.62 59.57 4.68 55.74 1.28"),
     BodyPolygon(.trapezio, "44.68 21.7 47.66 21.7 47.23 38.3 47.66 64.68 38.3 53.19 35.32 40.85 31.06 36.6 39.15 33.19 43.83 27.23"),
     BodyPolygon(.trapezio, "52.34 21.7 55.74 21.7 56.6 27.23 60.85 32.77 68.94 36.6 64.68 40.43 61.7 53.19 52.34 64.68 53.19 38.3"),
@@ -98,5 +102,5 @@ public enum BodyChart {
     BodyPolygon(.panturrilha, "70.64 160.43 72.34 168.51 75.74 179.15 76.6 192.77 74.47 196.6 72.34 193.62 70.64 179.57 68.09 168.09"),
     BodyPolygon(.panturrilha, "28.51 195.74 30.21 195.74 33.62 201.7 30.64 220 28.51 213.62 26.81 198.3"),
     BodyPolygon(.panturrilha, "69.79 195.74 71.91 195.74 73.62 198.3 71.91 213.19 70.21 219.57 67.23 202.13"),
-  ]
+  ])
 }

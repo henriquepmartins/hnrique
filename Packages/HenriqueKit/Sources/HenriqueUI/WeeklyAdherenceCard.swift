@@ -6,51 +6,66 @@ import SwiftUI
 /// em dia. A conta é a de `TrainingWeek`, a mesma da sequência e do calendário.
 struct WeeklyAdherenceCard: View {
   @Environment(\.accent) private var accent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @ScaledMetric(relativeTo: .largeTitle) private var numberSize = 40.0
   @ScaledMetric(relativeTo: .title3) private var unitSize = 19.0
   @ScaledMetric(relativeTo: .caption2) private var daySize = 11.0
   let week: TrainingWeek
   let today: CalendarDate
+  /// Abre o plano. Sem ela, o cartão é só leitura.
+  var onPlan: (() -> Void)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.m) {
-      Text("esta semana").font(.title3.weight(.medium)).tracking(-0.6)
-      VStack(alignment: .leading, spacing: 14) {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-          Text("\(week.done)")
-            .font(.system(size: numberSize, weight: .semibold)).monospacedDigit()
-            .tracking(numberSize * -0.055)
-          Text("de \(week.planned) \(week.planned == 1 ? "treino" : "treinos")")
-            .font(.system(size: unitSize, weight: .semibold))
-            .foregroundStyle(Color.mutedInk)
-        }
-        HStack(spacing: 10) {
-          ForEach(week.slots) { slot in
-            VStack(spacing: 6) {
-              dot(slot.state)
-                .frame(width: 10, height: 10)
-                .overlay {
-                  if slot.date == today {
-                    Circle().strokeBorder(accent.deep, lineWidth: 1.5).padding(-3)
-                  }
-                }
-              Text(dayInitial(slot.date))
-                .font(.system(size: daySize, design: .monospaced))
-                .tracking(daySize * 0.01)
-                .foregroundStyle(Color.mutedInk)
-            }
-          }
+      SectionHeading(title: "esta semana", systemImage: "calendar.badge.checkmark")
+      Group {
+        if let onPlan {
+          Button(action: onPlan) { summary }.buttonStyle(StudyPressStyle())
+        } else {
+          summary
         }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(Space.xl)
-      .paperCard(radius: Radius.tile)
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel("\(week.done) de \(week.planned) treinos nesta semana")
-      .accessibilityValue(spokenState)
       .accessibilityIdentifier("hoje.aderencia")
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var summary: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack(alignment: .firstTextBaseline, spacing: 5) {
+        Text("\(week.done)")
+          .font(.system(size: numberSize, weight: .semibold)).monospacedDigit()
+          .tracking(numberSize * -0.055)
+          .contentTransition(.numericText(value: Double(week.done)))
+          .animation(Motion.resolve(Motion.roll, reduceMotion), value: week.done)
+        Text("de \(week.planned) \(week.planned == 1 ? "treino" : "treinos")")
+          .font(.system(size: unitSize, weight: .semibold))
+          .foregroundStyle(Color.mutedInk)
+      }
+      HStack(spacing: 10) {
+        ForEach(week.slots) { slot in
+          VStack(spacing: 6) {
+            dot(slot.state)
+              .frame(width: 10, height: 10)
+              .overlay {
+                if slot.date == today {
+                  Circle().strokeBorder(accent.deep, lineWidth: 1.5).padding(-3)
+                }
+              }
+            Text(dayInitial(slot.date))
+              .font(.system(size: daySize, design: .monospaced))
+              .tracking(daySize * 0.01)
+              .foregroundStyle(Color.mutedInk)
+          }
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(Space.xl)
+    .paperCard(radius: Radius.tile)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("\(week.done) de \(week.planned) treinos nesta semana")
+    .accessibilityValue(spokenState)
   }
 
   /// Feito cheio, perdido tracejado, o que falta apagado.
