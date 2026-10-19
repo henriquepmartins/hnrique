@@ -39,6 +39,23 @@ extension PendingSetQueueTests {
       resetLocalState()
     }
 
+    @Test("com ontem aberto, trocar hoje que já tem série recusa com aviso e sem ir ao servidor")
+    func swapRefusesTodayWithSetsFromAnotherDay() async {
+      let store = await lojaComPainel()
+      let today = CalendarDate.today
+      let yesterday = today.adding(days: -1)
+      FakeNetwork.offline = false
+      FakeNetwork.bodies[.dashboard] = dashboardSemSerie()
+        .replacingOccurrences(of: today.iso, with: yesterday.iso)
+      await store.select(date: yesterday)
+      #expect(store.dashboard?.date == yesterday)
+      #expect(store.todayHasMarkedSets)
+
+      FakeNetwork.offline = true
+      #expect(await store.swapDay(on: today, workoutTemplateId: "outro") == false)
+      #expect(store.banner == "esse dia já tem séries marcadas em outro treino")
+    }
+
     @Test("desmarcar a única série de hoje tira o dia da frequência")
     func unmarkingClearsToday() async {
       let store = await lojaComPainel()
