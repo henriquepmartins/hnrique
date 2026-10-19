@@ -337,6 +337,7 @@ public struct FocoScreen: View {
               end: { Text(entryDuration(entry)).monospacedDigit() }
             )
             .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("foco.sessao.\(entry.track.id)")
             .contextMenu {
               Button("apagar", systemImage: "trash", role: .destructive) {
                 foco.remove(entry, holdFor: .seconds(voiceOver ? 10 : 4))

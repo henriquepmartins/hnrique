@@ -958,8 +958,7 @@ final class FluxoDrive: XCTestCase {
     XCTAssert(clock.waitForExistence(timeout: 3), "relógio do dia visível")
     XCTAssertNotEqual(clock.label, "0 segundos hoje", "a sessão entrou no total de hoje")
     XCTAssert(
-      app.staticTexts.matching(NSPredicate(format: "label CONTAINS '· alemão ·'")).firstMatch
-        .waitForExistence(timeout: 3),
+      app.descendants(matching: .any)["foco.sessao.idiomas:alemao"].firstMatch.waitForExistence(timeout: 3),
       "a sessão aparece na lista de hoje")
     shot("foco-04-depois")
     app.swipeUp()
