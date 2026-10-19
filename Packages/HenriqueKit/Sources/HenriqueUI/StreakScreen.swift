@@ -80,6 +80,7 @@ struct StreakScreen: View {
   @Environment(\.dismiss) private var dismiss
   @State private var entered = false
   @State private var celebrating = false
+  @State private var editingGoal = false
   let dashboard: Dashboard
 
   private var today: CalendarDate { .today }
@@ -116,8 +117,12 @@ struct StreakScreen: View {
             .font(.subheadline).monospacedDigit().foregroundStyle(Color.mutedInk)
             .opacity(weekChecked || dashboard.weekAttendance != nil ? 1 : 0)
             .animation(Motion.resolve(Motion.crossfade, reduceMotion), value: weekChecked)
+          if streak.attendance.target == nil {
+            Button("meta", systemImage: "target") { editingGoal = true }
+              .buttonStyle(.glass)
+          }
           if let reset = resetDay(streak) {
-            Text("zera \(dayLabel(reset))")
+            Label("zera \(dayLabel(reset))", systemImage: "hourglass")
               .font(.subheadline).foregroundStyle(Color.mutedInk)
               .frame(maxWidth: .infinity, alignment: .leading)
               .padding(Space.xl)
@@ -143,6 +148,12 @@ struct StreakScreen: View {
       }
     }
     .presentationDragIndicator(.visible)
+    .sheet(isPresented: $editingGoal) {
+      if let dashboard = store.dashboard {
+        GoalEditor(kind: .attendance, dashboard: dashboard)
+          .presentationDetents([.medium])
+      }
+    }
     .task {
       // Seis dias para trás alcançam o último treino que ainda segura a
       // sequência, mesmo quando ele foi na semana anterior.
@@ -240,7 +251,7 @@ private struct StreakRing: View {
     // um pixel de deslocamento lateral.
     .scaleEffect(grown ? 1 : 0.82, anchor: .center)
     .opacity(grown ? 1 : 0)
-    .animation(growth(duration: 0.55, bounce: 0.16, delay: Entrance.ring), value: entered)
+    .animation(growth(Motion.grow, delay: Entrance.ring), value: entered)
     .overlay {
       if !reduceMotion { StreakSparkle(radius: diameter / 2, trigger: celebrating) }
     }
@@ -248,19 +259,20 @@ private struct StreakRing: View {
       FlameBadge(size: badge)
         .scaleEffect(grown ? 1 : 0.72)
         .opacity(grown ? 1 : 0)
-        .animation(growth(duration: 0.4, bounce: 0.24, delay: Entrance.badge), value: entered)
+        .animation(growth(Motion.confirm, delay: Entrance.badge), value: entered)
         .offset(y: badge / 2)
     }
     .padding(.bottom, badge / 2)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
       "\(streak.attendance.count) treinos, \(streak.complete.count) completos")
+    .accessibilityValue("\(streak.weeklyCompleted) de \(streak.weeklyPlanned) na semana")
   }
 
   private var grown: Bool { entered || reduceMotion }
 
-  private func growth(duration: Double, bounce: Double, delay: Double) -> Animation? {
-    reduceMotion ? nil : .spring(duration: duration, bounce: bounce).delay(delay)
+  private func growth(_ animation: Animation, delay: Double) -> Animation? {
+    reduceMotion ? nil : animation.delay(delay)
   }
 }
 
@@ -277,7 +289,7 @@ private struct StreakCount: View {
       .scaleEffect(shown ? 1 : 0.88)
       .opacity(shown ? 1 : 0)
       .animation(
-        reduceMotion ? nil : .spring(duration: 0.45, bounce: 0.12).delay(Entrance.count),
+        reduceMotion ? nil : Motion.grow.delay(Entrance.count),
         value: entered)
   }
 
@@ -368,7 +380,7 @@ private struct Pop: ViewModifier {
     } keyframes: { _ in
       KeyframeTrack(\.scale) {
         LinearKeyframe(0.3, duration: delay)
-        SpringKeyframe(1.15, duration: 0.17, spring: .bouncy)
+        SpringKeyframe(1.15, duration: 0.17, spring: .smooth)
         SpringKeyframe(0.8, duration: 0.31)
       }
       KeyframeTrack(\.opacity) {
@@ -474,8 +486,7 @@ private struct StreakRibbon: View {
 
   private func cascade(_ index: Int) -> Animation? {
     guard !reduceMotion else { return nil }
-    return .spring(duration: 0.38, bounce: 0.18)
-      .delay(Entrance.ribbon + Entrance.ribbonStep * Double(index))
+    return Motion.grow.delay(Entrance.ribbon + Entrance.ribbonStep * Double(index))
   }
 }
 
