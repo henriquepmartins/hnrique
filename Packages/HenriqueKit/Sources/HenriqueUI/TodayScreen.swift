@@ -38,8 +38,10 @@ public struct TodayScreen: View {
           SyncStatusLine()
           WorkoutHero(
             workout: store.dashboard?.workout, date: store.selectedDate,
-            finished: store.dashboard?.workout.map { store.finishedAt($0.id, on: store.selectedDate) != nil } ?? false
-              || stoppedTiming != nil,
+            finished: HomeMoment(
+              workout: store.dashboard?.workout,
+              finishedAt: store.dashboard?.workout.flatMap { store.finishedAt($0.id, on: store.selectedDate) }
+            ) == .after,
             duration: stoppedTiming.map { $0.elapsed(at: .now) },
             notch: notch,
             sessionSource: sessionSource,
