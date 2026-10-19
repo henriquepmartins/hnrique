@@ -72,20 +72,21 @@ struct WeekScreen: View {
   private var swapWindow: ClosedRange<CalendarDate>? {
     guard let dashboard = store.dashboard, dashboard.daySwaps != nil else { return nil }
     let today = CalendarDate.today
-    let start = dashboard.date == today && dashboard.hasMarkedSets ? today.adding(days: 1) : today
+    let start = store.todayHasMarkedSets ? today.adding(days: 1) : today
     let end = dashboard.date.adding(days: 6)
     return start <= end ? start...end : nil
   }
 
   /// Some quando o treino já é o de hoje ou quando hoje já tem série marcada,
-  /// que a troca não pode levar para outro treino.
+  /// com qualquer dia aberto, que a troca não pode levar para outro treino.
   private func canTrainToday(_ item: WeekPlanItem) -> Bool {
     guard let dashboard = store.dashboard, dashboard.daySwaps != nil else { return false }
-    if dashboard.date == .today, dashboard.hasMarkedSets { return false }
+    if store.todayHasMarkedSets { return false }
     return dashboard.schedule.workout(on: .today)?.id != item.id
   }
 
-  /// Abre hoje, troca o treino do dia por este e abre a sessão.
+  /// Abre hoje, troca o treino do dia por este e abre a sessão. A troca
+  /// recusada deixa o aviso no banner do store.
   private func trainToday(_ item: WeekPlanItem) async {
     let today = CalendarDate.today
     await store.select(date: today)
