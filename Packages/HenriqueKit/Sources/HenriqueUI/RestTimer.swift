@@ -64,63 +64,87 @@ struct RestTimerBar: View {
     return "a seguir, \(next.exerciseName.lowercased()), \(kind), \(Formatting.trim(next.weightKg)) quilos"
   }
 
+  @State private var over: Bool
+
+  init(
+    rest: RestState, next: NextSet?, onAdjust: @escaping (TimeInterval) -> Void,
+    onDismiss: @escaping () -> Void
+  ) {
+    self.rest = rest
+    self.next = next
+    self.onAdjust = onAdjust
+    self.onDismiss = onDismiss
+    _over = State(initialValue: rest.remaining(at: .now) <= 0)
+  }
+
   /// Compacto de propósito: o cartão encolhe a lista por baixo, e alto ele
-  /// tapava o "+ série" e o exercício seguinte.
+  /// tapava o "+ série" e o exercício seguinte. O cartão só redesenha quando o
+  /// descanso acaba; o anel e os dígitos têm cada um o seu relógio.
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 0.2)) { context in
-      let remaining = rest.remaining(at: context.date)
-      let whole = Int(remaining.rounded())
-      let over = remaining <= 0
-      VStack(spacing: 10) {
-        HStack(spacing: 12) {
-          ZStack {
-            Circle().stroke(Color.white.opacity(0.18), lineWidth: 4)
-            Circle().trim(from: 0, to: rest.fraction(at: context.date))
-              .stroke(accent.acid, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-              .rotationEffect(.degrees(-90))
-          }
+    VStack(spacing: 10) {
+      HStack(spacing: 12) {
+        RestRing(rest: rest, color: accent.acid, paused: over)
           .frame(width: 36, height: 36)
           .accessibilityHidden(true)
-          Group {
-            if over {
-              Text("vai").foregroundStyle(accent.acid)
-            } else {
-              Text(restClock(remaining)).foregroundStyle(.white)
-                .contentTransition(.numericText(countsDown: true))
-            }
-          }
-          .font(.system(size: timeSize, weight: .semibold)).monospacedDigit()
-          .tracking(timeSize * -0.05)
-          .fixedSize()
-          .animation(reduceMotion ? nil : Motion.roll, value: whole)
-          .accessibilityLabel(over ? "descanso completo" : "descanso")
-          .accessibilityValue(over ? "" : restClock(remaining))
-          Text(nextLine)
-            .font(.system(size: nextSize)).monospacedDigit()
-            .foregroundStyle(Color.white.opacity(0.62)).lineLimit(2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityLabel(spokenNext)
+        digits
+        Text(nextLine)
+          .font(.system(size: nextSize)).monospacedDigit()
+          .foregroundStyle(Color.white.opacity(0.62)).lineLimit(2)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityLabel(spokenNext)
+      }
+      WeightedRow(weights: [1, 1, 1.3], spacing: 8) {
+        step("−15s") { onAdjust(-15) }
+        step("+15s") { onAdjust(15) }
+        Button(action: onDismiss) {
+          Text(over ? "fechar" : "pular")
+            .font(.system(size: buttonSize, weight: .semibold)).foregroundStyle(accent.deep)
+            .padding(.vertical, 9).frame(maxWidth: .infinity)
+            .background(accent.acid, in: .capsule)
         }
-        WeightedRow(weights: [1, 1, 1.3], spacing: 8) {
-          step("−15s") { onAdjust(-15) }
-          step("+15s") { onAdjust(15) }
-          Button(action: onDismiss) {
-            Text(over ? "fechar" : "pular")
-              .font(.system(size: buttonSize, weight: .semibold)).foregroundStyle(accent.deep)
-              .padding(.vertical, 9).frame(maxWidth: .infinity)
-              .background(accent.acid, in: .capsule)
-          }
-          .buttonStyle(PressScaleStyle())
+        .buttonStyle(PressScaleStyle())
+      }
+    }
+    .padding(12)
+    .background {
+      RoundedRectangle(cornerRadius: 24)
+        .fill(over ? accent.base : accent.deep)
+        .shadow(color: accent.deep.opacity(0.75), radius: 24, y: 12)
+    }
+    .animation(reduceMotion ? nil : Motion.crossfade, value: over)
+    .sensoryFeedback(.success, trigger: over) { _, fired in fired }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("descanso")
+    .accessibilityIdentifier("descanso.cartao")
+    .task(id: rest.endsAt) {
+      let left = rest.remaining(at: .now)
+      over = left <= 0
+      guard !over, (try? await Task.sleep(for: .seconds(left))) != nil else { return }
+      over = true
+    }
+  }
+
+  /// O número arredondado troca no meio de cada segundo contado do início, então
+  /// o tick cai ali; a âncora fica meio segundo antes do início para nunca estar
+  /// no futuro. Lido 10 ms depois do tick, o arredondamento não fica em cima do
+  /// meio exato, onde o erro de ponto flutuante decide para que lado vai.
+  private var digits: some View {
+    TimelineView(.periodic(from: rest.startedAt - 0.5, by: 1)) { context in
+      let remaining = rest.remaining(at: context.date + 0.01)
+      Group {
+        if over {
+          Text("vai").foregroundStyle(accent.acid)
+        } else {
+          Text(restClock(remaining)).foregroundStyle(.white)
+            .contentTransition(.numericText(countsDown: true))
         }
       }
-      .padding(12)
-      .background(over ? accent.base : accent.deep, in: .rect(cornerRadius: 24))
-      .shadow(color: accent.deep.opacity(0.75), radius: 24, y: 12)
-      .animation(reduceMotion ? nil : Motion.crossfade, value: over)
-      .sensoryFeedback(.success, trigger: over) { _, fired in fired }
-      .accessibilityElement(children: .contain)
-      .accessibilityLabel("descanso")
-      .accessibilityIdentifier("descanso.cartao")
+      .font(.system(size: timeSize, weight: .semibold)).monospacedDigit()
+      .tracking(timeSize * -0.05)
+      .fixedSize()
+      .animation(reduceMotion ? nil : Motion.roll, value: Int(remaining.rounded()))
+      .accessibilityLabel(over ? "descanso completo" : "descanso")
+      .accessibilityValue(over ? "" : restClock(remaining))
     }
   }
 
@@ -133,6 +157,25 @@ struct RestTimerBar: View {
         .background(Color.white.opacity(0.12), in: .capsule)
     }
     .buttonStyle(PressScaleStyle())
+  }
+}
+
+/// O anel do descanso, desenhado a cada quadro para esvaziar liso. É o único
+/// pedaço do cartão que precisa disso, e para quando o descanso acaba.
+private struct RestRing: View {
+  let rest: RestState
+  let color: Color
+  let paused: Bool
+
+  var body: some View {
+    TimelineView(.animation(minimumInterval: nil, paused: paused)) { context in
+      ZStack {
+        Circle().stroke(Color.white.opacity(0.18), lineWidth: 4)
+        Circle().trim(from: 0, to: paused ? 0 : rest.fraction(at: context.date))
+          .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+          .rotationEffect(.degrees(-90))
+      }
+    }
   }
 }
 
