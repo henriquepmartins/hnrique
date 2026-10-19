@@ -23,7 +23,9 @@ struct SessionExercisePicker: View {
       ScrollView {
         LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
           Section {
-            if results.isEmpty {
+            if catalog.isEmpty {
+              ContentUnavailableView("sem exercícios", systemImage: "dumbbell")
+            } else if results.isEmpty {
               ContentUnavailableView.search(text: search)
             } else {
               ForEach(results) { item in
@@ -68,7 +70,7 @@ struct SessionExercisePicker: View {
       #endif
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("fechar") { dismiss() }.accessibilityIdentifier("sessao.fechar-catalogo")
+          Button(role: .close) { dismiss() }.accessibilityLabel("fechar").accessibilityIdentifier("sessao.fechar-catalogo")
         }
       }
       .onAppear { searchFocused = true }

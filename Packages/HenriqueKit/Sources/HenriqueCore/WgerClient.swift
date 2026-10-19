@@ -14,6 +14,12 @@ public actor WgerClient {
     self.session = session
   }
 
+  /// Baixa a lista enquanto o seletor abre, para a primeira busca não esperar
+  /// a rede. Falhar aqui não diz nada; a busca tenta de novo.
+  public func prefetch() async {
+    _ = try? await catalog()
+  }
+
   /// Devolve os exercícios da base pública que casam com o termo, já sem os
   /// que o catálogo local cobre. Lista vazia é resposta válida, não erro.
   public func search(_ term: String, excluding local: [ExerciseCatalogItem]) async throws
@@ -44,7 +50,8 @@ public actor WgerClient {
         URLQueryItem(name: "language", value: "2"),
         URLQueryItem(name: "limit", value: "1000"),
       ]
-      var request = URLRequest(url: components.url!)
+      // O padrão de 60 s deixava a rodinha girando um minuto sem rede.
+      var request = URLRequest(url: components.url!, timeoutInterval: 15)
       request.setValue("henrique-ios/1.0", forHTTPHeaderField: "User-Agent")
       request.setValue("application/json", forHTTPHeaderField: "Accept")
       let (data, _) = try await session.data(for: request)
@@ -106,12 +113,11 @@ public actor WgerClient {
     switch category.lowercased() {
     case "chest": return "Peito"
     case "back": return "Costas"
-    case "legs": return "Pernas"
+    case "legs": return "Quadríceps"
     case "shoulders": return "Ombros"
-    case "arms": return "Braços"
+    case "arms": return "Bíceps"
     case "abs": return "Abdômen"
     case "calves": return "Panturrilha"
-    case "cardio": return "Cardio"
     default: return "Geral"
     }
   }

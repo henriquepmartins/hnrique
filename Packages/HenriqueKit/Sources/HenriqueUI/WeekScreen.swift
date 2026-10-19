@@ -26,7 +26,7 @@ struct WeekScreen: View {
           .subtleEntrance()
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12),
                                  count: textSize.isAccessibilitySize ? 1 : 2), spacing: 6) {
-          ForEach(store.weekPlan) { item in
+          ForEach(store.weekPlan.inTrainingWeekOrder()) { item in
             WorkoutTile(
               item: item,
               showsWave: store.dashboard?.highlightedWorkoutIDs.contains(item.id) == true,
@@ -82,6 +82,21 @@ func spokenWeekdays(_ weekdays: [Int]) -> String {
   weekdays.map { planWeekdays[$0] }.formatted(.list(type: .and).locale(StudyFormat.locale))
 }
 
+extension [WeekPlanItem] {
+  /// A grade segue a semana de treino pelo primeiro dia de cada treino, e os
+  /// sem dia vão para o fim. O servidor não guarda posição, e na ordem em que
+  /// ele manda a pasta de segunda podia cair depois da de sexta.
+  func inTrainingWeekOrder(firstWeekday: Int = Calendar.trainingWeek.firstWeekday) -> [WeekPlanItem] {
+    let start = firstWeekday - 1
+    func rank(_ item: WeekPlanItem) -> Int {
+      item.weekdays.map { ($0 - start + 7) % 7 }.min() ?? 7
+    }
+    return enumerated()
+      .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+      .map(\.element)
+  }
+}
+
 extension WeekPlanItem {
   /// Sem cor escolhida, a cor vem do dia e não da posição na grade. Pela
   /// posição, apagar um card repintava todos os que vinham depois.
@@ -99,7 +114,8 @@ private struct WorkoutTile: View {
   @State private var confirmDelete = false
 
   var body: some View {
-    Button(action: item.weekdays.isEmpty ? { onEdit(.identidade) } : onStart) {
+    // Sem dia, o que falta é o dia, então a pasta abre direto nesse passo.
+    Button(action: item.weekdays.isEmpty ? { onEdit(.dias) } : onStart) {
       WorkoutFolderCard(name: item.name, tone: item.tone, hasDays: !item.weekdays.isEmpty, showsWave: showsWave)
     }
     .buttonStyle(StudyPressStyle())
@@ -118,6 +134,8 @@ private struct WorkoutTile: View {
     Menu {
       Button("editar", systemImage: "pencil") { onEdit(.identidade) }
       Button("cor", systemImage: "paintpalette") { onEdit(.cor) }
+      Button("dias", systemImage: "calendar") { onEdit(.dias) }
+      Button("exercícios", systemImage: "dumbbell") { onEdit(.exercicios) }
       Button("apagar", systemImage: "trash", role: .destructive) { confirmDelete = true }
     } label: {
       Color.clear
@@ -326,10 +344,19 @@ struct PlanExerciseRow: View {
             .accessibilityLabel(name.lowercased())
             .accessibilityValue(spokenSummary)
             .accessibilityHint(isExpanded ? "fechar ajustes" : "abrir ajustes")
+            .accessibilityAction(named: "remover do treino") { onRemove?() }
+        } else if isOrganizing {
+          header
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(name.lowercased())
+            .accessibilityValue(spokenSummary)
         } else {
           header
         }
-        if showsControls, let onRemove {
+        // Com o cabeçalho abrindo e fechando, o canto direito é o chevron. Um
+        // lixo ali apagava o exercício de quem tocava para fechar; na lista o
+        // remover é o deslize.
+        if showsControls, onToggle == nil, let onRemove {
           IconButton(title: "Remover \(name) do treino", systemImage: "trash", size: 17, action: onRemove)
             .tint(.red)
         }
@@ -357,14 +384,24 @@ struct PlanExerciseRow: View {
       }
     }
     .padding(.vertical, showsControls ? 10 : 4)
+    // Um stepper empurra o outro, e a faixa nunca fica invertida.
+    .onChange(of: exercise.repsMin) { _, new in
+      if new > exercise.repsMax { exercise.repsMax = new }
+    }
+    .onChange(of: exercise.repsMax) { _, new in
+      if new < exercise.repsMin { exercise.repsMin = new }
+    }
   }
 
   private var header: some View {
     HStack(spacing: 12) {
-      ExerciseThumb(imageUrl: imageUrl, size: 48)
+      // Organizando, a linha encolhe para caberem muitas na tela: foto menor,
+      // nome numa linha e sem o resumo.
+      ExerciseThumb(imageUrl: imageUrl, size: isOrganizing ? 36 : 48)
       VStack(alignment: .leading, spacing: 3) {
         Text(name.lowercased()).font(.headline.weight(.semibold)).foregroundStyle(Color.ink)
-        if onToggle != nil || isOrganizing {
+          .lineLimit(isOrganizing ? 1 : nil)
+        if onToggle != nil, !isOrganizing {
           HStack(spacing: 4) {
             Text(exercise.summary).monospacedDigit()
             if exercise.workToFailure {
@@ -372,15 +409,16 @@ struct PlanExerciseRow: View {
             }
           }
           .font(.caption).foregroundStyle(Color.mutedInk)
-        } else if let subtitle {
+        } else if !isOrganizing, let subtitle {
           Text(subtitle).font(.caption).foregroundStyle(Color.mutedInk)
         }
       }
       Spacer(minLength: 0)
-      if onToggle != nil, !isOrganizing, !isExpanded {
+      if onToggle != nil, !isOrganizing {
         Image(systemName: "chevron.down")
           .font(.footnote.weight(.semibold))
           .foregroundStyle(Color.mutedInk)
+          .rotationEffect(.degrees(isExpanded ? 180 : 0))
           .frame(width: 44, height: 44)
       }
     }
@@ -393,18 +431,21 @@ struct PlanExerciseRow: View {
       ? "\(exercise.repsMin) repetições" : "de \(exercise.repsMin) a \(exercise.repsMax) repetições"
     parts.append("\(exercise.workSets) valendo, \(reps)")
     parts.append("descanso \(restClock(TimeInterval(exercise.restSeconds ?? defaultRestSeconds)))")
+    if exercise.startingWeightKg > 0 { parts.append("carga \(formatPrepWeight(exercise.startingWeightKg)) quilos") }
     if exercise.workToFailure { parts.append("até a falha") }
     return parts.joined(separator: ", ")
   }
 }
 
 extension PlanExercise {
-  /// "2 + 2 × 6–10 · 1:30": aquecimento + valendo, a faixa de repetições e o
-  /// descanso. Sem aquecimento, "2 × 6–10 · 1:30".
+  /// "2 + 2 × 6–10 · 1:30 · 40 kg": aquecimento + valendo, a faixa de
+  /// repetições, o descanso e a carga inicial quando tem. Sem aquecimento,
+  /// "2 × 6–10 · 1:30".
   var summary: String {
     let sets = prepSets > 0 ? "\(prepSets) + \(workSets)" : "\(workSets)"
     let reps = repsMin == repsMax ? "\(repsMin)" : "\(repsMin)–\(repsMax)"
-    return "\(sets) × \(reps) · \(restClock(TimeInterval(restSeconds ?? defaultRestSeconds)))"
+    let base = "\(sets) × \(reps) · \(restClock(TimeInterval(restSeconds ?? defaultRestSeconds)))"
+    return startingWeightKg > 0 ? "\(base) · \(formatPrepWeight(startingWeightKg)) kg" : base
   }
 }
 
@@ -453,9 +494,7 @@ func formatPrepWeight(_ value: Double) -> String {
 /// Vírgula ou ponto, porque o teclado decimal em português dá vírgula. Vazio
 /// ou ilegível é "calcular sozinho".
 func parsePrepWeight(_ text: String) -> Double? {
-  let trimmed = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
-  guard let value = Double(trimmed), value.isFinite else { return nil }
-  return value.clamped(to: Limits.startingWeightKg)
+  parseDecimal(text)?.clamped(to: Limits.startingWeightKg)
 }
 
 /// O descanso entre séries desse exercício, de 15 em 15 segundos.
@@ -494,9 +533,11 @@ struct ExerciseStepperRow: View {
       Spacer(minLength: 8)
       Text("\(value)").font(.body.weight(.semibold)).monospacedDigit()
         .frame(minWidth: 32, alignment: .trailing)
+        .accessibilityHidden(true)
       Stepper("", value: $value, in: range)
         .labelsHidden()
         .accessibilityLabel(label)
+        .accessibilityValue("\(value)")
     }
     .frame(minHeight: 48)
   }
@@ -543,6 +584,10 @@ struct ExercisePicker: View {
   @State private var remote: [ExerciseCatalogItem] = []
   @State private var remotePhase: RemotePhase = .idle
   @State private var lookup: Task<Void, Never>?
+  @State private var pickedHere = 0
+  /// Liga na primeira tecla. Daí em diante as linhas que voltam à lista
+  /// aparecem sem a cascata, que a cada letra fazia a lista piscar.
+  @State private var settled = false
 
   let catalog: [ExerciseCatalogItem]
   let chosen: Set<String>
@@ -567,12 +612,16 @@ struct ExercisePicker: View {
     return library.contains { ExerciseLibrary.fold($0.name) == folded }
   }
 
+  private var canCreate: Bool {
+    Limits.exerciseNameLength.contains(search.trimmingCharacters(in: .whitespaces).count) && !exactMatch
+  }
+
   var body: some View {
     NavigationStack {
       ScrollView {
         LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
           Section {
-            if local.isEmpty, remote.isEmpty, remotePhase != .loading, !search.isEmpty {
+            if local.isEmpty, remote.isEmpty, remotePhase == .idle || remotePhase == .done, !search.isEmpty {
               ContentUnavailableView.search(text: search)
             } else {
               ForEach(Array(local.enumerated()), id: \.element.id) { index, item in
@@ -580,7 +629,7 @@ struct ExercisePicker: View {
                   item: item, picked: chosen.contains(item.id),
                   action: { pick(item) }
                 )
-                .staggeredEntrance(index: index, isReady: true)
+                .firstEntrance(index: index, settled: settled)
                 Divider().padding(.leading, 76).opacity(0.6)
               }
               if !remote.isEmpty {
@@ -603,26 +652,41 @@ struct ExercisePicker: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
                   .padding(.horizontal, 16).padding(.vertical, 10)
               } else if remotePhase == .loading {
-                ProgressView().controlSize(.small)
-                  .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                HStack(spacing: 8) {
+                  ProgressView().controlSize(.small)
+                  Text("buscando na wger").font(.caption).foregroundStyle(Color.mutedInk)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+              } else if remotePhase == .failed {
+                HStack(spacing: 8) {
+                  Image(systemName: "wifi.exclamationmark")
+                    .accessibilityLabel("a wger não respondeu")
+                  Spacer(minLength: 8)
+                  Button("tentar de novo", systemImage: "arrow.clockwise") { scheduleRemote() }
+                    .frame(minHeight: 44)
+                }
+                .font(.subheadline).foregroundStyle(Color.mutedInk)
+                .padding(.horizontal, 16).padding(.vertical, 4)
               }
-              if !search.trimmingCharacters(in: .whitespaces).isEmpty, !exactMatch {
-                Button { createCustom() } label: {
-                  HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
-                      .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
-                    VStack(alignment: .leading, spacing: 2) {
-                      Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
-                        .font(.body.weight(.medium)).foregroundStyle(Color.ink)
-                      Text(muscle ?? "geral")
-                        .font(.caption).foregroundStyle(Color.mutedInk)
-                    }
-                    Spacer(minLength: 0)
+            }
+            // Fora do vazio, porque é justo quando a busca não acha nada que
+            // dá vontade de criar.
+            if canCreate {
+              Button { createCustom() } label: {
+                HStack(spacing: 12) {
+                  RoundedRectangle(cornerRadius: 56 * 0.32).fill(Color.surfaceMuted).frame(width: 56, height: 56)
+                    .overlay { Image(systemName: "plus").foregroundStyle(Color.mutedInk) }
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text("criar \"\(search.trimmingCharacters(in: .whitespaces))\"")
+                      .font(.body.weight(.medium)).foregroundStyle(Color.ink)
+                    Text(muscle ?? "geral")
+                      .font(.caption).foregroundStyle(Color.mutedInk)
                   }
-                  .padding(.horizontal, 16).padding(.vertical, 8)
-                  .contentShape(.rect)
-                }.buttonStyle(StudyPressStyle())
-              }
+                  Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .contentShape(.rect)
+              }.buttonStyle(StudyPressStyle())
             }
           } header: {
             VStack(spacing: 10) {
@@ -648,6 +712,7 @@ struct ExercisePicker: View {
               .padding(.horizontal, 12).padding(.vertical, 6)
               .background(.white, in: .rect(cornerRadius: 18))
               .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.ink.opacity(0.08)))
+              .padding(.horizontal, Space.l)
               ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                   MuscleChip(title: "todos", selected: muscle == nil) { muscle = nil }
@@ -669,31 +734,49 @@ struct ExercisePicker: View {
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("fechar") { dismiss() }
+          Group {
+            if pickedHere > 0 {
+              Button(role: .confirm) { dismiss() }
+            } else {
+              Button(role: .close) { dismiss() }.accessibilityLabel("fechar")
+            }
+          }
+          .accessibilityIdentifier("seletor.fechar")
         }
       }
       .keyboardDone()
       .onAppear { searchFocused = true }
-      .onChange(of: search) { scheduleRemote() }
-      .onChange(of: muscle) { scheduleRemote() }
+      .task { await wger.prefetch() }
+      .sensoryFeedback(.success, trigger: pickedHere)
+      .onChange(of: search) {
+        settled = true
+        scheduleRemote()
+      }
+      .onChange(of: muscle) {
+        settled = true
+        scheduleRemote()
+      }
     }
   }
 
+  /// A folha fica aberta para montar o treino de uma vez. A linha passa a "no
+  /// treino" porque `chosen` chega de novo de quem abriu.
   private func pick(_ item: ExerciseCatalogItem) {
     guard !chosen.contains(item.id) else { return }
     onPick(item)
-    dismiss()
+    pickedHere += 1
   }
 
   private func createCustom() {
     let name = search.trimmingCharacters(in: .whitespaces)
-    guard name.count >= 2 else { return }
+    guard Limits.exerciseNameLength.contains(name.count) else { return }
     let item = ExerciseCatalogItem(
       id: ExerciseLibrary.slug(name), name: name,
       muscleGroup: muscle ?? "Geral", equipment: "Livre", imageUrl: nil)
     guard !chosen.contains(item.id) else { return }
     onPick(item)
-    dismiss()
+    pickedHere += 1
+    search = ""
   }
 
   private func scheduleRemote() {

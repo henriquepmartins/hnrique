@@ -211,6 +211,7 @@ final class FluxoDrive: XCTestCase {
     search.tap()
     search.typeText("Supino inclinado")
     app.buttons.matching(NSPredicate(format: "label BEGINSWITH[c] 'supino inclinado'")).firstMatch.tap()
+    app.buttons["seletor.fechar"].tap()
     let save = app.buttons["concluir"]
     XCTAssert(save.waitForExistence(timeout: 5) && save.isEnabled, "treino sem dia pode ser salvo")
     shot("13-treino-sem-dia-editor")
@@ -223,7 +224,7 @@ final class FluxoDrive: XCTestCase {
     let tile = app.buttons["editar Treino futuro de teste, sem dia"]
     XCTAssert(tile.waitForExistence(timeout: 10), "treino sem dia continua no plano após reabrir")
     tile.tap()
-    XCTAssert(app.staticTexts["nome"].waitForExistence(timeout: 5), "toque no treino sem dia abre edição")
+    XCTAssert(app.staticTexts["dias"].waitForExistence(timeout: 5), "toque no treino sem dia abre no passo dos dias")
     goToStep("dias")
     app.buttons["sábado"].tap()
     app.buttons["concluir"].tap()
